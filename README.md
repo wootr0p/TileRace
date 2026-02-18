@@ -1,2 +1,2 @@
 # TileRace
-Vertical 2D Racing Platform Multiplayer
+Vertical 2D Racing Platform Multiplayer Demo
