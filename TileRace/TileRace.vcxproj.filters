@@ -54,7 +54,4 @@
       <Filter>File di intestazione</Filter>
     </ClInclude>
   </ItemGroup>
-  <ItemGroup>
-    <None Include="ENET_TEST_README.md" />
-  </ItemGroup>
 </Project>
