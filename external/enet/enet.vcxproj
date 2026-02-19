@@ -94,19 +94,19 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(SolutionDir)bin\Release\x64\</OutDir>
+    <OutDir>$(SolutionDir)build\Release\x64\lib\</OutDir>
     <IntDir>$(SolutionDir)build\Release\x64\obj\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <OutDir>$(SolutionDir)bin\Release\Win32\</OutDir>
+    <OutDir>$(SolutionDir)build\Release\Win32\lib\</OutDir>
     <IntDir>$(SolutionDir)build\Release\Win32\obj\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(SolutionDir)bin\Debug\x64\</OutDir>
+    <OutDir>$(SolutionDir)build\Debug\x64\lib\</OutDir>
     <IntDir>$(SolutionDir)build\Debug\x64\obj\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <OutDir>$(SolutionDir)bin\Debug\Win32\</OutDir>
+    <OutDir>$(SolutionDir)build\Debug\Win32\lib\</OutDir>
     <IntDir>$(SolutionDir)build\Debug\Win32\obj\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -189,5 +189,6 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
+
 
 
