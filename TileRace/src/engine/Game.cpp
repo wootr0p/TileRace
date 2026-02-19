@@ -23,6 +23,7 @@ Game::Game()
 
 Game::~Game() {
     delete input;
+	delete tilemap;
     //delete player;
 }
 
@@ -40,7 +41,7 @@ SDL_AppResult Game::Init(int argc, char* argv[]) {
 
     last_ticks = SDL_GetTicksNS();
 
-    tilemap = new TileMap();
+    tilemap = new TileMap("level_01");
 
     return SDL_APP_CONTINUE;
 }
@@ -118,7 +119,9 @@ void Game::Render() {
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderDebugText(renderer, 5, 5, fps_text);
     SDL_SetRenderScale(renderer, 1.0f, 1.0f);
-    SDL_RenderDebugText(renderer, 5, WINDOW_HEIGHT - 15, "debug text");
 
+    #ifdef _DEBUG
+    SDL_RenderDebugText(renderer, 5, WINDOW_HEIGHT - 10, "debug info");
+    #endif
     SDL_RenderPresent(renderer);
 }

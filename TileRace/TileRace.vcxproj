@@ -164,6 +164,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\utility\FileIO.cpp" />
     <ClCompile Include="src\engine\Game.cpp" />
     <ClCompile Include="src\engine\InputManager.cpp" />
     <ClCompile Include="src\entities\Tile.cpp" />
@@ -171,11 +172,17 @@
     <ClCompile Include="src\entities\TileMap.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\utility\FileIO.h" />
     <ClInclude Include="src\engine\Game.h" />
     <ClInclude Include="src\engine\InputManager.h" />
     <ClInclude Include="src\entities\Tile.h" />
     <ClInclude Include="src\entities\TileMap.h" />
   </ItemGroup>
+  <ItemDefinitionGroup>
+    <PostBuildEvent>
+      <Command>xcopy "$(SolutionDir)assets" "$(OutDir)assets" /E /I /Y</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

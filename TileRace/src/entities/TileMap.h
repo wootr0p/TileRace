@@ -1,15 +1,16 @@
 #pragma once
 #include <SDL3/SDL.h>
 #include "Tile.h"
-
-const int MAP_WIDTH = 100;
-const int MAP_HEIGHT = 100;
+#include "../utility/FileIO.h"
+#include <string>
 
 class TileMap {
 public:
-	TileMap();
+	TileMap(string level_name);
 	~TileMap();
 	void Render(SDL_Renderer* renderer);
 private:
-	Tile** tiles;
+	Tile** tiles = nullptr;
+	int level_width = 0;
+	int level_height = 0;
 };

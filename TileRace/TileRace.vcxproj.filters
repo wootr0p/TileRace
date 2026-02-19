@@ -6,11 +6,13 @@
     <ClCompile Include="src\entities\Tile.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\entities\TileMap.cpp" />
+    <ClCompile Include="src\utility\FileIO.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\engine\Game.h" />
     <ClInclude Include="src\engine\InputManager.h" />
     <ClInclude Include="src\entities\Tile.h" />
     <ClInclude Include="src\entities\TileMap.h" />
+    <ClInclude Include="src\utility\FileIO.h" />
   </ItemGroup>
 </Project>

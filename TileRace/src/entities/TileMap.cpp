@@ -1,26 +1,69 @@
 #include "TileMap.h"
+#include <filesystem>
 
-TileMap::TileMap() {
-	tiles = new Tile*[MAP_WIDTH];
+TileMap::TileMap(string level_name) {
 
-	for (int i = 0; i < MAP_WIDTH; i++) {
-		tiles[i] = new Tile[MAP_HEIGHT];
-		for (int j = 0; j < MAP_HEIGHT; j++) {
-			tiles[i][j] = Tile(i * TILE_SIZE, j * TILE_SIZE, true);
+	FileIO file = FileIO();
+	file.Open("assets/levels/" + level_name + ".txt");
+	
+	string line;
+
+	// Conto i caratteri della prima linea del file per sapere la larghezza del livello.
+	line = file.ReadLine();
+	if (line.size() > 0) {
+		level_width = line.size();
+	}
+
+	// Scorro le restanti righe per sapere l'altezza del livello.
+	level_height = 1;
+	while (line != "") {
+		line = file.ReadLine();
+		if (line != "") level_height++;
+	}
+
+	// Dichiaro in memoria l'array bidimensionale di tile in base alla larghezza e altezza del livello.
+	tiles = new Tile * [level_width];
+	for (int i = 0; i < level_width; ++i) {
+		tiles[i] = new Tile[level_height];
+	}
+
+	// Scorro il file di testo e inizializzo le tile in base ai caratteri letti.
+	file.Rewind();
+	int j = 0;
+	while (j < level_height) {
+		line = file.ReadLine();
+		if (line == "") break;
+		int i = 0;
+		for (char c : line) {
+			if (i >= level_width) break;
+			TileType type = TileType::Empty;
+			if (c == '0') type = TileType::Solid;
+			else if (c == 'E') type = TileType::End;
+			else if (c == 'X') type = TileType::Spawn;
+			tiles[i][j] = Tile(i * TILE_SIZE, j * TILE_SIZE, type);
+			i++;
 		}
+		// Se la riga è più corta, riempio il resto con tile vuote
+		for (; i < level_width; ++i) {
+			tiles[i][j] = Tile(i * TILE_SIZE, j * TILE_SIZE, TileType::Empty);
+		}
+		j++;
 	}
 }
 
 TileMap::~TileMap() {
-	for (int i = 0; i < MAP_WIDTH; i++) {
-		delete[] tiles[i];
+	if (tiles) {
+		for (int i = 0; i < level_width; i++) {
+			delete[] tiles[i];
+		}
+		delete[] tiles;
 	}
-	delete[] tiles;
 }
 
 void TileMap::Render(SDL_Renderer* renderer) {
-	for (int i = 0; i < MAP_WIDTH; i++) {
-		for (int j = 0; j < MAP_HEIGHT; j++) {
+	if (!tiles) return;
+	for (int i = 0; i < level_width; i++) {
+		for (int j = 0; j < level_height; j++) {
 			tiles[i][j].Render(renderer);
 		}
 	}
