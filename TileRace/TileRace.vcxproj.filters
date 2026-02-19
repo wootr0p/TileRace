@@ -30,6 +30,12 @@
     <ClCompile Include="Game.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
+    <ClCompile Include="NetworkManager.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="ENetTest.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Game.h">
@@ -44,5 +50,11 @@
     <ClInclude Include="TrailManager.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
+    <ClInclude Include="NetworkManager.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ENET_TEST_README.md" />
   </ItemGroup>
 </Project>
