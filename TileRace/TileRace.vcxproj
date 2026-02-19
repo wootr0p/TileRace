@@ -156,22 +156,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ENetTest.cpp" />
-    <ClCompile Include="Game.cpp" />
-    <ClCompile Include="InputManager.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="NetworkManager.cpp" />
-    <ClCompile Include="Player.cpp" />
-    <ClCompile Include="TrailManager.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="Game.h" />
-    <ClInclude Include="InputManager.h" />
-    <ClInclude Include="NetworkManager.h" />
-    <ClInclude Include="Player.h" />
-    <ClInclude Include="TrailManager.h" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\external\enet\enet.vcxproj">
       <Project>{d66116b8-6794-4424-9b73-485c8b3890dd}</Project>
     </ProjectReference>
@@ -179,8 +163,23 @@
       <Project>{81ce8daf-ebb2-4761-8e45-b71abcca8c68}</Project>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\ENetTest.cpp" />
+    <ClCompile Include="src\Game.cpp" />
+    <ClCompile Include="src\InputManager.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\NetworkManager.cpp" />
+    <ClCompile Include="src\Player.cpp" />
+    <ClCompile Include="src\TrailManager.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\Game.h" />
+    <ClInclude Include="src\InputManager.h" />
+    <ClInclude Include="src\NetworkManager.h" />
+    <ClInclude Include="src\Player.h" />
+    <ClInclude Include="src\TrailManager.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
-

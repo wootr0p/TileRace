@@ -15,42 +15,42 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="src\ENetTest.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
-    <ClCompile Include="InputManager.cpp">
+    <ClCompile Include="src\Game.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
-    <ClCompile Include="Player.cpp">
+    <ClCompile Include="src\InputManager.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
-    <ClCompile Include="TrailManager.cpp">
+    <ClCompile Include="src\main.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
-    <ClCompile Include="Game.cpp">
+    <ClCompile Include="src\NetworkManager.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
-    <ClCompile Include="NetworkManager.cpp">
+    <ClCompile Include="src\Player.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
-    <ClCompile Include="ENetTest.cpp">
+    <ClCompile Include="src\TrailManager.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Game.h">
+    <ClInclude Include="src\Game.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
-    <ClInclude Include="Player.h">
+    <ClInclude Include="src\InputManager.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
-    <ClInclude Include="InputManager.h">
+    <ClInclude Include="src\NetworkManager.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
-    <ClInclude Include="TrailManager.h">
+    <ClInclude Include="src\Player.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
-    <ClInclude Include="NetworkManager.h">
+    <ClInclude Include="src\TrailManager.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
   </ItemGroup>
