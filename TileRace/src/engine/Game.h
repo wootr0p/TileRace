@@ -2,8 +2,6 @@
 #include <SDL3/SDL.h>
 
 class InputManager;
-class Player;
-class TrailManager;
 
 class Game {
 public:
@@ -38,8 +36,6 @@ private:
     uint64_t fps_update_timer;
 
     InputManager* input;
-    Player* player;
-    TrailManager* trail;
 
     // Configuration
     static const int WINDOW_WIDTH = 1280;

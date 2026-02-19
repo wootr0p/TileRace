@@ -1,8 +1,9 @@
 #include "Game.h"
 #include "InputManager.h"
-#include "../entities/Player.h"
-#include "../entities/TrailManager.h"
+#include "../entities/TileMap.h"
 #include <iostream>
+
+TileMap* tilemap;
 
 Game::Game()
     : window(nullptr)
@@ -12,8 +13,6 @@ Game::Game()
     , fps_index(0)
     , fps_update_timer(0)
     , input(nullptr)
-    , player(nullptr)
-    , trail(nullptr)
 {
     for (int i = 0; i < FPS_SAMPLES; i++) {
         fps_buffer[i] = 0;
@@ -24,8 +23,7 @@ Game::Game()
 
 Game::~Game() {
     delete input;
-    delete player;
-    delete trail;
+    //delete player;
 }
 
 SDL_AppResult Game::Init(int argc, char* argv[]) {
@@ -39,10 +37,10 @@ SDL_AppResult Game::Init(int argc, char* argv[]) {
     }
 
     input = new InputManager();
-    player = new Player();
-    trail = new TrailManager();
 
     last_ticks = SDL_GetTicksNS();
+
+    tilemap = new TileMap();
 
     return SDL_APP_CONTINUE;
 }
@@ -75,8 +73,7 @@ SDL_AppResult Game::Iterate() {
     last_ticks = current_ticks;
 
     // Update game
-    player->Update(dt, input);
-    trail->Update(dt, player->GetPosition().x, player->GetPosition().y, player->IsDashing());
+    //player->Update(dt, input);
 
     // Render
     Render();
@@ -112,18 +109,16 @@ void Game::Render() {
     SDL_RenderClear(renderer);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
-    // Render trail
-    trail->Render(renderer);
-
     // Render player
-    player->Render(renderer);
+    //player->Render(renderer);
+	tilemap->Render(renderer);
 
     // Render UI
     SDL_SetRenderScale(renderer, 2.0f, 2.0f);
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderDebugText(renderer, 5, 5, fps_text);
     SDL_SetRenderScale(renderer, 1.0f, 1.0f);
-    SDL_RenderDebugText(renderer, 5, WINDOW_HEIGHT - 15, player->GetDebugText());
+    SDL_RenderDebugText(renderer, 5, WINDOW_HEIGHT - 15, "debug text");
 
     SDL_RenderPresent(renderer);
 }

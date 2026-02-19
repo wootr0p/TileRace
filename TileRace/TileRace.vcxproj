@@ -164,22 +164,17 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\ENetTest.cpp" />
     <ClCompile Include="src\engine\Game.cpp" />
     <ClCompile Include="src\engine\InputManager.cpp" />
-    <ClCompile Include="src\engine\NetworkManager.cpp" />
-    <ClCompile Include="src\entities\Player.cpp" />
     <ClCompile Include="src\entities\Tile.cpp" />
-    <ClCompile Include="src\entities\TrailManager.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\entities\TileMap.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\engine\Game.h" />
     <ClInclude Include="src\engine\InputManager.h" />
-    <ClInclude Include="src\engine\NetworkManager.h" />
-    <ClInclude Include="src\entities\Player.h" />
     <ClInclude Include="src\entities\Tile.h" />
-    <ClInclude Include="src\entities\TrailManager.h" />
+    <ClInclude Include="src\entities\TileMap.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -164,6 +164,8 @@
     <ClCompile Include="NetworkManager.cpp" />
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="TrailManager.cpp" />
+    <ClCompile Include="src\entities\Tile.cpp" />
+    <ClCompile Include="src\entities\TileMap.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\enet\enet.vcxproj">
