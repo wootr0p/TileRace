@@ -3,7 +3,7 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="enet/enet.vcxproj" Id="d66116b8-6794-4424-9b73-485c8b3890dd" />
-  <Project Path="SDL-release-3.4.0/VisualC/SDL/SDL.vcxproj" Id="81ce8daf-ebb2-4761-8e45-b71abcca8c68" />
+  <Project Path="external/enet/enet.vcxproj" Id="d66116b8-6794-4424-9b73-485c8b3890dd" />
+  <Project Path="external/sdl/VisualC/SDL/SDL.vcxproj" Id="81ce8daf-ebb2-4761-8e45-b71abcca8c68" />
   <Project Path="TileRace/TileRace.vcxproj" Id="829a8cb5-ed8f-4181-b76d-630e12e28bcf" />
 </Solution>
