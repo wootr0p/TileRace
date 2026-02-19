@@ -1,5 +1,5 @@
 #include "Player.h"
-#include "InputManager.h"
+#include "../engine/InputManager.h"
 
 // Physics parameters
 const float Player::GRAVITY = 2800.0f;

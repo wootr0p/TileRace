@@ -1,7 +1,7 @@
 #include "Game.h"
 #include "InputManager.h"
-#include "Player.h"
-#include "TrailManager.h"
+#include "../entities/Player.h"
+#include "../entities/TrailManager.h"
 #include <iostream>
 
 Game::Game()

@@ -1,7 +1,7 @@
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include "Game.h"
+#include "engine/Game.h"
 
 // These functions are the SDL application callbacks. They simply forward to the
 // Game instance stored in the appstate pointer. This keeps the SDL-specific
