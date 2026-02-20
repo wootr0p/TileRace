@@ -1,6 +1,12 @@
 #pragma once
 #include <SDL3/SDL.h>
 
+struct button_state {
+    bool down;
+    bool just_pressed;
+    bool just_released;
+};
+
 class InputManager {
 public:
     InputManager();
@@ -11,17 +17,17 @@ public:
 
     // Input queries
     void GetRawInput(float* out_x, float* out_y) const;
-    bool IsJumpDown() const { return jump_down; }
-    bool IsJumpJustPressed() const { return jump_just_pressed; }
-    bool IsDashDown() const { return dash_down; }
+    button_state GetJumpButtonState();
+    button_state GetDashButtonState();
 
 private:
     SDL_Gamepad* gamepad;
     
-    bool jump_down;
-    bool prev_jump_down;
-    bool jump_just_pressed;
-    bool dash_down;
+    button_state jump;
+    button_state dash;
+
+    bool old_jump_down;
+    bool old_dash_down;
 
     static const float ANALOG_THRESHOLD;
 };

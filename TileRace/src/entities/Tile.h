@@ -25,5 +25,5 @@ private:
 	int y;
 	TileType type;
 	SDL_FRect rect;
-
+	SDL_Color color;
 };

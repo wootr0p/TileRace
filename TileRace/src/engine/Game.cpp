@@ -13,6 +13,7 @@ Game::Game()
     , fps_index(0)
     , fps_update_timer(0)
     , input(nullptr)
+    , player(nullptr)
 {
     for (int i = 0; i < FPS_SAMPLES; i++) {
         fps_buffer[i] = 0;
@@ -24,7 +25,7 @@ Game::Game()
 Game::~Game() {
     delete input;
 	delete tilemap;
-    //delete player;
+    delete player;
 }
 
 SDL_AppResult Game::Init(int argc, char* argv[]) {
@@ -36,12 +37,11 @@ SDL_AppResult Game::Init(int argc, char* argv[]) {
         std::cerr << "Failed to create window or renderer" << std::endl;
         return SDL_APP_FAILURE;
     }
-
-    input = new InputManager();
-
     last_ticks = SDL_GetTicksNS();
 
+    input = new InputManager();
     tilemap = new TileMap("level_01");
+    player = new Player();
 
     return SDL_APP_CONTINUE;
 }
@@ -74,7 +74,7 @@ SDL_AppResult Game::Iterate() {
     last_ticks = current_ticks;
 
     // Update game
-    //player->Update(dt, input);
+    player->Update(dt, input);
 
     // Render
     Render();
@@ -111,8 +111,8 @@ void Game::Render() {
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
     // Render player
-    //player->Render(renderer);
 	tilemap->Render(renderer);
+    player->Render(renderer);
 
     // Render UI
     SDL_SetRenderScale(renderer, 2.0f, 2.0f);

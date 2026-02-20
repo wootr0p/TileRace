@@ -1,7 +1,7 @@
 #pragma once
 #include <SDL3/SDL.h>
-
-class InputManager;
+#include "InputManager.h"
+#include "../entities/Player.h"
 
 class Game {
 public:
@@ -36,6 +36,7 @@ private:
     uint64_t fps_update_timer;
 
     InputManager* input;
+    Player* player;
 
     // Configuration
     static const int WINDOW_WIDTH = 1280;

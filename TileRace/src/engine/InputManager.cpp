@@ -3,12 +3,11 @@
 const float InputManager::ANALOG_THRESHOLD = 0.25f;
 
 InputManager::InputManager()
-    : gamepad(nullptr)
-    , jump_down(false)
-    , prev_jump_down(false)
-    , jump_just_pressed(false)
-    , dash_down(false)
+    : gamepad(nullptr),
+	jump{ false, false, false },
+	dash{ false, false, false }
 {
+
 }
 
 InputManager::~InputManager() {
@@ -22,12 +21,16 @@ void InputManager::Update() {
     const bool* keys = SDL_GetKeyboardState(NULL);
 
     // Update jump
-    prev_jump_down = jump_down;
-    jump_down = keys[SDL_SCANCODE_SPACE] || (gamepad && SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_SOUTH));
-    jump_just_pressed = (prev_jump_down == false && jump_down == true);
+    old_jump_down = jump.down;
+    jump.down = keys[SDL_SCANCODE_SPACE] || (gamepad && SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_SOUTH));
+    jump.just_pressed = (old_jump_down == false && jump.down == true);
+	jump.just_released = (old_jump_down == true && jump.down == false);
 
     // Update dash
-    dash_down = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] || (gamepad && SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_WEST));
+	old_dash_down = dash.down;
+    dash.down = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] || (gamepad && SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_WEST));
+	dash.just_pressed = (old_dash_down == false && dash.down == true);
+	dash.just_released = (old_dash_down == true && dash.down == false);
 }
 
 void InputManager::GetRawInput(float* out_x, float* out_y) const {
