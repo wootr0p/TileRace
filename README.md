@@ -1,20 +1,22 @@
 # TileRace
 
-**Prototype of a Vertical(?) Racing Multiplayer 2D Platform.** *With potential cross-platform support.*
+**Prototype of a Vertical(?) Racing Multiplayer 2D Platform** *with potential cross-platform support.*
+
+---
 
 ## Prerequisites
 
-Before cloning the project, ensure you have **Visual Studio 2026** (or later) installed with the following workload:
+Before cloning the project, ensure you have **Visual Studio 2026** installed with the following workload:
 
 * **Desktop development with C++**
 
-## Build Instructions
+---
 
-Follow these steps to set up your local development environment:
+## Build Instructions
 
 ### 1. Clone the Repository
 
-Open your terminal or Git Bash in your preferred workspace directory and run:
+Open your terminal in your preferred workspace directory and run:
 
 ```bash
 git clone https://github.com/wootr0p/TileRace.git
@@ -25,15 +27,26 @@ git clone https://github.com/wootr0p/TileRace.git
 
 Locate the `TileRace.slnx` file in the root directory and open it with Visual Studio.
 
-### 3. Build and Run
+### 3. Mandatory First-Time Setup ⚠️
 
-1. **Select Configuration:** Set the build configuration to `Debug` or `Release` (top toolbar).
-2. **Set Startup Project:** Since local user settings are not tracked by Git, if the project is not already highlighted in bold, right-click on the **TileRace** project in the *Solution Explorer* and select **Set as Startup Project**.
-3. **Launch:** Press `F5` or the **Start** button to compile and run the application.
+Due to the project's security and cleanup policies (`.gitignore`), local IDE settings are not tracked. **You must perform these two steps manually** the first time you open the solution:
 
----
+#### A. Set the Startup Project
 
-## Technical Notes
+1. In the **Solution Explorer**, find the **TileRace** project.
+2. Right-click on it and select **Set as Startup Project**. (The project name should now appear in **bold**).
 
-* **Working Directory:** The project is configured to look for assets relative to the solution directory. If you encounter issues loading textures or sounds, verify the *Working Directory* in `Project Properties > Debugging`.
+#### B. Configure the Working Directory
 
+To ensure the game can find textures, sounds, and assets:
+
+1. Right-click on the **TileRace** project > **Properties**.
+2. Go to **Configuration Properties** > **Debugging**.
+3. Locate the **Working Directory** field.
+4. Set it to: `$(SolutionDir)` (or the specific folder where your assets are located).
+5. Click **Apply** and **OK**.
+
+### 4. Build and Launch
+
+1. Set the build configuration to **Debug** or **Release** in the top toolbar.
+2. Press **F5** or click the **Start** button to compile and run.
