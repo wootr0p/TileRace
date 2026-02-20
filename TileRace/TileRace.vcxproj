@@ -24,7 +24,7 @@
     <ProjectGuid>{829a8cb5-ed8f-4181-b76d-630e12e28bcf}</ProjectGuid>
     <RootNamespace>TileRace</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>TileRace</ProjectName>
+    <ProjectName>_TileRace</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
