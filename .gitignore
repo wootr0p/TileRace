@@ -71,12 +71,6 @@ Xcode/build.xcconfig
 
 # for Visual C++
 .vs/*
-!.vs/*/v*/
-!.vs/*/*.slnx/
-.vs/*/*.slnx/v*/**
-.vs/*/*.slnx/FileContentIndex
-.vs/*/*.slnx/copilot-chat
-.vs/*/CopilotIndices
 Debug
 Release
 *.user
