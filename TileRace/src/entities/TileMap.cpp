@@ -36,10 +36,24 @@ TileMap::TileMap(string level_name) {
 		int i = 0;
 		for (char c : line) {
 			if (i >= level_width) break;
+			
 			TileType type = TileType::Empty;
-			if (c == '0') type = TileType::Solid;
-			else if (c == 'E') type = TileType::End;
-			else if (c == 'X') type = TileType::Spawn;
+			switch (c)
+			{
+				case '0':
+					type = TileType::Platform;
+					break;
+				case 'E':
+					type = TileType::End;
+					break;
+				case 'X':
+					type = TileType::Spawn;
+					player_spawn = { (float)i * TILE_SIZE, (float)j * TILE_SIZE };
+					break;
+				default:
+					TileType type = TileType::Empty;
+					break;
+			}
 			tiles[i][j] = Tile(i * TILE_SIZE, j * TILE_SIZE, type);
 			i++;
 		}
@@ -67,4 +81,12 @@ void TileMap::Render(SDL_Renderer* renderer) {
 			tiles[i][j].Render(renderer);
 		}
 	}
+}
+
+Tile* TileMap::GetTile(int x, int y)
+{
+	if (x < 0 || x >= level_width || y < 0 || y >= level_height) {
+		return nullptr; // Out of bounds
+	}
+	return &tiles[x][y];
 }

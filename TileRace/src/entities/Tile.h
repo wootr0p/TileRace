@@ -4,10 +4,10 @@
 const int TILE_SIZE = 32;
 
 enum class TileType {
-	Empty,	// spazio vuoto
-	Solid,	// '0' - tile solida
-	End,	// 'E' - fine del livello
-	Spawn	// 'X' - spawn giocatore
+	Empty,		// spazio vuoto
+	Platform,	// '0' - piattaforma solida
+	End,		// 'E' - fine del livello
+	Spawn		// 'X' - spawn giocatore
 };
 
 class Tile {
@@ -19,10 +19,12 @@ public:
 
 	void Render(SDL_Renderer* renderer);
 	TileType GetType() const { return type; }
+	bool IsSolid() const { return solid; }
 
 private:
-	int x;
-	int y;
+	int x = 0;
+	int y = 0;
+	bool solid = false;
 	TileType type;
 	SDL_FRect rect;
 	SDL_Color color;

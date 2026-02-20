@@ -3,7 +3,7 @@
 #include "../entities/TileMap.h"
 #include <iostream>
 
-TileMap* tilemap;
+TileMap* level;
 
 Game::Game()
     : window(nullptr)
@@ -24,7 +24,7 @@ Game::Game()
 
 Game::~Game() {
     delete input;
-	delete tilemap;
+	delete level;
     delete player;
 }
 
@@ -40,8 +40,8 @@ SDL_AppResult Game::Init(int argc, char* argv[]) {
     last_ticks = SDL_GetTicksNS();
 
     input = new InputManager();
-    tilemap = new TileMap("level_01");
-    player = new Player();
+    level = new TileMap("level_01");
+    player = new Player(input, level->GetPlayerSpawn(), level);
 
     return SDL_APP_CONTINUE;
 }
@@ -74,7 +74,7 @@ SDL_AppResult Game::Iterate() {
     last_ticks = current_ticks;
 
     // Update game
-    player->Update(dt, input);
+    player->Update(dt);
 
     // Render
     Render();
@@ -111,7 +111,7 @@ void Game::Render() {
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
     // Render player
-	tilemap->Render(renderer);
+    level->Render(renderer);
     player->Render(renderer);
 
     // Render UI

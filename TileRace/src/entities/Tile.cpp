@@ -22,17 +22,21 @@ Tile::Tile(int x, int y, TileType type) :
 	rect.w = rect.h = (float)TILE_SIZE;
 
 	switch (type) {
-		case TileType::Solid:
+		case TileType::Platform:
 			color = SDL_Color{0, 255, 180, 255};
+			solid = true;
 			break;
 		case TileType::End:
 			color = SDL_Color{255, 0, 180, 180};
+			solid = false;
 			break;
 		case TileType::Spawn:
 			color = SDL_Color{255, 180, 0, 180};
+			solid = false;
 			break;
 		case TileType::Empty:
 			color = SDL_Color{0, 0, 0, 0};
+			solid = false;
 			break;
 	}
 }

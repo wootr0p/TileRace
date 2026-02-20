@@ -33,7 +33,7 @@ void InputManager::Update() {
 	dash.just_released = (old_dash_down == true && dash.down == false);
 }
 
-void InputManager::GetRawInput(float* out_x, float* out_y) const {
+vector2 InputManager::GetRawInput() {
     float rx = 0.0f, ry = 0.0f;
     const bool* keys = SDL_GetKeyboardState(NULL);
 
@@ -58,13 +58,17 @@ void InputManager::GetRawInput(float* out_x, float* out_y) const {
         if (SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)) ry += 1.0f;
     }
 
+    vector2 out;
+
     // Normalize
     float mag = SDL_sqrtf(rx * rx + ry * ry);
     if (mag > 0.1f) {
-        *out_x = rx / mag;
-        *out_y = ry / mag;
+        out.x = rx / mag;
+        out.y = ry / mag;
     } else {
-        *out_x = 0.0f;
-        *out_y = 0.0f;
+        out.x = 0.0f;
+        out.y = 0.0f;
     }
+
+    return out;
 }

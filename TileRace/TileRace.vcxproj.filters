@@ -16,5 +16,6 @@
     <ClInclude Include="src\entities\TileMap.h" />
     <ClInclude Include="src\utility\FileIO.h" />
     <ClInclude Include="src\entities\Player.h" />
+    <ClInclude Include="src\engine\Definitions.h" />
   </ItemGroup>
 </Project>

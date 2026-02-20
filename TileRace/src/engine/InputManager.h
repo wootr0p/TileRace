@@ -1,5 +1,6 @@
 #pragma once
 #include <SDL3/SDL.h>
+#include "Definitions.h"
 
 struct button_state {
     bool down;
@@ -16,7 +17,7 @@ public:
     void Update();
 
     // Input queries
-    void GetRawInput(float* out_x, float* out_y) const;
+    vector2 GetRawInput();
     button_state GetJumpButtonState();
     button_state GetDashButtonState();
 
