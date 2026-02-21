@@ -12,7 +12,8 @@ public:
 	void Render(SDL_Renderer* renderer);
 
 	vector2 GetPlayerSpawn() { return player_spawn; }
-	Tile* GetTile(int x, int y);
+	Tile* GetTile(int grid_x, int grid_y);
+	Tile* GetTileAt(float x, float y);
 private:
 	Tile** tiles = nullptr;
 	int level_width = 0;

@@ -1,26 +1,22 @@
 #include "Tile.h"
 
 Tile::Tile() :
-	x(0),
-	y(0),
+	position{ 0.0f, 0.0f },
 	type(TileType::Empty),
-	color{ 0, 0, 0, 0 }
+	color{ 0, 0, 0, 0 },
+	rect{ 0.0f, 0.0f, (float)TILE_SIZE, (float)TILE_SIZE },
+	solid(false)
 {
-	rect.x = 0.0f;
-	rect.y = 0.0f;
-	rect.w = rect.h = (float)TILE_SIZE;
+
 }
 
-Tile::Tile(int x, int y, TileType type) :
-	x(x),
-	y(y),
+Tile::Tile(float x, float y, TileType type) :
+	position{x,y},
 	type(type),
-	color{0, 0, 0, 0}
+	color{0, 0, 0, 0},
+	rect{ x, y, (float)TILE_SIZE, (float)TILE_SIZE },
+	solid(false)
 {
-	rect.x = (float)x;
-	rect.y = (float)y;
-	rect.w = rect.h = (float)TILE_SIZE;
-
 	switch (type) {
 		case TileType::Platform:
 			color = SDL_Color{0, 255, 180, 255};
@@ -47,7 +43,7 @@ Tile::~Tile() {
 
 void Tile::Render(SDL_Renderer* renderer) {
 	#ifndef _DEBUG
-	if (type != TileType::Solid) return;
+	if (!solid) return;
 	#endif
 	SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
 	SDL_RenderFillRect(renderer, &rect);

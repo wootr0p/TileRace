@@ -83,10 +83,18 @@ void TileMap::Render(SDL_Renderer* renderer) {
 	}
 }
 
-Tile* TileMap::GetTile(int x, int y)
+Tile* TileMap::GetTile(int grid_x, int grid_y)
 {
-	if (x < 0 || x >= level_width || y < 0 || y >= level_height) {
+	if (grid_x < 0 || grid_x >= level_width || grid_y < 0 || grid_y >= level_height) {
 		return nullptr; // Out of bounds
 	}
-	return &tiles[x][y];
+	return &tiles[grid_x][grid_y];
+}
+
+Tile* TileMap::GetTileAt(float x, float y)
+{
+	// Converto le coordinate pixel in coordinate di griglia
+	int grid_x = (int)(x / TILE_SIZE);
+	int grid_y = (int)(y / TILE_SIZE);
+	return GetTile(grid_x, grid_y);
 }

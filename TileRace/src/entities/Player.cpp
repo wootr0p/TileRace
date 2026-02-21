@@ -15,64 +15,90 @@ Player::~Player()
 
 }
 
-void Player::Update(float dt)
-{
+void Player::Update(float dt) {
 	vector2 direction = input->GetRawInput();
-	state.velocity.x = direction.x * 200.0f;
-	state.velocity.y = direction.y * 200.0f;
-	HandleCollisions();
-	UpdatePosition(dt);
+
+	// --- ASSE X ---
+	state.velocity.x = direction.x * PLAYER_SPEED;
+	state.position.x += state.velocity.x * dt;
+	ResolveCollisionsX();
+
+	// --- ASSE Y ---
+	state.velocity.y = direction.y * PLAYER_SPEED;
+	state.position.y += state.velocity.y * dt;
+	ResolveCollisionsY();
 }
 
 void Player::Render(SDL_Renderer* renderer)
 {
-	rect.x = (float)state.position.x;
-	rect.y = (float)state.position.y;
+	rect.x = state.position.x;
+	rect.y = state.position.y;
 	SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
 	SDL_RenderFillRect(renderer, &rect);
 }
 
-void Player::HandleCollisions()
-{
-	state.isColliding = false;
-	bool collision[3][3] = {
-		{ false, false, false },
-		{ false, false, false },
-		{ false, false, false }
-	};
+void Player::ResolveCollisionsX() {
+    // Calcoliamo i limiti del player (AABB)
+    float left = state.position.x;
+    float right = state.position.x + PLAYER_WIDTH;
+    float top = state.position.y;
+    float bottom = state.position.y + PLAYER_HEIGHT;
 
-	// Controllo le tile adiacenti al player se sono solide
-	int j = 0;
-	for (int y = (int)state.position.y - PLAYER_HEIGHT;
-		y <= state.position.y + PLAYER_HEIGHT;
-		y += PLAYER_HEIGHT)
-	{
-		int i = 0;
-		for (int x = (int)state.position.x - PLAYER_WIDTH;
-			x <= state.position.x + PLAYER_WIDTH;
-			x += PLAYER_WIDTH)
-		{
-			bool isSolid = level->GetTile(x / TILE_SIZE, y / TILE_SIZE)->IsSolid();
-			if (isSolid) state.isColliding = true;
-			collision[i][j] = isSolid;
-			i++;
-		}
-		j++;
-	}
+    // Troviamo il range di tile da controllare (ottimizzazione)
+    int startTileX = (int)(left / TILE_SIZE);
+    int endTileX = (int)(right / TILE_SIZE);
+    int startTileY = (int)(top / TILE_SIZE);
+    int endTileY = (int)(bottom / TILE_SIZE);
 
-	// Se c'è una collisione, imposto la velocità a 0 sull'asse corrispondente
-	if (collision[0][0] || collision[0][1] || collision[0][2] ||
-		collision[2][0] || collision[2][1] || collision[2][2]) {
-		state.velocity.x = 0.0f;
-	}
-	if (collision[0][0] || collision[1][0] || collision[2][0] ||
-		collision[0][2] || collision[1][2] || collision[2][2]) {
-		state.velocity.y = 0.0f;
-	}
+    for (int ty = startTileY; ty <= endTileY; ++ty) {
+        for (int tx = startTileX; tx <= endTileX; ++tx) {
+            if (level->GetTileAt(tx, ty)->IsSolid()) {
+                // COLLISIONE RILEVATA -> RISOLUZIONE
+                if (state.velocity.x > 0) { // Mi muovevo a destra
+                    state.position.x = (float)(tx * TILE_SIZE) - PLAYER_WIDTH;
+                    state.velocity.x = 0;
+                }
+                else if (state.velocity.x < 0) { // Mi muovevo a sinistra
+                    state.position.x = (float)((tx + 1) * TILE_SIZE);
+                    state.velocity.x = 0;
+                }
+                // Una volta risolto l'asse X per questa posizione, 
+                // possiamo uscire dal loop X per evitare tremolii.
+                return;
+            }
+        }
+    }
 }
 
-void Player::UpdatePosition(float dt)
+void Player::ResolveCollisionsY()
 {
-	state.position.x += state.velocity.x * dt;
-	state.position.y += state.velocity.y * dt;
+    // Calcoliamo i limiti del player (AABB)
+    float left = state.position.x;
+    float right = state.position.x + PLAYER_WIDTH;
+    float top = state.position.y;
+    float bottom = state.position.y + PLAYER_HEIGHT;
+
+    // Troviamo il range di tile da controllare (ottimizzazione)
+    int startTileX = (int)(left / TILE_SIZE);
+    int endTileX = (int)(right / TILE_SIZE);
+    int startTileY = (int)(top / TILE_SIZE);
+    int endTileY = (int)(bottom / TILE_SIZE);
+
+    for (int ty = startTileY; ty <= endTileY; ++ty) {
+        for (int tx = startTileX; tx <= endTileX; ++tx) {
+            if (level->GetTileAt(tx, ty)->IsSolid()) {
+                // COLLISIONE RILEVATA -> RISOLUZIONE
+                if (state.velocity.y > 0) { // Mi muovevo verso il basso
+                    state.position.y = (float)(ty * TILE_SIZE) - PLAYER_HEIGHT;
+                    state.velocity.y = 0;
+                }
+                else if (state.velocity.y < 0) { // Mi muovevo verso l'alto
+                    state.position.y = (float)((ty + 1) * TILE_SIZE);
+                    state.velocity.y = 0;
+                }
+                // Una volta risolto l'asse Y per questa posizione, uscire dal loop
+                return;
+            }
+        }
+    }
 }

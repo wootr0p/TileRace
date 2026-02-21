@@ -8,6 +8,7 @@
 
 static const int PLAYER_WIDTH = 32;
 static const int PLAYER_HEIGHT = 32;
+static const float PLAYER_SPEED = 200.0f;
 
 struct PlayerState {
 	vector2 position;
@@ -32,6 +33,6 @@ private:
 	TileMap* level;
 	InputManager* input;
 
-	void HandleCollisions();
-	void UpdatePosition(float dt);
+	void ResolveCollisionsX();
+	void ResolveCollisionsY();
 };

@@ -1,5 +1,6 @@
 #pragma once
 #include <SDL3/SDL.h>
+#include "../engine/Definitions.h"
 
 const int TILE_SIZE = 32;
 
@@ -14,7 +15,7 @@ class Tile {
 
 public:
 	Tile();
-	Tile(int x, int y, TileType type);
+	Tile(float x, float y, TileType type);
 	~Tile();
 
 	void Render(SDL_Renderer* renderer);
@@ -22,8 +23,7 @@ public:
 	bool IsSolid() const { return solid; }
 
 private:
-	int x = 0;
-	int y = 0;
+	vector2 position;
 	bool solid = false;
 	TileType type;
 	SDL_FRect rect;
