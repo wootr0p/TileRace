@@ -33,6 +33,5 @@ private:
 	TileMap* level;
 	InputManager* input;
 
-	void ResolveCollisionsX();
-	void ResolveCollisionsY();
+	void ResolveCollisions();
 };
