@@ -1,6 +1,5 @@
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 cmake_minimum_required(VERSION 3.16)
-project(TileRace LANGUAGES C CXX)
 project(TileRace LANGUAGES C CXX)
 
 # --- CONFIGURAZIONE GLOBALE ---
@@ -37,6 +36,19 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets"
 add_subdirectory(src/common)
 add_subdirectory(src/client)
 add_subdirectory(src/server)
+
+# --- INSTALLAZIONE RUNTIME (solo ciò che serve per distribuire il gioco) ---
+set(TILERACE_RUNTIME_COMPONENT TileRaceRuntime)
+
+install(TARGETS TileRace_Client TileRace_Server
+  RUNTIME DESTINATION .
+  COMPONENT ${TILERACE_RUNTIME_COMPONENT}
+)
+
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+  DESTINATION .
+  COMPONENT ${TILERACE_RUNTIME_COMPONENT}
+)
 
 # --- LOGICA DI RUN (Identica alla tua precedente) ---
 if(WIN32)

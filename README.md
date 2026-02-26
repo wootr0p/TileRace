@@ -39,7 +39,7 @@ To create a clean `dist` folder containing only the files needed to distribute t
 ```bash
 cmake --preset release
 cmake --build --preset release
-cmake --install build/release
+cmake --install build/release --component TileRaceRuntime
 ```
 
 The output will be located in the `dist/` directory at the root of the project.
