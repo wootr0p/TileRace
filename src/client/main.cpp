@@ -1,53 +1,64 @@
-#include <raylib.h>
 #include <enet/enet.h>
-#include "../common/Protocol.h"
+#include <raylib.h>
 #include <iostream>
+#include <memory>
+#include "GameClient.h"
+#include "MainMenu.h"
+#include "LocalServer.h"
 
-int main(int argc, char** argv) {
-    // Inizializzazioni
-    if (enet_initialize() != 0) return 1;
-
-    InitWindow(640, 480, "TileRace Client");
-    SetTargetFPS(60);
-
-    // Connessione ENet
-    ENetHost* client = enet_host_create(NULL, 1, 2, 0, 0);
-    ENetAddress address;
-    enet_address_set_host(&address, "localhost");
-    address.port = 1234;
-    ENetPeer* peer = enet_host_connect(client, &address, 2, 0);
-
-    while (!WindowShouldClose()) {
-        // 1. Input raylib
-        if (IsKeyPressed(KEY_SPACE)) {
-            // Invia PING quando premi SPAZIO
-            NetworkMessage msg = { PACKET_PING, 100 };
-            ENetPacket* p = enet_packet_create(&msg, sizeof(NetworkMessage), ENET_PACKET_FLAG_RELIABLE);
-            enet_peer_send(peer, 0, p);
-        }
-
-        // 2. ENet Event Loop
-        ENetEvent netEv;
-        while (enet_host_service(client, &netEv, 0) > 0) {
-            if (netEv.type == ENET_EVENT_TYPE_RECEIVE) {
-                NetworkMessage* msg = (NetworkMessage*)netEv.packet->data;
-                if (msg->type == PACKET_PONG) {
-                    std::cout << "Ricevuto PONG dal server: " << msg->value << std::endl;
-                }
-                enet_packet_destroy(netEv.packet);
-            }
-        }
-
-        // 3. Rendering
-        BeginDrawing();
-        ClearBackground(DARKGRAY);
-        DrawText("Premi SPAZIO per inviare PING", 20, 20, 20, RAYWHITE);
-        DrawText("Chiudi la finestra per uscire", 20, 50, 20, LIGHTGRAY);
-        EndDrawing();
+int main(int /*argc*/, char** /*argv*/) {
+    if (enet_initialize() != 0) {
+        std::cerr << "[Client] ERRORE: impossibile inizializzare ENet.\n";
+        return 1;
     }
 
-    enet_host_destroy(client);
-    enet_deinitialize();
+    // Apriamo la finestra qui, una volta sola.
+    // Sia il MainMenu che il Renderer la riusano (Renderer::Init controlla IsWindowReady).
+    InitWindow(960, 540, "TileRace");
+    SetTargetFPS(144);
+
+    // ---- Menu ----
+    MainMenu menu;
+    MenuResult choice = menu.Show();
+
+    if (choice.choice == MenuChoice::Quit) {
+        CloseWindow();
+        enet_deinitialize();
+        return 0;
+    }
+
+    // ---- Modalità Offline: avvia server locale ----
+    std::unique_ptr<LocalServer> local_server;
+    if (choice.choice == MenuChoice::Offline) {
+        local_server = std::make_unique<LocalServer>();
+        if (!local_server->Start(1234, "assets/levels/level_01.txt")) {
+            std::cerr << "[Client] ERRORE: impossibile avviare il server locale.\n";
+            CloseWindow();
+            enet_deinitialize();
+            return 1;
+        }
+        choice.server_ip = "localhost";
+        choice.port      = 1234;
+    }
+
+    // ---- Avvia il client ----
+    GameClient client;
+    if (!client.Init(choice.server_ip, choice.port, "assets/levels/level_01.txt",
+                     local_server ? local_server->GetSessionToken() : 0u)) {
+        CloseWindow();
+        enet_deinitialize();
+        return 1;
+    }
+
+    client.Run();
+
+    // ---- Cleanup ----
+    // Stop del server locale (se offline): segnala e aspetta il thread
+    if (local_server) {
+        local_server->Stop();
+    }
+
     CloseWindow();
+    enet_deinitialize();
     return 0;
 }

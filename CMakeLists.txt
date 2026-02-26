@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(TileRace LANGUAGES C CXX)
 
 # --- CONFIGURAZIONE GLOBALE ---
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
@@ -34,8 +34,8 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets"
 
 # --- MODULI DEL PROGETTO ---
 add_subdirectory(src/common)
+add_subdirectory(src/server)   # deve venire prima del client: definisce server_logic
 add_subdirectory(src/client)
-add_subdirectory(src/server)
 
 # --- INSTALLAZIONE RUNTIME (solo ciò che serve per distribuire il gioco) ---
 set(TILERACE_RUNTIME_COMPONENT TileRaceRuntime)
