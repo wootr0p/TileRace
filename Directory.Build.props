@@ -1,8 +1,0 @@
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <!-- Add project-wide include directories so Visual Studio and MSBuild find SDL and ENet headers -->
-  <ItemDefinitionGroup>
-    <ClCompile>
-      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)external\sdl\include;$(MSBuildThisFileDirectory)external\enet\enet-1.3.18\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-    </ClCompile>
-  </ItemDefinitionGroup>
-</Project>

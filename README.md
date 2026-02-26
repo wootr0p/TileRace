@@ -1,52 +1,45 @@
 # TileRace
 
-**Prototype of a Vertical(?) Racing Multiplayer 2D Platform** *with potential cross-platform support.*
-
----
-
-## Prerequisites
-
-Before cloning the project, ensure you have **Visual Studio 2026** installed with the following workload:
-
-* **Desktop development with C++**
+**Prototype of a Vertical(?) Racing Multiplayer 2D Platform** _with potential cross-platform support._
 
 ---
 
 ## Build Instructions
 
-### 1. Clone the Repository
+This project uses CMake and CMake Presets for a cross-platform and IDE-independent build process.
 
-Open your terminal in your preferred workspace directory and run:
+### Prerequisites
+
+- CMake (3.21 or higher)
+- A C++17 compatible compiler (MSVC, GCC, or Clang)
+- Ninja build system (recommended)
+
+### Build and Run
+
+You can automatically build and launch both the Server and the Client with a single command using the provided presets.
+
+**Debug Mode:**
 
 ```bash
-git clone https://github.com/wootr0p/TileRace.git
-
+cmake --preset debug
+cmake --build --preset run-debug
 ```
 
-### 2. Open the Project
+**Release Mode:**
 
-Locate the `TileRace.slnx` file in the root directory and open it with Visual Studio.
+```bash
+cmake --preset release
+cmake --build --preset run-release
+```
 
-### 3. Mandatory First-Time Setup ⚠️
+### Create a Distributable Build
 
-Due to the project's security and cleanup policies (`.gitignore`), local IDE settings are not tracked. **You must perform these two steps manually** the first time you open the solution:
+To create a clean `dist` folder containing only the files needed to distribute the game (executables, shared libraries, and assets), run the following commands:
 
-#### A. Set the Startup Project
+```bash
+cmake --preset release
+cmake --build --preset release
+cmake --install build/release
+```
 
-1. In the **Solution Explorer**, find the **TileRace** project.
-2. Right-click on it and select **Set as Startup Project**. (The project name should now appear in **bold**).
-
-#### B. Configure the Working Directory
-
-To ensure the game can find textures, sounds, and assets:
-
-1. Right-click on the **TileRace** project > **Properties**.
-2. Go to **Configuration Properties** > **Debugging**.
-3. Locate the **Working Directory** field.
-4. Set it to: `$(SolutionDir)` (or the specific folder where your assets are located).
-5. Click **Apply** and **OK**.
-
-### 4. Build and Launch
-
-1. Set the build configuration to **Debug** or **Release** in the top toolbar.
-2. Press **F5** or click the **Start** button to compile and run.
+The output will be located in the `dist/` directory at the root of the project.
