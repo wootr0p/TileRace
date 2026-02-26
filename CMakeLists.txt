@@ -5,18 +5,10 @@ project(TileRace)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# --- CONFIGURAZIONE DIRECTORY DI OUTPUT (Sostituite qui) ---
+# --- CONFIGURAZIONE DIRECTORY DI OUTPUT ---
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-
-# Forza l'output "piatto" (senza sottocartelle Debug/Release) per generatori multi-config
-foreach(config ${CMAKE_CONFIGURATION_TYPES})
-    string(TOUPPER ${config} config_upper)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_BINARY_DIR}/bin")
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_BINARY_DIR}/bin")
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_BINARY_DIR}/bin")
-endforeach()
 
 # --- FIX PER WINDOWS ---
 if(WIN32)
@@ -33,9 +25,12 @@ add_subdirectory(src/common)
 add_subdirectory(src/client)
 add_subdirectory(src/server)
 
-# Copia degli assets
+# Copia degli assets per la build
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets" 
      DESTINATION "${CMAKE_BINARY_DIR}/bin")
+
+# Installa gli assets per la distribuzione
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets" DESTINATION .)
 
 # --- CUSTOM TARGET PER LANCIARE IL GIOCO ---
 if(WIN32)

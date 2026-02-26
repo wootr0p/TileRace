@@ -10,7 +10,6 @@ target_link_libraries(TileRace_Client PRIVATE
 )
 
 install(TARGETS TileRace_Client DESTINATION .)
-install(DIRECTORY "${CMAKE_SOURCE_DIR}/assets" DESTINATION .)
 
 # Installa solo la libreria dinamica (DLL/SO/DYLIB) e ignora i file di importazione (.lib/.dll.a)
 install(TARGETS SDL3-shared 

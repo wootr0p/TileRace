@@ -9,4 +9,3 @@ target_link_libraries(TileRace_Server PRIVATE
 )
 
 install(TARGETS TileRace_Server DESTINATION .)
-install(DIRECTORY "${CMAKE_SOURCE_DIR}/assets" DESTINATION .)
