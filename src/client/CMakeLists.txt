@@ -5,15 +5,8 @@ target_include_directories(TileRace_Client PRIVATE "${CMAKE_SOURCE_DIR}/vendored
 
 target_link_libraries(TileRace_Client PRIVATE 
     common_logic 
-    SDL3::SDL3 
+    raylib
     enet
 )
 
 install(TARGETS TileRace_Client DESTINATION .)
-
-# Installa solo la libreria dinamica (DLL/SO/DYLIB) e ignora i file di importazione (.lib/.dll.a)
-install(TARGETS SDL3-shared 
-    RUNTIME DESTINATION . # Per le .dll su Windows
-    LIBRARY DESTINATION . # Per i .so su Linux e .dylib su Mac
-    # Omettendo ARCHIVE, i file .lib/.dll.a non verranno installati affatto
-)

@@ -1,15 +1,14 @@
-#include <SDL3/SDL.h>
+#include <raylib.h>
 #include <enet/enet.h>
 #include "../common/Protocol.h"
 #include <iostream>
 
 int main(int argc, char** argv) {
     // Inizializzazioni
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) return 1;
     if (enet_initialize() != 0) return 1;
 
-    SDL_Window* window = SDL_CreateWindow("TileRace Client", 640, 480, 0);
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
+    InitWindow(640, 480, "TileRace Client");
+    SetTargetFPS(60);
 
     // Connessione ENet
     ENetHost* client = enet_host_create(NULL, 1, 2, 0, 0);
@@ -18,18 +17,13 @@ int main(int argc, char** argv) {
     address.port = 1234;
     ENetPeer* peer = enet_host_connect(client, &address, 2, 0);
 
-    bool running = true;
-    while (running) {
-        // 1. SDL Event Loop
-        SDL_Event ev;
-        while (SDL_PollEvent(&ev)) {
-            if (ev.type == SDL_EVENT_QUIT) running = false;
-            if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_SPACE) {
-                // Invia PING quando premi SPAZIO
-                NetworkMessage msg = { PACKET_PING, 100 };
-                ENetPacket* p = enet_packet_create(&msg, sizeof(NetworkMessage), ENET_PACKET_FLAG_RELIABLE);
-                enet_peer_send(peer, 0, p);
-            }
+    while (!WindowShouldClose()) {
+        // 1. Input raylib
+        if (IsKeyPressed(KEY_SPACE)) {
+            // Invia PING quando premi SPAZIO
+            NetworkMessage msg = { PACKET_PING, 100 };
+            ENetPacket* p = enet_packet_create(&msg, sizeof(NetworkMessage), ENET_PACKET_FLAG_RELIABLE);
+            enet_peer_send(peer, 0, p);
         }
 
         // 2. ENet Event Loop
@@ -45,12 +39,15 @@ int main(int argc, char** argv) {
         }
 
         // 3. Rendering
-        SDL_SetRenderDrawColor(renderer, 20, 20, 20, 255);
-        SDL_RenderClear(renderer);
-        SDL_RenderPresent(renderer);
+        BeginDrawing();
+        ClearBackground(DARKGRAY);
+        DrawText("Premi SPAZIO per inviare PING", 20, 20, 20, RAYWHITE);
+        DrawText("Chiudi la finestra per uscire", 20, 50, 20, LIGHTGRAY);
+        EndDrawing();
     }
 
     enet_host_destroy(client);
-    SDL_Quit();
+    enet_deinitialize();
+    CloseWindow();
     return 0;
 }

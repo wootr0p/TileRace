@@ -17,7 +17,7 @@ if(WIN32)
 endif()
 
 # --- LIBRERIE VENDORED ---
-add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
+add_subdirectory(vendored/raylib EXCLUDE_FROM_ALL)
 add_subdirectory(vendored/enet EXCLUDE_FROM_ALL)
 
 # --- I NOSTRI MODULI ---
