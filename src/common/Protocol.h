@@ -8,7 +8,7 @@
 // Costanti di protocollo condivise tra client e server.
 // ---------------------------------------------------------------------------
 
-static constexpr uint16_t SERVER_PORT      = 7777;
+static constexpr uint16_t SERVER_PORT      = 47777;
 static constexpr size_t   MAX_CLIENTS      = static_cast<size_t>(MAX_PLAYERS);
 static constexpr uint8_t  CHANNEL_RELIABLE = 0;
 static constexpr uint8_t  CHANNEL_COUNT    = 1;
@@ -20,6 +20,8 @@ enum PktType : uint8_t {
     PKT_GAME_STATE   = 3,   // Server → Client: GameState broadcast (tutti i player)
     PKT_WELCOME      = 4,   // Server → Client: player_id assegnato al momento della connessione
     PKT_PLAYER_INFO  = 5,   // Client → Server: nome del player (inviato dopo PKT_WELCOME)
+    PKT_RESTART      = 6,   // Client → Server: riparti dal via (reset pos + timer)
+    PKT_LOAD_LEVEL   = 7,   // Server → Client: carica il livello successivo (o fine partita)
 };
 
 // Client → Server: inviato ogni tick fisso.
@@ -44,4 +46,16 @@ struct PktWelcome {
 struct PktPlayerInfo {
     uint8_t type    = PKT_PLAYER_INFO;
     char    name[16] = {};
+};
+
+// Client → Server: richiesta di ripartire dal via (Backspace / Triangolo).
+struct PktRestart {
+    uint8_t type = PKT_RESTART;
+};
+
+// Server → Client: carica il livello successivo o termina la partita.
+struct PktLoadLevel {
+    uint8_t type    = PKT_LOAD_LEVEL;
+    uint8_t is_last = 0;      // 1 = nessun livello successivo, tornare al menu
+    char    path[64] = {};    // percorso relativo del nuovo livello (es. "assets/levels/level_02.txt")
 };

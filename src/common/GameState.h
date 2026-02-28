@@ -10,6 +10,7 @@ static constexpr int MAX_PLAYERS = 8;
 // Contiene gli stati di tutti i player connessi; ogni PlayerState
 // porta al suo interno last_processed_tick per la reconciliation lato client.
 struct GameState {
-    uint32_t    count                = 0;           // player attualmente in partita
-    PlayerState players[MAX_PLAYERS] = {};          // stati autoritativi
+    uint32_t    count                        = 0;   // player attualmente in partita
+    PlayerState players[MAX_PLAYERS]         = {};  // stati autoritativi
+    uint32_t    next_level_countdown_ticks   = 0;  // > 0: conto alla rovescia cambio livello
 };

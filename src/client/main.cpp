@@ -33,9 +33,10 @@
 static constexpr int   GP          = 0;
 static constexpr float GP_DEADZONE = 0.25f;
 
-static constexpr GamepadButton GP_JUMP   = GAMEPAD_BUTTON_RIGHT_FACE_DOWN;   // Croce
-static constexpr GamepadButton GP_DASH_A = GAMEPAD_BUTTON_RIGHT_FACE_LEFT;   // Quadrato
-static constexpr GamepadButton GP_DASH_B = GAMEPAD_BUTTON_RIGHT_FACE_RIGHT;  // Cerchio
+static constexpr GamepadButton GP_JUMP    = GAMEPAD_BUTTON_RIGHT_FACE_DOWN;   // Croce
+static constexpr GamepadButton GP_DASH_A  = GAMEPAD_BUTTON_RIGHT_FACE_LEFT;   // Quadrato
+static constexpr GamepadButton GP_DASH_B  = GAMEPAD_BUTTON_RIGHT_FACE_RIGHT;  // Cerchio
+static constexpr GamepadButton GP_RESTART = GAMEPAD_BUTTON_RIGHT_FACE_UP;     // Triangolo
 
 // Fattore di smorzamento della camera (valori alti = segue più stretto).
 static constexpr float CAM_SMOOTH  = 8.f;
@@ -118,7 +119,9 @@ static void DrawTilemap(const World& world) {
             Color col;
             if      (c == '0') col = { 80,  80, 120, 255};  // muro
             else if (c == 'E') col = {  0, 230, 100, 255};  // endpoint
-            else if (c == 'X') col = { 60,  80, 220, 255};  // spawn (debug)
+#ifndef NDEBUG
+            else if (c == 'X') col = { 60,  80, 220, 255};  // spawn (solo debug)
+#endif
             else continue;
             DrawRectangle(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE, col);
         }
@@ -153,10 +156,12 @@ static void DrawPlayer(Font& font, float rx, float ry,
 // Rendering helpers (screen-space, chiamati fuori da BeginMode2D)
 // ---------------------------------------------------------------------------
 
-static void DrawHUD(Font& font, const PlayerState& s, uint32_t player_count) {
+static void DrawHUD(Font& font, const PlayerState& s, uint32_t player_count, bool show_players = true) {
     (void)s;
-    DrawTextEx(font, TextFormat("fps: %d  players: %u", GetFPS(), player_count),
-               {10, 10}, 24, 1, WHITE);
+    const char* txt = show_players
+        ? TextFormat("fps: %d  players: %u", GetFPS(), player_count)
+        : TextFormat("fps: %d", GetFPS());
+    DrawTextEx(font, txt, {10, 10}, 24, 1, WHITE);
 }
 
 static void DrawDebugPanel(Font& font, const PlayerState& s) {
@@ -204,20 +209,15 @@ int main() {
     Font font_debug = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 20, nullptr, 0);
 
     // -----------------------------------------------------------------------
-    // Menu iniziale (passo 19)
+    // Loop principale: menu → partita → menu (riparte se la connessione fallisce)
     // -----------------------------------------------------------------------
-    const MenuResult menu = ShowMainMenu(font_hud);
-    if (menu.choice == MenuChoice::QUIT) {
-        UnloadFont(font_hud);
-        UnloadFont(font_debug);
-        CloseWindow();
-        enet_deinitialize();
-        return 0;
-    }
+    while (!WindowShouldClose()) {
 
-    // -----------------------------------------------------------------------
+    // Menu iniziale (passo 19)
+    const MenuResult menu = ShowMainMenu(font_hud);
+    if (menu.choice == MenuChoice::QUIT) break;
+
     // Modalità offline: avvia il server locale in un thread (passo 20)
-    // -----------------------------------------------------------------------
     LocalServer local_srv;
     if (menu.choice == MenuChoice::OFFLINE)
         local_srv.Start(SERVER_PORT, "assets/levels/level_01.txt");
@@ -270,8 +270,26 @@ int main() {
                 printf("[client] connesso al server\n");
             }
         }
-        if (!connected)
-            fprintf(stderr, "[client] AVVISO: server non raggiungibile\n");
+        if (!connected) {
+            fprintf(stderr, "[client] server non raggiungibile\n");
+            enet_peer_reset(net_peer);
+            enet_host_destroy(net_host);
+            local_srv.Stop();
+            // Mostra errore per 2 secondi poi torna al menu.
+            const double t0 = GetTime();
+            while (!WindowShouldClose() && GetTime() - t0 < 2.0) {
+                BeginDrawing();
+                ClearBackground({5, 5, 15, 255});
+                const char* msg = "Connection failed. Check IP and port.";
+                const Vector2 ms = MeasureTextEx(font_hud, msg, 24, 1);
+                DrawTextEx(font_hud, msg,
+                    {GetScreenWidth() * 0.5f - ms.x * 0.5f,
+                     GetScreenHeight() * 0.5f - 12.f},
+                    24, 1, {255, 80, 80, 255});
+                EndDrawing();
+            }
+            continue;
+        }
     }
 
     TrailState trail;
@@ -283,15 +301,21 @@ int main() {
     camera.rotation = 0.f;
     camera.zoom     = 1.f;
 
-    float    accumulator  = 0.f;
-    uint32_t sim_tick     = 0;
-    bool     jump_pressed = false;  // edge rising sticky fino al prossimo tick fisso
-    bool     dash_pending = false;
+    float    accumulator    = 0.f;
+    uint32_t sim_tick       = 0;
+    bool     jump_pressed   = false;  // edge rising sticky fino al prossimo tick fisso
+    bool     dash_pending   = false;
+    bool     restart_pending = false;
+    // Record e stato di completamento livello.
+    bool     prev_finished  = false;
+    uint32_t best_ticks     = 0;      // 0 = nessun record ancora
+    bool     show_record    = false;
     // Posizione al tick precedente, per interpolazione visiva.
-    float    prev_x       = ps.x;
-    float    prev_y       = ps.y;
+    float    prev_x         = ps.x;
+    float    prev_y         = ps.y;
 
-    while (!WindowShouldClose()) {
+    bool session_over = false;
+    while (!WindowShouldClose() && !session_over) {
         const float dt = GetFrameTime();
         accumulator += dt;
 
@@ -305,6 +329,19 @@ int main() {
             (gp && (IsGamepadButtonPressed(GP, GP_DASH_A) ||
                     IsGamepadButtonPressed(GP, GP_DASH_B))))
             dash_pending = true;
+
+        if (IsKeyPressed(KEY_BACKSPACE) ||
+            (gp && IsGamepadButtonPressed(GP, GP_RESTART)))
+            restart_pending = true;
+
+        // --- Restart: invia pacchetto e azzera stato record ---
+        if (restart_pending) {
+            PktRestart rpkt{};
+            enet_peer_send(net_peer, CHANNEL_RELIABLE,
+                enet_packet_create(&rpkt, sizeof(rpkt), ENET_PACKET_FLAG_RELIABLE));
+            restart_pending = false;
+            show_record     = false;
+        }
 
         // --- Tick fisso 60 Hz ---
         while (accumulator >= FIXED_DT) {
@@ -405,8 +442,44 @@ int main() {
                             }
                         }
                     }
+                    // Carica il livello successivo o termina la partita.
+                    else if (pkt_type == PKT_LOAD_LEVEL &&
+                             ev.packet->dataLength >= sizeof(PktLoadLevel)) {
+                        PktLoadLevel lpkt{};
+                        std::memcpy(&lpkt, ev.packet->data, sizeof(lpkt));
+                        if (lpkt.is_last) {
+                            session_over = true;
+                        } else {
+                            world.LoadFromFile(lpkt.path);
+                            PlayerState new_ps{};
+                            new_ps.player_id = local_player_id;
+                            std::strncpy(new_ps.name, menu.username, sizeof(new_ps.name) - 1);
+                            for (int ty2 = 0; ty2 < world.GetHeight(); ty2++)
+                                for (int tx2 = 0; tx2 < world.GetWidth(); tx2++)
+                                    if (world.GetTile(tx2, ty2) == 'X') {
+                                        new_ps.x = static_cast<float>(tx2 * TILE_SIZE);
+                                        new_ps.y = static_cast<float>(ty2 * TILE_SIZE);
+                                    }
+                            player.SetState(new_ps);
+                            prev_x = new_ps.x;  prev_y = new_ps.y;
+                            camera.target = {new_ps.x + TILE_SIZE * 0.5f,
+                                             new_ps.y + TILE_SIZE * 0.5f};
+                            sim_tick      = 0;
+                            accumulator   = 0.f;
+                            jump_pressed  = dash_pending = restart_pending = false;
+                            prev_finished = false;
+                            show_record   = false;
+                            best_ticks    = 0;
+                            trail.Clear();
+                            last_game_state = {};
+                            std::memset(input_history, 0, sizeof(input_history));
+                        }
+                    }
                     enet_packet_destroy(ev.packet);
+                } else if (ev.type == ENET_EVENT_TYPE_DISCONNECT) {
+                    session_over = true;
                 }
+                if (session_over) break;
             }
         }
 
@@ -414,6 +487,15 @@ int main() {
         // Renderizza lo stato predetto localmente: nessun lag visivo.
         // server_state è mantenuto aggiornato per la futura reconciliation (passo 16).
         const PlayerState& local = player.GetState();
+
+        // Rilevamento completamento livello e aggiornamento record.
+        if (local.finished && !prev_finished) {
+            if (best_ticks == 0 || local.level_ticks < best_ticks) {
+                best_ticks  = local.level_ticks;
+                show_record = true;
+            }
+        }
+        prev_finished = local.finished;
         const float alpha  = accumulator / FIXED_DT;
         const float draw_x = prev_x + (local.x - prev_x) * alpha;
         const float draw_y = prev_y + (local.y - prev_y) * alpha;
@@ -442,8 +524,62 @@ int main() {
             DrawPlayer(font_hud, draw_x, draw_y, local);
         EndMode2D();
 
-        DrawHUD(font_hud, local, last_game_state.count);
+        DrawHUD(font_hud, local, last_game_state.count, menu.choice != MenuChoice::OFFLINE);
         DrawDebugPanel(font_debug, local);
+
+        // --- Timer al centro in alto ---
+        {
+            const uint32_t total_cs = local.level_ticks * 100 / 60;
+            const uint32_t mins =  total_cs / 6000;
+            const uint32_t secs = (total_cs % 6000) / 100;
+            const uint32_t cs   =  total_cs % 100;
+            const char* t_str = TextFormat("%02u:%02u.%02u", mins, secs, cs);
+            const Color   t_col = local.finished ? Color{0, 230, 100, 255} : WHITE;
+            const Vector2 t_sz  = MeasureTextEx(font_hud, t_str, 24, 1);
+            DrawTextEx(font_hud, t_str,
+                {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 24, 1, t_col);
+        }
+
+        // --- Best time (top right) ---
+        if (best_ticks > 0) {
+            const uint32_t b_cs   = best_ticks * 100 / 60;
+            const uint32_t b_mins =  b_cs / 6000;
+            const uint32_t b_secs = (b_cs % 6000) / 100;
+            const uint32_t b_frac =  b_cs % 100;
+            const char* b_str = TextFormat("Best: %02u:%02u.%02u", b_mins, b_secs, b_frac);
+            const Vector2 b_sz = MeasureTextEx(font_hud, b_str, 24, 1);
+            DrawTextEx(font_hud, b_str,
+                {GetScreenWidth() - b_sz.x - 10, 10}, 24, 1, {0, 220, 255, 200});
+        }
+
+        // --- "New Record!" ---
+        if (show_record) {
+            const char* msg = "New Record!";
+            const Vector2 ms = MeasureTextEx(font_hud, msg, 24, 1);
+            // Sfondo semitrasparente per leggibilità.
+            DrawRectangle(
+                static_cast<int>(GetScreenWidth()  * 0.5f - ms.x * 0.5f - 12),
+                static_cast<int>(GetScreenHeight() * 0.5f - 20),
+                static_cast<int>(ms.x + 24), 44,
+                {0, 0, 0, 160});
+            DrawTextEx(font_hud, msg,
+                {GetScreenWidth() * 0.5f - ms.x * 0.5f,
+                 GetScreenHeight() * 0.5f - 12.f},
+                24, 1, {0, 220, 255, 255});
+        }
+
+        // --- "Next level in: X.XX s" (bottom right) ---
+        if (last_game_state.next_level_countdown_ticks > 0) {
+            const uint32_t rem_cs   = last_game_state.next_level_countdown_ticks * 100 / 60;
+            const uint32_t rem_secs = rem_cs / 100;
+            const uint32_t rem_frac = rem_cs % 100;
+            const char* cd_str = TextFormat("Next level in: %u.%02u s", rem_secs, rem_frac);
+            const Vector2 cd_sz = MeasureTextEx(font_hud, cd_str, 24, 1);
+            DrawTextEx(font_hud, cd_str,
+                {GetScreenWidth()  - cd_sz.x - 10,
+                 GetScreenHeight() - cd_sz.y - 10},
+                24, 1, {0, 220, 255, 200});
+        }
 
         EndDrawing();
     }
@@ -455,6 +591,8 @@ int main() {
 
     // Ferma il server locale (no-op se non avviato).
     local_srv.Stop();
+
+    } // fine outer loop menu → partita
 
     enet_deinitialize();
 

@@ -38,4 +38,7 @@ struct PlayerState {
     uint32_t last_processed_tick = 0;   // ultimo frame.tick processato (usato per reconciliation)
     // nome visualizzato sopra il player (max 15 char + null)
     char     name[16]            = {};  // passo 19
+    // timer livello (passo 21)
+    uint32_t level_ticks         = 0;   // tick trascorsi dal via; fermo quando finished
+    bool     finished            = false; // true quando ha toccato l'endpoint
 };

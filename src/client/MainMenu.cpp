@@ -155,7 +155,7 @@ MenuResult ShowMainMenu(Font& font) {
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
                 CheckCollisionPointRec(GetMousePosition(), r_name))
                 focused = 0;
-            DrawTextField(font, "nome", cx, field_y, res.username, focused == 0);
+            DrawTextField(font, "name", cx, field_y, res.username, focused == 0);
 
             // Pulsanti
             const float btn_y = H * 0.62f;
@@ -166,7 +166,7 @@ MenuResult ShowMainMenu(Font& font) {
             if (Clicked(r_on))  { screen = Screen::ONLINE; focused = 0; }
 
             // Hint
-            DrawCentered(font, "tab: cambia campo", cx, H - SZ - 16, SZ * 0.6f, TXT_DIM);
+            DrawCentered(font, "tab: switch field", cx, H - SZ - 16, SZ * 0.6f, TXT_DIM);
 
         } else {  // Screen::ONLINE
             // Titolo
@@ -174,18 +174,18 @@ MenuResult ShowMainMenu(Font& font) {
 
             // Campo IP — unico campo
             const float ip_y = H * 0.45f;
-            DrawTextField(font, "indirizzo ip", cx, ip_y, res.server_ip, true);
+            DrawTextField(font, "server ip", cx, ip_y, res.server_ip, true);
 
             // Pulsanti
             const float btn_y = H * 0.66f;
-            Rectangle r_conn = DrawTextBtn(font, "CONNETTI", cx - 110, btn_y);
-            Rectangle r_back = DrawTextBtn(font, "INDIETRO", cx + 110, btn_y);
+            Rectangle r_conn = DrawTextBtn(font, "CONNECT", cx - 110, btn_y);
+            Rectangle r_back = DrawTextBtn(font, "BACK",    cx + 110, btn_y);
 
             if (Clicked(r_conn)) { pending_choice = MenuChoice::ONLINE; has_action = true; }
             if (Clicked(r_back)) { screen = Screen::MAIN; focused = 0; }
 
             // Hint
-            DrawCentered(font, "invio: connetti   esc: indietro",
+            DrawCentered(font, "enter: connect   esc: back",
                          cx, H - SZ - 16, SZ * 0.6f, TXT_DIM);
         }
 
