@@ -1,37 +1,31 @@
 #pragma once
 #include <cstdint>
 
-// =============================================================================
-// InputFrame.h — Istantanea dell'input del giocatore per un singolo tick
-// =============================================================================
-//
-// DOMANDA ARCHITETTUALE: perché separare l'input dalla logica di rendering?
-//
-// Un giocatore premi un tasto — questo è un EVENTO FISICO (Raylib).
-// Ma la simulazione deterministica lavora su DATI DISCRETI per tick.
-// InputFrame è il "ponte" tra i due mondi: trasforma un evento fisico in
-// un dato serializabile e riproducibile.
-//
-// Nota: InputFrame vive in /common perché SIA il client (prediction)
-// CHE il server (authority) devono simulare la stessa logica partendo
-// dallo stesso InputFrame. Se cambi questa struct, cambia il determinismo.
-// =============================================================================
+// ---------------------------------------------------------------------------
+// InputFrame — snapshot dell'input per un singolo tick fisso.
+// Struttura deterministica: server e client ne condividono la definizione.
+// Tutti i bit sono "campionati" lato client e consumati in Player::Simulate.
+// ---------------------------------------------------------------------------
 
-// Bit flags per i pulsanti — compatti e serializzabili su rete
-enum InputButtons : uint8_t {
-    BTN_NONE   = 0,
-    BTN_LEFT   = 1 << 0,  // 00000001
-    BTN_RIGHT  = 1 << 1,  // 00000010
-    BTN_JUMP   = 1 << 2,  // 00000100
-    BTN_DASH   = 1 << 3,  // 00001000
+// Bit-flag dei pulsanti.
+enum InputBits : uint8_t {
+    BTN_LEFT       = 1 << 0,  // tenuto premuto → movimento sinistra
+    BTN_RIGHT      = 1 << 1,  // tenuto premuto → movimento destra
+    BTN_JUMP       = 1 << 2,  // tenuto premuto → usato per variable-jump cut
+    BTN_JUMP_PRESS = 1 << 3,  // edge rising (sticky) → setta jump buffer
+    BTN_DASH       = 1 << 4,  // edge rising (sticky) → avvia dash
+    BTN_UP         = 1 << 5,  // tenuto premuto → direzione dash / steer verso l'alto
+    BTN_DOWN       = 1 << 6,  // tenuto premuto → direzione dash / steer verso il basso
 };
 
 struct InputFrame {
-    uint32_t tick;     // A quale tick appartiene questo input? (per la reconciliation)
-    uint8_t  buttons;  // Combinazione di InputButtons via OR bit a bit
+    uint32_t tick    = 0;     // numero del tick fisso (60Hz, monotono)
+    uint8_t  buttons = 0;     // OR di InputBits
 
-    [[nodiscard]] bool IsLeft()  const { return (buttons & BTN_LEFT)  != 0; }
-    [[nodiscard]] bool IsRight() const { return (buttons & BTN_RIGHT) != 0; }
-    [[nodiscard]] bool IsJump()  const { return (buttons & BTN_JUMP)  != 0; }
-    [[nodiscard]] bool IsDash()  const { return (buttons & BTN_DASH)  != 0; }
+    // Direzione grezza per dash e sterzata (analogica se gamepad, discreta ±1 se tastiera).
+    // Viene normalizzata internamente in Player::Simulate / RequestDash / SteerDash.
+    float dash_dx = 0.f;
+    float dash_dy = 0.f;
+
+    bool Has(InputBits b) const { return (buttons & b) != 0; }
 };

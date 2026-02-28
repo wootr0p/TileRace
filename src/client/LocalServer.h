@@ -1,48 +1,33 @@
 #pragma once
-#include <thread>
-#include <memory>
-#include <string>
 #include <cstdint>
+#include <atomic>
+#include <thread>
+#include <string>
 
-// Forward declaration — non vogliamo includere GameServer.h qui per
-// non portare le dipendenze ENet nel codice del client.
-class GameServer;
-
-// =============================================================================
-// LocalServer.h — Server in-process per la modalità offline
-// =============================================================================
-//
-// In modalità offline non serve un processo separato: basta far girare
-// GameServer in un thread background all'interno del processo del client.
-// Il client si connette poi a "localhost" esattamente come farebbe online.
-//
-// Perché questo approccio invece di chiamare la logica del server direttamente?
-//   - Il codice del gioco rimane identico: il client non sa se il server
-//     è locale o remoto. Zero casi speciali nel GameClient.
-//   - Il server conserva la sua autorità e il suo fixed timestep indipendente.
-//   - In futuro si può "staccare" il server senza toccare il client.
-// =============================================================================
-
+// Avvia una istanza del game server nello stesso processo, in un thread background.
+// Usato per la modalità offline (passo 20): il client si connette a 127.0.0.1 come
+// se fosse online, senza dover avviare TileRace_Server separatamente.
 class LocalServer {
 public:
-    LocalServer();
-    ~LocalServer();
+    LocalServer()  = default;
+    ~LocalServer() { Stop(); }
 
-    // Avvia il server in un thread background.
-    // Ritorna true se il server ha completato l'inizializzazione con successo.
-    // Blocca per al massimo ~200ms in attesa che il server sia pronto.
-    bool Start(uint16_t port, const std::string& map_path);
+    LocalServer(const LocalServer&)            = delete;
+    LocalServer& operator=(const LocalServer&) = delete;
 
-    // Segnala al server di fermarsi e aspetta che il thread termini.
+    // Avvia il server sulla porta indicata con la mappa indicata.
+    // Ritorna dopo ~200 ms (attesa bind ENet).
+    void Start(uint16_t port, const char* map_path);
+
+    // Segnala lo stop e attende il termine del thread.
     void Stop();
 
-    [[nodiscard]] bool     IsRunning()       const;
-    // Token segreto generato all'avvio: il client lo invia in PktConnectRequest.
-    // Un altro processo che non conosce questo valore viene rifiutato.
-    [[nodiscard]] uint32_t GetSessionToken() const { return session_token_; }
+    bool     IsRunning() const { return running_; }
+    uint16_t GetPort()   const { return port_; }
 
 private:
-    std::unique_ptr<GameServer> server_;
-    std::thread                 thread_;
-    uint32_t                    session_token_ = 0;
+    std::thread       thread_;
+    std::atomic<bool> stop_flag_{false};
+    uint16_t          port_    = 0;
+    bool              running_ = false;
 };

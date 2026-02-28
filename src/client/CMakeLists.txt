@@ -1,16 +1,24 @@
 # --- CLIENT: Visuals & Network Sync ---
+# I file verranno aggiunti passo per passo:
+#   passo 2  → main.cpp (tilemap da file, tutto inline) ← COMPLETATO
+#   passo 3  → World da common (nessun .cpp nuovo qui)
+#   passo 9  → InputHandler.h / InputHandler.cpp
+#   passo 13 → GameClient.h / GameClient.cpp
+#   passo 2+ → Renderer.h / Renderer.cpp
+#   passo 19 → MainMenu.h / MainMenu.cpp                ← COMPLETATO
+#   passo 20 → LocalServer.h / LocalServer.cpp          ← COMPLETATO
+#   fase avanzata → AudioManager.h / AudioManager.cpp
 add_executable(TileRace_Client
     main.cpp
-    GameClient.cpp
-    InputHandler.cpp
-    Renderer.cpp
-    AudioManager.cpp
     MainMenu.cpp
     LocalServer.cpp
 )
 
+# ENet non esporta include dir come PUBLIC, quindi la aggiungiamo manualmente.
+# Aggiungiamo anche src/server per ServerLogic.h (usato da LocalServer).
 target_include_directories(TileRace_Client PRIVATE
-    "${enet_SOURCE_DIR}/include"
+    ${enet_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../server
 )
 
 target_link_libraries(TileRace_Client PRIVATE
@@ -28,11 +36,11 @@ if(WIN32)
         NOUSER
     )
     target_link_libraries(TileRace_Client PRIVATE
-        ws2_32   # ENet
-        winmm    # ENet / Raylib Timer
+        winmm    # Raylib Timer
         gdi32    # Raylib Graphics
         user32   # Raylib Window management
         shell32  # Raylib System calls
+        ws2_32   # ENet networking
     )
 endif()
 

@@ -1,20 +1,25 @@
+// TileRace_Server — entry point standalone.
+// Il loop del server è implementato in ServerLogic.cpp per essere condiviso
+// con LocalServer (modalità offline, passo 20).
+
+#include <cstdio>
+#include <atomic>
 #include <enet/enet.h>
-#include <iostream>
-#include "GameServer.h"
+#include "ServerLogic.h"
+#include "Protocol.h"
 
-int main(int /*argc*/, char** /*argv*/) {
+int main() {
     if (enet_initialize() != 0) {
-        std::cerr << "[Server] ERRORE: impossibile inizializzare ENet.\n";
+        fprintf(stderr, "[server] ERRORE: enet_initialize fallita\n");
         return 1;
     }
 
-    GameServer server;
-    if (!server.Init(1234, 8, "assets/levels/level_01.txt")) {
-        enet_deinitialize();
-        return 1;
-    }
+    printf("[server] premi Ctrl+C per uscire\n");
 
-    server.Run();
+    // stop_flag rimane false per sempre in modalità standalone;
+    // il processo termina con Ctrl+C (SIGINT).
+    std::atomic<bool> stop{false};
+    RunServer(SERVER_PORT, "assets/levels/level_01.txt", stop);
 
     enet_deinitialize();
     return 0;

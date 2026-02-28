@@ -1,51 +1,41 @@
 #pragma once
 #include <cstdint>
 
-// =============================================================================
-// PlayerState.h — Snapshot puro dello stato di un giocatore
-// =============================================================================
-//
-// CONCETTO CHIAVE: "State vs. Entity"
-//
-// PlayerState è solo DATI. Non ha comportamento, non ha metodi.
-// È la "fotografia" dello stato di un giocatore in un preciso tick.
-//
-// Perché questa separazione?
-//   1. SERIALIZZAZIONE: possiamo mandare PlayerState direttamente sulla rete
-//      (con attenzione all'endianness) senza dover "spacchettare" una classe.
-//   2. RECONCILIATION: il client tiene una storia di PlayerState predetti;
-//      può confrontare quello predetto al tick N con quello ricevuto dal server.
-//   3. ROLLBACK: per fare rollback basta copiare un vecchio PlayerState.
-//
-// Challenge: se aggiungi dati al giocatore (es. health, score), vanno qui?
-// Dipende: vanno qui SE devono essere simulati/replicati per la prediction.
-// =============================================================================
-
+// Dati POD del player — nessuna logica, solo stato serializzabile.
+// Aggiornato incrementalmente passo per passo:
+//   passo 4  → x, y, player_id
+//   passo 5  → vel_x, vel_y, on_ground
+//   passo 6  → on_wall_left, on_wall_right, jump_buffer_ticks, coyote_ticks
+//   passo 9  → last_processed_tick
+//   passo 17 → dash_active_ticks, dash_cooldown_ticks, last_dir
 struct PlayerState {
-    uint32_t player_id  = 0;
-
-    // Posizione nel mondo (unità logiche, NON pixel)
-    float x   = 0.0f;
-    float y   = 0.0f;
-
-    // Velocità attuale
-    float vel_x = 0.0f;
-    float vel_y = 0.0f;
-
-    // Stato di collisione
-    bool on_ground     = false;
-    bool on_wall_left  = false;   // tocca un muro a sinistra (per wall-jump)
-    bool on_wall_right = false;   // tocca un muro a destra  (per wall-jump)
-
-    // Ultima direzione orizzontale: -1 sinistra, 0 fermo, 1 destra
-    // Usata da dash (quando non si tiene un tasto) e da wall-jump
-    int8_t last_dir = 0;
-
-    // Dash
-    uint8_t dash_active_ticks   = 0;  // tick rimasti nel dash corrente
-    uint8_t dash_cooldown_ticks = 0;  // tick rimasti al prossimo dash disponibile
-
-    // CRUCIALE per la reconciliation: il client usa questo per sapere quali input
-    // ha già "consumato" il server e quali sono ancora pendenti.
-    uint32_t last_processed_tick = 0;
+    // posizione
+    float    x         = 0.f;
+    float    y         = 0.f;
+    // velocità
+    float    vel_x     = 0.f;   // impulso orizzontale (es. wall jump)
+    float    vel_y     = 0.f;
+    float    move_vel_x = 0.f;  // velocità orizzontale con inerzia (px/s)
+    // flag collisione
+    bool     on_ground     = false;
+    bool     on_wall_left  = false;
+    bool     on_wall_right = false;
+    // meccaniche di salto avanzate (passo 6 ext)
+    uint8_t  jump_buffer_ticks  = 0;  // > 0: salto in attesa di atterraggio/muro
+    uint8_t  coyote_ticks       = 0;  // > 0: grazia dopo aver lasciato un bordo
+    int8_t   last_wall_jump_dir = 0;  // -1=sinistra, 0=nessuno, 1=destra
+                                      // impedisce di saltare due volte sullo stesso muro;
+                                      // resettato quando si tocca terra
+    // dash (passo 17)
+    uint8_t  dash_active_ticks   = 0;   // > 0: dash in corso (sospende gravità e input)
+    uint8_t  dash_cooldown_ticks = 0;   // > 0: cooldown, dash non disponibile
+    bool     dash_ready          = true; // false dopo aver dashes in aria; reset all'atterraggio
+    int8_t   last_dir            = 1;   // ultima dir orizzontale non-zero (-1/+1); fallback dash
+    float    dash_dir_x          = 0.f; // componente X normalizzata della direzione di dash
+    float    dash_dir_y          = 0.f; // componente Y normalizzata della direzione di dash
+    // identificazione
+    uint32_t player_id           = 0;
+    uint32_t last_processed_tick = 0;   // ultimo frame.tick processato (usato per reconciliation)
+    // nome visualizzato sopra il player (max 15 char + null)
+    char     name[16]            = {};  // passo 19
 };

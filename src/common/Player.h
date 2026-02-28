@@ -1,50 +1,48 @@
-#pragma once
+﻿#pragma once
 #include "PlayerState.h"
 #include "InputFrame.h"
 
-// Forward declaration — Player NON include World.h direttamente per evitare
-// dipendenze circolari. Riceve il World come parametro nelle funzioni.
-class World;
-
-// =============================================================================
-// Player.h — Entità giocatore con logica di simulazione
-// =============================================================================
-//
-// DISTINZIONE FONDAMENTALE:
-//   PlayerState = DATI (in PlayerState.h) — cosa è il giocatore
-//   Player      = ENTITÀ (qui)            — cosa sa fare il giocatore
-//
-// Player possiede un PlayerState e sa come simularlo.
-// Questa separazione permette di:
-//   1. Copiare/confrontare stati senza copiare comportamento
-//   2. Usare PlayerState come snapshot di rete
-//   3. Ricreare un Player da un PlayerState (per il rollback)
-//
-// DOMANDA: perché non mettere Simulate() direttamente in PlayerState?
-// Risposta: perché PlayerState deve essere POD-like (semplice, serializzabile).
-// Aggiungere metodi lo complicherebbe senza beneficio.
-// =============================================================================
+// Classe Player: possiede uno PlayerState e lo aggiorna.
+// Evoluzione prevista:
+//   passo 4-7  → MoveX/MoveY + meccaniche di salto   — COMPLETATO
+//   passo 9    → Simulate(InputFrame, World)           — COMPLETATO
+class World;   // forward declaration; World.h incluso solo in Player.cpp
 
 class Player {
 public:
-    explicit Player(uint32_t id);
+    void SetState(const PlayerState& s) { state_ = s; }
+    const PlayerState& GetState() const { return state_; }
 
-    // Simula UN tick deterministico: applica input + fisica + collisioni
-    void Simulate(const InputFrame& input, const World& world);
+    // Punto unico di aggiornamento deterministico (passo 9).
+    // Legge l'InputFrame, esegue tutte le meccaniche (salto, dash, movimento,
+    // gravità, collisioni) nell'ordine corretto e aggiorna state_.
+    // Identica su client e server: stessi input + stesso stato = stesso risultato.
+    void Simulate(const InputFrame& frame, const World& world);
 
-    void SetState(const PlayerState& state);
+    // --- Metodi di basso livello (usati internamente + esposti per test) ---
 
-    [[nodiscard]] const PlayerState& GetState() const { return state_; }
-    [[nodiscard]] PlayerState&       GetState()       { return state_; }
+    // Muove orizzontalmente di input_dx (già moltiplicato per dt).
+    void MoveX(float input_dx, const World& world);
+
+    // Applica coyote time, salto, gravità, collisioni Y.
+    void MoveY(float dt, const World& world);
+
+    // Registra l'intenzione di saltare: setta jump_buffer_ticks.
+    void RequestJump();
+
+    // Taglia il salto quando SPAZIO viene rilasciato mentre il player sale.
+    void CutJump();
+
+    // Avvia il dash nella direzione (dx, dy) — normalizzata internamente.
+    void RequestDash(float dx, float dy);
+
+    // Aggiorna la direzione del dash in corso (sterzata live).
+    void SteerDash(float dx, float dy);
 
 private:
-    void ResolveCollisionsX(const World& world);
-    void ResolveCollisionsY(const World& world);
-
     PlayerState state_;
+    bool        prev_jump_held_ = false;  // per rilevare il rilascio del tasto salto
 
-    static constexpr float PLAYER_W = 32.0f;
-    static constexpr float PLAYER_H = 32.0f;
-    // Inset verticale per il check X: evita falsi positivi con pavimento/soffitto
-    static constexpr float X_INSET  = 2.0f;
+    void ResolveCollisionsX(const World& world, float dx);
+    void ResolveCollisionsY(const World& world);
 };

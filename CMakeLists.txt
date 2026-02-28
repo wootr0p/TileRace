@@ -29,18 +29,24 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(raylib enet)
 
 # --- CONFIGURAZIONE ASSETS ---
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/assets" 
-     DESTINATION "${CMAKE_BINARY_DIR}/bin")
+# add_custom_target viene eseguito ad ogni build (debug e release),
+# a differenza di file(COPY) che gira solo al configure.
+add_custom_target(copy_assets ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+        "${CMAKE_BINARY_DIR}/bin/assets"
+    COMMENT "Copia assets -> bin/assets"
+)
 
 # --- MODULI DEL PROGETTO ---
 add_subdirectory(src/common)
-add_subdirectory(src/server)   # deve venire prima del client: definisce server_logic
+add_subdirectory(src/server)
 add_subdirectory(src/client)
 
 # --- INSTALLAZIONE RUNTIME (solo ciò che serve per distribuire il gioco) ---
 set(TILERACE_RUNTIME_COMPONENT TileRaceRuntime)
 
-install(TARGETS TileRace_Client TileRace_Server
+install(TARGETS TileRace_Client
   RUNTIME DESTINATION .
   COMPONENT ${TILERACE_RUNTIME_COMPONENT}
 )
@@ -50,14 +56,18 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets"
   COMPONENT ${TILERACE_RUNTIME_COMPONENT}
 )
 
-# --- LOGICA DI RUN (Identica alla tua precedente) ---
+# --- LOGICA DI RUN ---
 if(WIN32)
     add_custom_target(run
-        COMMAND start cmd /c "$<TARGET_FILE:TileRace_Server>"
-        COMMAND ${CMAKE_COMMAND} -E sleep 1
         COMMAND "$<TARGET_FILE:TileRace_Client>"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-        DEPENDS TileRace_Server TileRace_Client
-        COMMENT "Avvio del Server e del Client..."
+        DEPENDS TileRace_Client copy_assets
+        COMMENT "Avvio TileRace_Client..."
+    )
+    add_custom_target(run_server
+        COMMAND "$<TARGET_FILE:TileRace_Server>"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+        DEPENDS TileRace_Server
+        COMMENT "Avvio TileRace_Server..."
     )
 endif()

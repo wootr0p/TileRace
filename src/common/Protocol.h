@@ -1,107 +1,47 @@
 #pragma once
 #include <cstdint>
 #include "InputFrame.h"
+#include "PlayerState.h"
 #include "GameState.h"
 
-// =============================================================================
-// Protocol.h — Contratto di comunicazione client ↔ server
-// =============================================================================
-//
-// Questo file è il "dizionario" del protocollo di rete.
-// REGOLA FONDAMENTALE: ogni struct qui dentro deve essere POD (Plain Old Data),
-// senza puntatori, senza virtual, senza std::string.
-// Perché? Perché viene serializzato direttamente in byte e mandato su rete.
-//
-// ATTENZIONE ARCHITETTURALE: in produzione si userebbe una serializzazione
-// esplicita (es. Flatbuffers) per gestire endianness e padding.
-// Per ora usiamo struct packed per semplicità didattica.
-// =============================================================================
+// ---------------------------------------------------------------------------
+// Costanti di protocollo condivise tra client e server.
+// ---------------------------------------------------------------------------
 
-#pragma pack(push, 1)  // Disabilita il padding del compilatore per questi struct
+static constexpr uint16_t SERVER_PORT      = 7777;
+static constexpr size_t   MAX_CLIENTS      = static_cast<size_t>(MAX_PLAYERS);
+static constexpr uint8_t  CHANNEL_RELIABLE = 0;
+static constexpr uint8_t  CHANNEL_COUNT    = 1;
 
-// -------------------------
-// Tipi di pacchetto
-// -------------------------
-enum PacketType : uint8_t {
-    // Legacy (da rimuovere gradualmente)
-    PACKET_PING = 1,
-    PACKET_PONG = 2,
-
-    // Handshake
-    PACKET_CONNECT_REQUEST  = 3,  // Client → Server: "voglio entrare"
-    PACKET_PLAYER_ASSIGNED  = 4,  // Server → Client: "sei il giocatore N"
-
-    // Ciclo di gioco principale
-    PACKET_INPUT            = 5,  // Client → Server: InputFrame (ogni tick)
-    PACKET_GAME_STATE       = 6,  // Server → Client: GameState autoritativo
-
-    // Gestione sessione
-    PACKET_PLAYER_JOINED    = 7,  // Server → tutti: nuovo giocatore
-    PACKET_PLAYER_LEFT      = 8,  // Server → tutti: giocatore disconnesso
-
-    // Audio event-based: il server decide QUANDO, il client decide COME
-    PACKET_AUDIO_EVENT      = 9,
+// Tipi di pacchetto (primo byte di ogni payload).
+enum PktType : uint8_t {
+    PKT_INPUT        = 1,   // Client → Server: InputFrame da simulare
+    PKT_PLAYER_STATE = 2,   // (legacy, non usato dal passo 14 in poi)
+    PKT_GAME_STATE   = 3,   // Server → Client: GameState broadcast (tutti i player)
+    PKT_WELCOME      = 4,   // Server → Client: player_id assegnato al momento della connessione
+    PKT_PLAYER_INFO  = 5,   // Client → Server: nome del player (inviato dopo PKT_WELCOME)
 };
 
-// -------------------------
-// Audio Events
-// -------------------------
-enum AudioEventId : uint8_t {
-    AUDIO_JUMP    = 1,
-    AUDIO_LAND    = 2,
-    AUDIO_COLLECT = 3,
-    AUDIO_DEATH   = 4,
-};
-
-// -------------------------
-// Strutture dei pacchetti
-// -------------------------
-
-struct PacketHeader {
-    uint8_t type;  // PacketType
-};
-
-struct PktConnectRequest {
-    PacketHeader header;
-    uint8_t  protocol_version = 1;
-    uint32_t session_token    = 0;  // 0 = server pubblico; altrimenti deve combaciare
-};
-
-struct PktPlayerAssigned {
-    PacketHeader header;
-    uint32_t     player_id;
-};
-
+// Client → Server: inviato ogni tick fisso.
 struct PktInput {
-    PacketHeader header;
-    InputFrame   frame;
+    uint8_t    type  = PKT_INPUT;
+    InputFrame frame = {};
 };
 
+// Server → Client: stato autoritativo dopo Player::Simulate (tutti i player).
 struct PktGameState {
-    PacketHeader header;
-    GameState    state;
+    uint8_t   type  = PKT_GAME_STATE;
+    GameState state = {};
 };
 
-struct PktPlayerJoined {
-    PacketHeader header;
-    uint32_t     player_id;
+// Server → Client: inviato una sola volta al momento della connessione.
+struct PktWelcome {
+    uint8_t  type      = PKT_WELCOME;
+    uint32_t player_id = 0;
 };
 
-struct PktPlayerLeft {
-    PacketHeader header;
-    uint32_t     player_id;
+// Client → Server: inviato subito dopo aver ricevuto PKT_WELCOME.
+struct PktPlayerInfo {
+    uint8_t type    = PKT_PLAYER_INFO;
+    char    name[16] = {};
 };
-
-struct PktAudioEvent {
-    PacketHeader header;
-    uint32_t     player_id;  // Chi ha scatenato l'evento (per audio posizionale)
-    AudioEventId event_id;
-};
-
-// Legacy — solo per compatibilità durante la migrazione
-struct NetworkMessage {
-    uint8_t type;
-    int32_t value;
-};
-
-#pragma pack(pop)
