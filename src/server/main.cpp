@@ -19,7 +19,7 @@ int main() {
     // stop_flag rimane false per sempre in modalità standalone;
     // il processo termina con Ctrl+C (SIGINT).
     std::atomic<bool> stop{false};
-    RunServer(SERVER_PORT, "assets/levels/level_01.txt", stop);
+    RunServer(SERVER_PORT, LOBBY_MAP_PATH, stop);
 
     enet_deinitialize();
     return 0;

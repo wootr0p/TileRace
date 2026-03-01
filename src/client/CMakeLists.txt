@@ -13,6 +13,7 @@ add_executable(TileRace
     MainMenu.cpp
     LocalServer.cpp
     SaveData.cpp
+    WinIcon.cpp
 )
 
 # ENet non esporta include dir come PUBLIC, quindi la aggiungiamo manualmente.

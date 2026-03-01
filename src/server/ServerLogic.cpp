@@ -21,11 +21,17 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
         if (p) std::sscanf(p + 6, "%d", &initial_level);
     }
 
-    // Lambda per (ri)caricare una mappa e aggiornare spawn + current_level.
-    // Ritorna false se il file non esiste.
+    // --- Stato sessione ---
+    // in_lobby:    true mentre siamo nella _lobby.txt (nessun time limit, countdown speciale)
+    // game_locked: true durante la partita reale → nuove connessioni vengono rifiutate
+    // session_token: ID univoco rigenerato a ogni nuova sessione, inviato via PktWelcome
+    bool     in_lobby      = (std::strstr(map_path, "_lobby") != nullptr);
+    bool     game_locked   = false;
+    uint32_t session_token = 0u;
+
     World world;
     float spawn_x = 0.f, spawn_y = 0.f;
-    int   current_level = initial_level;
+    int   current_level = in_lobby ? 0 : initial_level;
 
     auto load_level = [&](const char* path) -> bool {
         World tmp;
@@ -112,6 +118,18 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
             switch (event.type) {
 
             case ENET_EVENT_TYPE_CONNECT: {
+                // Rifiuta nuove connessioni se la partita è già in corso.
+                if (game_locked) {
+                    printf("[server] CONNECT rifiutato (partita in corso) %08x:%u\n",
+                           event.peer->address.host, event.peer->address.port);
+                    enet_peer_disconnect(event.peer, DISCONNECT_SERVER_BUSY);
+                    break;
+                }
+                // Genera il token di sessione al primo connect (identifica questa sessione).
+                if (session_token == 0u)
+                    session_token = enet_time_get() ^
+                        static_cast<uint32_t>(reinterpret_cast<uintptr_t>(event.peer) & 0xFFFFFFFFu);
+
                 PlayerState ps{};
                 ps.player_id = next_player_id++;
                 ps.x = spawn_x;
@@ -120,14 +138,15 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                 pl.SetState(ps);
                 players[event.peer] = pl;
 
-                // Informa il client del suo player_id.
+                // Informa il client del suo player_id e del token di sessione.
                 PktWelcome welcome{};
-                welcome.player_id = ps.player_id;
+                welcome.player_id     = ps.player_id;
+                welcome.session_token = session_token;
                 ENetPacket* wlc = enet_packet_create(&welcome, sizeof(welcome),
                                                      ENET_PACKET_FLAG_RELIABLE);
                 enet_peer_send(event.peer, CHANNEL_RELIABLE, wlc);
-                printf("[server] CONNECT player_id=%u  %08x:%u\n",
-                       ps.player_id,
+                printf("[server] CONNECT player_id=%u  session=%u  %08x:%u\n",
+                       ps.player_id, session_token,
                        event.peer->address.host,
                        event.peer->address.port);
                 break;
@@ -184,7 +203,8 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                                     gs_pkt.state.players[gs_pkt.state.count++] = pl.GetState();
                             }
                             gs_pkt.state.next_level_countdown_ticks = countdown_ticks();
-                            {
+                            gs_pkt.state.is_lobby = in_lobby ? 1u : 0u;
+                            if (!in_lobby) {
                                 const uint32_t el = enet_time_get() - level_start_ms;
                                 gs_pkt.state.time_limit_secs = el < LEVEL_TIME_LIMIT_MS
                                     ? (LEVEL_TIME_LIMIT_MS - el) / 1000u
@@ -202,7 +222,7 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                                 goto do_level_change;
                             }
                             // --- Scatta il cambio livello per scadenza tempo (2 min) ---
-                            if (!players.empty() &&
+                            if (!in_lobby && !players.empty() &&
                                 enet_time_get() - level_start_ms >= LEVEL_TIME_LIMIT_MS) {
                                 zone_start_ms = 0;
                                 goto do_level_change;
@@ -265,14 +285,18 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                        event.peer->address.host,
                        event.peer->address.port);
                 players.erase(event.peer);
-                // Se non ci sono più player, resetta il server al livello iniziale.
+                // Se non ci sono più player, resetta alla lobby e riapri le connessioni.
                 if (players.empty()) {
-                    current_level = initial_level;
+                    in_lobby      = (std::strstr(initial_map_path.c_str(), "_lobby") != nullptr);
+                    game_locked   = false;
+                    session_token = 0u;
+                    current_level = in_lobby ? 0 : initial_level;
                     load_level(initial_map_path.c_str());
                     zone_start_ms  = 0;
                     level_start_ms = enet_time_get();
                     next_player_id = 1;
-                    printf("[server] tutti disconnessi --> reset a level %d\n", initial_level);
+                    printf("[server] tutti disconnessi --> reset a '%s'\n",
+                           initial_map_path.c_str());
                 }
                 break;
 
@@ -285,7 +309,15 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
         continue;
 
         do_level_change:
-            current_level++;
+            // Lobby → primo livello reale: blocca nuove connessioni per questa sessione.
+            if (in_lobby) {
+                in_lobby    = false;
+                game_locked = true;
+                current_level = 1;
+                printf("[server] LOBBY COMPLETE --> GAME  session_token=%u\n", session_token);
+            } else {
+                current_level++;
+            }
             char next_path[128];
             std::snprintf(next_path, sizeof(next_path),
                           "assets/levels/level_%02d.txt", current_level);
@@ -325,11 +357,14 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                 for (auto& [peer, pl] : players)
                     enet_peer_disconnect_now(peer, 0);
                 players.clear();
-                // Ricarica il livello iniziale.
-                current_level = initial_level;
+                // Ricarica la lobby: riapri le connessioni per una nuova sessione.
+                in_lobby      = (std::strstr(initial_map_path.c_str(), "_lobby") != nullptr);
+                game_locked   = false;
+                session_token = 0u;
+                current_level = in_lobby ? 0 : initial_level;
                 load_level(initial_map_path.c_str());
                 level_start_ms = enet_time_get();
-                printf("[server] reset completato, in attesa di nuove connessioni\n");
+                printf("[server] reset completato, lobby riaperta\n");
             }
     }
 

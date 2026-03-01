@@ -19,17 +19,22 @@ static constexpr uint16_t     PROTOCOL_VERSION = 1;
 // Costanti di protocollo condivise tra client e server.
 // ---------------------------------------------------------------------------
 
-static constexpr uint16_t SERVER_PORT      = 47777;
+static constexpr uint16_t SERVER_PORT       = 58291;  // server dedicato (online)
+static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // server locale per la modalità offline
 static constexpr size_t   MAX_CLIENTS      = static_cast<size_t>(MAX_PLAYERS);
 static constexpr uint8_t  CHANNEL_RELIABLE = 0;
 static constexpr uint8_t  CHANNEL_COUNT    = 1;
+
+// Percorso della mappa di lobby: sempre il primo livello caricato dal server.
+static constexpr const char* LOBBY_MAP_PATH = "assets/levels/_lobby.txt";
 
 // Codici di disconnessione inviati come 'data' in enet_peer_disconnect().
 // I 16 bit alti possono contenere informazioni extra (es. server_version).
 // Layout: bits[7:0] = reason code,  bits[31:16] = payload extra
 enum DisconnectReason : uint32_t {
-    DISCONNECT_GENERIC         = 0,   // disconnessione normale / non specificata
+    DISCONNECT_GENERIC          = 0,  // disconnessione normale / non specificata
     DISCONNECT_VERSION_MISMATCH = 1,  // incompatibilità di protocollo; bits[31:16] = server PROTOCOL_VERSION
+    DISCONNECT_SERVER_BUSY      = 2,  // partita già in corso, riprovare più tardi
 };
 
 // Tipi di pacchetto (primo byte di ogni payload).
@@ -42,6 +47,7 @@ enum PktType : uint8_t {
     PKT_RESTART           = 6,   // Client --> Server: riparti dal via (reset pos + timer)
     PKT_LOAD_LEVEL        = 7,   // Server --> Client: carica il livello successivo (o fine partita)
     PKT_VERSION_MISMATCH  = 8,   // Server --> Client: versione incompatibile, aggiorna il gioco
+    PKT_SERVER_BUSY       = 9,   // Server --> Client: sessione già in corso, ritenta più tardi
 };
 
 // Client --> Server: inviato ogni tick fisso.
@@ -58,8 +64,9 @@ struct PktGameState {
 
 // Server --> Client: inviato una sola volta al momento della connessione.
 struct PktWelcome {
-    uint8_t  type      = PKT_WELCOME;
-    uint32_t player_id = 0;
+    uint8_t  type          = PKT_WELCOME;
+    uint32_t player_id     = 0;
+    uint32_t session_token = 0;  // ID univoco della sessione; 0 = in lobby, != 0 = partita in corso
 };
 
 // Client --> Server: inviato subito dopo aver ricevuto PKT_WELCOME.
@@ -87,4 +94,10 @@ struct PktLoadLevel {
 struct PktVersionMismatch {
     uint8_t  type            = PKT_VERSION_MISMATCH;
     uint16_t server_version  = PROTOCOL_VERSION;  // versione del server (info per il client)
+};
+
+// Server --> Client: sessione già in corso, connessione rifiutata.
+// Il server manda DISCONNECT con data=DISCONNECT_SERVER_BUSY (nessun pacchetto applicativo).
+struct PktServerBusy {
+    uint8_t type = PKT_SERVER_BUSY;
 };

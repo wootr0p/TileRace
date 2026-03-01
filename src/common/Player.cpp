@@ -29,10 +29,8 @@ void Player::Simulate(const InputFrame& frame, const World& world) {
     if (state_.dash_active_ticks > 0)
         SteerDash(frame.dash_dx, frame.dash_dy);
 
-    // 5. Movimento orizzontale
-    float dx = 0.f;
-    if (frame.Has(BTN_LEFT))  dx -= MOVE_SPEED * FIXED_DT;
-    if (frame.Has(BTN_RIGHT)) dx += MOVE_SPEED * FIXED_DT;
+    // 5. Movimento orizzontale (move_x è analogico: [-1,1])
+    float dx = frame.move_x * MOVE_SPEED * FIXED_DT;
     MoveX(dx, world);
 
     // 6. Gravità, salto, collisioni Y

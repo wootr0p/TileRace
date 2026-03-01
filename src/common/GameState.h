@@ -14,4 +14,5 @@ struct GameState {
     PlayerState players[MAX_PLAYERS]         = {};  // stati autoritativi
     uint32_t    next_level_countdown_ticks   = 0;  // > 0: conto alla rovescia cambio livello
     uint32_t    time_limit_secs              = 0;  // secondi rimanenti del limite di 2 minuti
+    uint8_t     is_lobby                     = 0;  // 1 = siamo nella lobby (_lobby.txt)
 };

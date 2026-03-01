@@ -29,6 +29,7 @@
 #include "MainMenu.h"
 #include "LocalServer.h"
 #include "SaveData.h"
+#include "WinIcon.h"
 
 // ---------------------------------------------------------------------------
 // Costanti gamepad (layout PS)
@@ -172,7 +173,7 @@ static void DrawHUD(Font& font, const PlayerState& s, uint32_t player_count, boo
 }
 
 static void DrawDebugPanel(Font& font, const PlayerState& s) {
-    const float y0 = static_cast<float>(GetScreenHeight() - 24 * 12 - 10);
+    const float y0 = static_cast<float>(GetScreenHeight() - 18 * 12 - 10);
     DrawTextEx(font,
         TextFormat(
             "x:             %.0f\n"
@@ -198,7 +199,7 @@ static void DrawDebugPanel(Font& font, const PlayerState& s) {
             static_cast<int>(s.dash_active_ticks),
             static_cast<int>(s.dash_cooldown_ticks)
         ),
-        {10, y0}, 20, 1, {200, 200, 200, 200});
+        {10, y0}, 18, 1, {200, 200, 200, 200});
 }
 
 // ---------------------------------------------------------------------------
@@ -213,11 +214,16 @@ int main() {
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, TextFormat("TileRace v%s", GAME_VERSION));
+    // Imposta l'icona sulla finestra Win32 nativa: carica dalla risorsa embedded
+    // (ID 1 nel .rc), poi la forza sia come ICON_SMALL che ICON_BIG in modo che
+    // la taskbar e alt+tab la mostrino correttamente anche dopo che GLFW ha
+    // inizializzato la finestra con la sua icona di default.
+    ApplyExeIconToWindow(GetWindowHandle());
     SetTargetFPS(120);
     SetExitKey(KEY_NULL);  // ESC gestito manualmente (pausa in-game, quit da menu)
 
+    Font font_small = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 18, nullptr, 0);
     Font font_hud   = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 24, nullptr, 0);
-    Font font_debug = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 20, nullptr, 0);
     Font font_timer = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 48, nullptr, 0);
     SetTextureFilter(font_timer.texture, TEXTURE_FILTER_BILINEAR);
 
@@ -234,19 +240,26 @@ int main() {
     const MenuResult menu = ShowMainMenu(font_hud, save);
     if (menu.choice == MenuChoice::QUIT) break;
 
-    std::string session_error;      // non-empty = mostra messaggio di errore prima di tornare al menu
-    std::string session_error_sub;   // riga di dettaglio opzionale sotto il messaggio principale
+    std::string session_error;                               // non-empty = mostra messaggio prima di tornare al menu
+    std::string session_error_sub;                          // riga di dettaglio opzionale
+    Color       session_error_color = {255, 80, 80, 255};  // rosso = errore, verde = fine partita
 
-    // Modalità offline: avvia il server locale in un thread (passo 20)
+    // Nella modalità offline il server locale parte direttamente dal primo livello,
+    // bypassando la lobby (che è pensata solo per il multiplayer online).
     LocalServer local_srv;
-    if (menu.choice == MenuChoice::OFFLINE)
-        local_srv.Start(SERVER_PORT, "assets/levels/level_01.txt");
+    const bool is_offline = (menu.choice == MenuChoice::OFFLINE);
+    const char* initial_map = is_offline
+        ? "assets/levels/level_01.txt"
+        : LOBBY_MAP_PATH;
+    if (is_offline)
+        local_srv.Start(SERVER_PORT_LOCAL, initial_map);
 
-    const char* connect_ip = menu.server_ip;
+    const char* connect_ip = is_offline ? "127.0.0.1" : menu.server_ip;
+    const uint16_t connect_port = is_offline ? SERVER_PORT_LOCAL : SERVER_PORT;
 
     // Mondo e spawn
     World world;
-    world.LoadFromFile("assets/levels/level_01.txt");
+    world.LoadFromFile(initial_map);
 
     PlayerState ps;
     ps.player_id = 0;   // assegnato dal server via PktWelcome
@@ -277,11 +290,11 @@ int main() {
     ENetHost* net_host = enet_host_create(nullptr, 1, CHANNEL_COUNT, 0, 0);
     ENetAddress net_addr{};
     enet_address_set_host(&net_addr, connect_ip);
-    net_addr.port = SERVER_PORT;
+    net_addr.port = connect_port;
     ENetPeer* net_peer = enet_host_connect(net_host, &net_addr, CHANNEL_COUNT, 0);
     {
         bool connected = false;
-        printf("[client] connessione a %s:%d in corso...\n", connect_ip, SERVER_PORT);
+        printf("[client] connessione a %s:%u in corso...\n", connect_ip, connect_port);
         for (int i = 0; i < 60 && !connected; ++i) {
             ENetEvent ev;
             if (enet_host_service(net_host, &ev, 50) > 0 &&
@@ -377,20 +390,37 @@ int main() {
             const bool ok       = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) ||
                                   (gp && IsGamepadButtonPressed(GP, GP_JUMP));
 
+            // Helper: rettangolo cliccabile centrato per la voce i (stessa geometria del render).
+            const float pcx = GetScreenWidth()  * 0.5f;
+            const float pcy = GetScreenHeight() * 0.5f;
+            auto item_rect = [&](int i) -> Rectangle {
+                const float item_y = pcy - 10.f + i * 44.f;
+                const Vector2 sz = MeasureTextEx(font_hud, "  Quit to Menu", 24, 1); // voce più lunga
+                return Rectangle{pcx - sz.x * 0.5f - 8, item_y - 4, sz.x + 16, 24.f + 8};
+            };
+            const Vector2 mouse    = GetMousePosition();
+            const bool    clicked  = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+
             if (pause_state == PauseState::PLAYING && toggle) {
                 pause_state   = PauseState::PAUSED;
                 pause_focused = 0;
             } else if (pause_state == PauseState::PAUSED) {
+                // Hover mouse → aggiorna focus
+                for (int i = 0; i < 2; i++)
+                    if (CheckCollisionPointRec(mouse, item_rect(i))) pause_focused = i;
                 if      (toggle)             pause_state   = PauseState::PLAYING;
                 else if (nav_up || nav_down) pause_focused = 1 - pause_focused;
-                else if (ok) {
+                else if (ok || (clicked && CheckCollisionPointRec(mouse, item_rect(pause_focused)))) {
                     if (pause_focused == 0)  pause_state   = PauseState::PLAYING;
                     else { pause_state = PauseState::CONFIRM_QUIT; confirm_focused = 0; }
                 }
             } else if (pause_state == PauseState::CONFIRM_QUIT) {
+                // Hover mouse → aggiorna focus
+                for (int i = 0; i < 2; i++)
+                    if (CheckCollisionPointRec(mouse, item_rect(i))) confirm_focused = i;
                 if      (toggle)             pause_state     = PauseState::PAUSED;
                 else if (nav_up || nav_down) confirm_focused = 1 - confirm_focused;
-                else if (ok) {
+                else if (ok || (clicked && CheckCollisionPointRec(mouse, item_rect(confirm_focused)))) {
                     if (confirm_focused == 1) session_over = true;
                     else                      pause_state  = PauseState::PAUSED;
                 }
@@ -433,16 +463,31 @@ int main() {
 
             // Costruisci InputFrame
             const bool  jump_held = IsKeyDown(KEY_SPACE) || (gp && IsGamepadButtonDown(GP, GP_JUMP));
-            const float gp_ax     = GpAxisX();
             float dash_rx, dash_ry;
             SampleDashDir(gp, dash_rx, dash_ry);
+
+            // Asse X di movimento: tastiera/DPAD = ±1, stick analogico = valore grezzo.
+            float move_x = 0.f;
+            if (IsKeyDown(KEY_LEFT)  || IsKeyDown(KEY_A)) move_x -= 1.f;
+            if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) move_x += 1.f;
+            if (gp) {
+                const float ax = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_X);
+                if (fabsf(ax) > GP_DEADZONE) {
+                    move_x = ax;  // sovrascrive tastiera con valore analogico
+                } else if (fabsf(move_x) < 0.01f) {
+                    if (IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) move_x += 1.f;
+                    if (IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_FACE_LEFT))  move_x -= 1.f;
+                }
+            }
+            move_x = fmaxf(-1.f, fminf(1.f, move_x));
 
             InputFrame frame;
             frame.tick    = sim_tick++;
             frame.dash_dx = dash_rx;
             frame.dash_dy = dash_ry;
-            if (IsKeyDown(KEY_LEFT)  || IsKeyDown(KEY_A) || gp_ax < 0.f) frame.buttons |= BTN_LEFT;
-            if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D) || gp_ax > 0.f) frame.buttons |= BTN_RIGHT;
+            frame.move_x  = move_x;
+            if (move_x < -0.01f) frame.buttons |= BTN_LEFT;
+            if (move_x >  0.01f) frame.buttons |= BTN_RIGHT;
             if (jump_held)    frame.buttons |= BTN_JUMP;
             if (jump_pressed) { frame.buttons |= BTN_JUMP_PRESS; jump_pressed = false; }
             if (dash_pending) { frame.buttons |= BTN_DASH;       dash_pending = false; }
@@ -478,6 +523,8 @@ int main() {
                         PktWelcome welcome{};
                         std::memcpy(&welcome, ev.packet->data, sizeof(PktWelcome));
                         local_player_id = welcome.player_id;
+                        printf("[client] player_id = %u  session_token = %u\n",
+                               welcome.player_id, welcome.session_token);
                         PlayerState s   = player.GetState();
                         s.player_id     = local_player_id;
                         player.SetState(s);
@@ -557,6 +604,9 @@ int main() {
                         PktLoadLevel lpkt{};
                         std::memcpy(&lpkt, ev.packet->data, sizeof(lpkt));
                         if (lpkt.is_last) {
+                            session_error       = "Game over.";
+                            session_error_sub   = "Returning to main menu...";
+                            session_error_color = {80, 220, 80, 255};
                             session_over = true;
                         } else {
                             world.LoadFromFile(lpkt.path);
@@ -592,6 +642,9 @@ int main() {
                         // Motivo noto: arrivato via PKT_VERSION_MISMATCH prima del DISCONNECT.
                         session_error     = pending_disc_reason;
                         session_error_sub = pending_disc_sub;
+                    } else if (ev.data == DISCONNECT_SERVER_BUSY) {
+                        session_error     = "Server is busy. Try again later.";
+                        session_error_sub = "A game is already in progress on this server.";
                     } else if (ev.data == DISCONNECT_VERSION_MISMATCH) {
                         // Fallback: motivo codificato nel campo data del DISCONNECT.
                         session_error = "Version Mismatch: please update your client.";
@@ -655,32 +708,34 @@ int main() {
 
         DrawHUD(font_hud, local, last_game_state.count, menu.choice != MenuChoice::OFFLINE);
 #ifndef NDEBUG
-        DrawDebugPanel(font_debug, local);
+        DrawDebugPanel(font_small, local);
 #endif
 
-        // --- Timer al centro in alto ---
-        {
-            const uint32_t total_cs = local.level_ticks * 100 / 60;
-            const uint32_t mins =  total_cs / 6000;
-            const uint32_t secs = (total_cs % 6000) / 100;
-            const uint32_t cs   =  total_cs % 100;
-            const char* t_str = TextFormat("%02u:%02u.%02u", mins, secs, cs);
-            const Color   t_col = local.finished ? Color{0, 230, 100, 255} : WHITE;
-            const Vector2 t_sz  = MeasureTextEx(font_timer, t_str, 48, 1);
-            DrawTextEx(font_timer, t_str,
-                {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 48, 1, t_col);
-        }
+        // --- Timer al centro in alto (nascosto in lobby) ---
+        if (!last_game_state.is_lobby) {
+            {
+                const uint32_t total_cs = local.level_ticks * 100 / 60;
+                const uint32_t mins =  total_cs / 6000;
+                const uint32_t secs = (total_cs % 6000) / 100;
+                const uint32_t cs   =  total_cs % 100;
+                const char* t_str = TextFormat("%02u:%02u.%02u", mins, secs, cs);
+                const Color   t_col = local.finished ? Color{0, 230, 100, 255} : WHITE;
+                const Vector2 t_sz  = MeasureTextEx(font_timer, t_str, 48, 1);
+                DrawTextEx(font_timer, t_str,
+                    {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 48, 1, t_col);
+            }
 
-        // --- Best time (sotto il timer, centro in alto) ---
-        if (best_ticks > 0) {
-            const uint32_t b_cs   = best_ticks * 100 / 60;
-            const uint32_t b_mins =  b_cs / 6000;
-            const uint32_t b_secs = (b_cs % 6000) / 100;
-            const uint32_t b_frac =  b_cs % 100;
-            const char* b_str = TextFormat("Best: %02u:%02u.%02u", b_mins, b_secs, b_frac);
-            const Vector2 b_sz = MeasureTextEx(font_hud, b_str, 24, 1);
-            DrawTextEx(font_hud, b_str,
-                {GetScreenWidth() * 0.5f - b_sz.x * 0.5f, 62}, 24, 1, {0, 220, 255, 200});
+            // --- Best time (sotto il timer, centro in alto) ---
+            if (best_ticks > 0) {
+                const uint32_t b_cs   = best_ticks * 100 / 60;
+                const uint32_t b_mins =  b_cs / 6000;
+                const uint32_t b_secs = (b_cs % 6000) / 100;
+                const uint32_t b_frac =  b_cs % 100;
+                const char* b_str = TextFormat("Best: %02u:%02u.%02u", b_mins, b_secs, b_frac);
+                const Vector2 b_sz = MeasureTextEx(font_hud, b_str, 24, 1);
+                DrawTextEx(font_hud, b_str,
+                    {GetScreenWidth() * 0.5f - b_sz.x * 0.5f, 62}, 24, 1, {0, 220, 255, 200});
+            }
         }
 
         // --- Tempo limite livello (top right, aggiorna 1 volta/s) ---
@@ -696,8 +751,8 @@ int main() {
                 {GetScreenWidth() - tl_sz.x - 10, 10}, 24, 1, tl_col);
         }
 
-        // --- "New Record!" ---
-        if (show_record) {
+        // --- "New Record!" (nascosto in lobby) ---
+        if (show_record && !last_game_state.is_lobby) {
             const char* msg = "New Record!";
             const Vector2 ms = MeasureTextEx(font_hud, msg, 24, 1);
             // Sfondo semitrasparente per leggibilità.
@@ -712,8 +767,33 @@ int main() {
                 24, 1, {0, 220, 255, 255});
         }
 
-        // --- "Next level in: X.XX s" (bottom right) ---
-        if (last_game_state.next_level_countdown_ticks > 0) {
+        // --- Lobby: hint + grande conto alla rovescia centralizzato ---
+        if (last_game_state.is_lobby) {
+            const uint32_t cd = last_game_state.next_level_countdown_ticks;
+            const float cx    = GetScreenWidth()  * 0.5f;
+            const float cy    = GetScreenHeight() * 0.5f;
+            if (cd > 0) {
+                // Conto alla rovescia: 3... 2... 1...
+                const uint32_t rem_secs = (cd + 59u) / 60u;  // ceil: 180→3, 120→2, 60→1
+                const char* cd_str = TextFormat("Game starts in %u...", rem_secs);
+                const Vector2 cd_sz = MeasureTextEx(font_timer, cd_str, 48, 1);
+                DrawRectangle(0, static_cast<int>(cy - 40),
+                              GetScreenWidth(), 80, {0, 0, 0, 160});
+                DrawTextEx(font_timer, cd_str,
+                    {cx - cd_sz.x * 0.5f, cy - 24.f},
+                    48, 1, {0, 220, 255, 255});
+            } else {
+                // Suggerimento: porta tutti i giocatori all'uscita.
+                const char* hint = last_game_state.count == 0
+                    ? "Waiting for players..."
+                    : "Move ALL players to the EXIT to start!";
+                const Vector2 hs = MeasureTextEx(font_hud, hint, 24, 1);
+                DrawTextEx(font_hud, hint,
+                    {cx - hs.x * 0.5f, GetScreenHeight() - hs.y - 20.f},
+                    24, 1, {200, 200, 220, 220});
+            }
+        // --- "Next level in: X.XX s" (bottom right, solo durante il gioco) ---
+        } else if (last_game_state.next_level_countdown_ticks > 0) {
             const uint32_t rem_cs   = last_game_state.next_level_countdown_ticks * 100 / 60;
             const uint32_t rem_secs = rem_cs / 100;
             const uint32_t rem_frac = rem_cs % 100;
@@ -749,13 +829,13 @@ int main() {
                 }
 
                 const char* hint = "up/down: navigate   enter: confirm   esc: resume";
-                const Vector2 hs = MeasureTextEx(font_hud, hint, 16, 1);
-                DrawTextEx(font_hud, hint, {pcx - hs.x * 0.5f, pcy + 120.f}, 16, 1, PAU_DIM);
+                const Vector2 hs = MeasureTextEx(font_small, hint, 18, 1);
+                DrawTextEx(font_small, hint, {pcx - hs.x * 0.5f, pcy + 120.f}, 18, 1, PAU_DIM);
 
             } else { // CONFIRM_QUIT
                 const char* msg = "Quit to main menu?";
-                const Vector2 ms = MeasureTextEx(font_hud, msg, 32, 1);
-                DrawTextEx(font_hud, msg, {pcx - ms.x * 0.5f, pcy - 90.f}, 32, 1, PAU_TXT);
+                const Vector2 ms = MeasureTextEx(font_hud, msg, 24, 1);
+                DrawTextEx(font_hud, msg, {pcx - ms.x * 0.5f, pcy - 90.f}, 24, 1, PAU_TXT);
 
                 const char* items[2] = {"No", "Yes"};
                 for (int i = 0; i < 2; i++) {
@@ -767,8 +847,8 @@ int main() {
                 }
 
                 const char* hint = "up/down: navigate   enter: confirm   esc: back";
-                const Vector2 hs = MeasureTextEx(font_hud, hint, 16, 1);
-                DrawTextEx(font_hud, hint, {pcx - hs.x * 0.5f, pcy + 100.f}, 16, 1, PAU_DIM);
+                const Vector2 hs = MeasureTextEx(font_small, hint, 18, 1);
+                DrawTextEx(font_small, hint, {pcx - hs.x * 0.5f, pcy + 100.f}, 18, 1, PAU_DIM);
             }
         }
 
@@ -795,11 +875,11 @@ int main() {
             const Vector2 ms = MeasureTextEx(font_hud, session_error.c_str(), 24, 1);
             DrawTextEx(font_hud, session_error.c_str(),
                 {cx - ms.x * 0.5f, cy - 22.f},
-                24, 1, {255, 80, 80, 255});
+                24, 1, session_error_color);
             // Dettaglio versione
             if (!session_error_sub.empty()) {
-                const Vector2 ms2 = MeasureTextEx(font_hud, session_error_sub.c_str(), 18, 1);
-                DrawTextEx(font_hud, session_error_sub.c_str(),
+                const Vector2 ms2 = MeasureTextEx(font_small, session_error_sub.c_str(), 18, 1);
+                DrawTextEx(font_small, session_error_sub.c_str(),
                     {cx - ms2.x * 0.5f, cy + 8.f},
                     18, 1, {180, 180, 180, 255});
             }
@@ -811,8 +891,8 @@ int main() {
 
     enet_deinitialize();
 
+    UnloadFont(font_small);
     UnloadFont(font_hud);
-    UnloadFont(font_debug);
     UnloadFont(font_timer);
     CloseWindow();
     return 0;

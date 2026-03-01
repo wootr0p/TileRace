@@ -27,5 +27,9 @@ struct InputFrame {
     float dash_dx = 0.f;
     float dash_dy = 0.f;
 
+    // Asse X analogico per il movimento orizzontale: intervallo [-1, 1].
+    // Tastiera/DPAD = ±1.0, stick analogico = valore grezzo (dopo deadzone).
+    float move_x  = 0.f;
+
     bool Has(InputBits b) const { return (buttons & b) != 0; }
 };

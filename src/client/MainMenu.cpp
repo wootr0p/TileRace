@@ -101,7 +101,7 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
     // Font grande per i titoli: caricato qui perché LoadFontEx
     // richiede InitWindow già chiamato, e la dimensione deve coincidere
     // con quella di render per evitare il pixelato da upscale.
-    Font font_title = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 72, nullptr, 0);
+    Font font_title = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 64, nullptr, 0);
     MenuResult res{};
 
     // Pre-riempi dai dati salvati.
@@ -213,7 +213,7 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
 
         } else {  // Screen::ONLINE
             // Titolo
-            DrawCentered(font_title, "ONLINE", cx, H * 0.18f, 48.f, ACCENT_COL);
+            DrawCentered(font_title, "ONLINE", cx, H * 0.18f, 64.f, ACCENT_COL);
 
             // Campo IP (sempre attivo per la digitazione)
             const float ip_y = H * 0.45f;

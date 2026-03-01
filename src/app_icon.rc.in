@@ -1,0 +1,4 @@
+// Windows resource file — generato da CMake via configure_file.
+// Incorpora l'icona in tutti gli eseguibili che includono questo file.
+// ID 1 = icona principale dell'applicazione (usata da Windows Explorer e taskbar).
+1 ICON "@ICON_PATH@"

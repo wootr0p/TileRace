@@ -43,6 +43,22 @@ add_subdirectory(src/common)
 add_subdirectory(src/server)
 add_subdirectory(src/client)
 
+# --- ICONA ESEGUIBILI (solo Windows) ---
+# Genera app_icon.rc con il percorso assoluto all'icona, poi lo aggiunge ad
+# entrambi gli eseguibili. Il percorso è assoluto per evitare problemi con le
+# working-directory del compilatore di risorse.
+if(WIN32)
+    set(ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/icon.ico")
+    string(REPLACE "\\" "/" ICON_PATH "${ICON_PATH}")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/app_icon.rc.in"
+        "${CMAKE_BINARY_DIR}/app_icon.rc"
+        @ONLY
+    )
+    target_sources(TileRace        PRIVATE "${CMAKE_BINARY_DIR}/app_icon.rc")
+    target_sources(TileRace_Server PRIVATE "${CMAKE_BINARY_DIR}/app_icon.rc")
+endif()
+
 # --- INSTALLAZIONE RUNTIME (solo ciò che serve per distribuire il gioco) ---
 set(TILERACE_RUNTIME_COMPONENT TileRaceRuntime)
 
