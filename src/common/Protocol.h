@@ -12,8 +12,8 @@
 //                    (strutture pacchetti, PlayerState, logica di simulazione).
 //                    Client e server devono avere lo stesso valore per giocare.
 // ---------------------------------------------------------------------------
-static constexpr const char*  GAME_VERSION     = "0.3.0";
-static constexpr uint16_t     PROTOCOL_VERSION = 3;
+static constexpr const char*  GAME_VERSION     = "0.1.0";
+static constexpr uint16_t     PROTOCOL_VERSION = 1;
 
 // ---------------------------------------------------------------------------
 // Costanti di protocollo condivise tra client e server.
