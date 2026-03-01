@@ -9,13 +9,13 @@
 
 // Bit-flag dei pulsanti.
 enum InputBits : uint8_t {
-    BTN_LEFT       = 1 << 0,  // tenuto premuto → movimento sinistra
-    BTN_RIGHT      = 1 << 1,  // tenuto premuto → movimento destra
-    BTN_JUMP       = 1 << 2,  // tenuto premuto → usato per variable-jump cut
-    BTN_JUMP_PRESS = 1 << 3,  // edge rising (sticky) → setta jump buffer
-    BTN_DASH       = 1 << 4,  // edge rising (sticky) → avvia dash
-    BTN_UP         = 1 << 5,  // tenuto premuto → direzione dash / steer verso l'alto
-    BTN_DOWN       = 1 << 6,  // tenuto premuto → direzione dash / steer verso il basso
+    BTN_LEFT       = 1 << 0,  // tenuto premuto --> movimento sinistra
+    BTN_RIGHT      = 1 << 1,  // tenuto premuto --> movimento destra
+    BTN_JUMP       = 1 << 2,  // tenuto premuto --> usato per variable-jump cut
+    BTN_JUMP_PRESS = 1 << 3,  // edge rising (sticky) --> setta jump buffer
+    BTN_DASH       = 1 << 4,  // edge rising (sticky) --> avvia dash
+    BTN_UP         = 1 << 5,  // tenuto premuto --> direzione dash / steer verso l'alto
+    BTN_DOWN       = 1 << 6,  // tenuto premuto --> direzione dash / steer verso il basso
 };
 
 struct InputFrame {

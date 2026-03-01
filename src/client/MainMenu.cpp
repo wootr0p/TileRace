@@ -4,6 +4,7 @@
 
 #include "MainMenu.h"
 #include "SaveData.h"
+#include "Protocol.h"
 #include <cstring>
 #include <cstdio>
 
@@ -28,20 +29,17 @@ static bool Clicked(Rectangle r) {
     return Hovered(r) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 }
 
-// Disegna un pulsante testo con prefisso '> ' se hovered.
-static Rectangle DrawTextBtn(Font& f, const char* label, float cx, float y) {
+// Disegna un pulsante testo con prefisso '> ' se selezionato.
+static Rectangle DrawTextBtn(Font& f, const char* label, float cx, float y, bool selected = false) {
     const Vector2 ts = MeasureTextEx(f, label, SZ, 1);
-    // area cliccabile: un po' più larga del testo
     Rectangle r = {cx - ts.x * 0.5f - 20, y, ts.x + 40, SZ + SP};
-    const bool hv = Hovered(r);
-    const Color col = hv ? ACCENT_COL : TXT_MAIN;
-    // prefisso
-    const char* prefix = hv ? "> " : "  ";
+    const Color col = selected ? ACCENT_COL : TXT_MAIN;
+    const char* prefix = selected ? "> " : "  ";
     char buf[64];
     snprintf(buf, sizeof(buf), "%s%s", prefix, label);
     const Vector2 bts = MeasureTextEx(f, buf, SZ, 1);
     DrawTextEx(f, buf, {cx - bts.x * 0.5f, y}, SZ, 1, col);
-    return r;  // ritorna l'area per collision detection
+    return r;
 }
 
 // Disegna un campo testo con label e linea di separazione.
@@ -113,87 +111,136 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
         std::strncpy(res.server_ip, save.last_ip, sizeof(res.server_ip) - 1);
 
     enum class Screen { MAIN, ONLINE } screen = Screen::MAIN;
-    // 0 = campo nome, 1 = campo IP
-    int focused = 0;
+    // btn_focus: 0 = pulsante sinistro, 1 = pulsante destro (per entrambe le schermate)
+    int   btn_focus = 0;
+    // Edge detection stick sinistro (valori del frame precedente)
+    float prev_sx = 0.f, prev_sy = 0.f;
+    // Salta gli input nel primo frame: BeginDrawing() non è ancora stato chiamato quindi
+    // PollInputEvents() non ha ancora azzerato i tasti rimasti premuti dalla sessione di gioco.
+    bool skip_input = true;
 
     while (!WindowShouldClose()) {
         const float W  = (float)GetScreenWidth();
         const float H  = (float)GetScreenHeight();
         const float cx = W * 0.5f;
 
-        // ---- Input: focus con click ----
-        // (gestito nel render pass perché le rect dei campi dipendono dal layout)
+        // ---- Gamepad + stick edge ----
+        const bool gp = IsGamepadAvailable(0);
+        const float sx = gp ? GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X) : 0.f;
+        const float sy = gp ? GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y) : 0.f;
+        const bool stick_right = (prev_sx <  0.5f && sx >=  0.5f);
+        const bool stick_left  = (prev_sx > -0.5f && sx <= -0.5f);
+        const bool stick_down  = (prev_sy <  0.5f && sy >=  0.5f);
+        const bool stick_up    = (prev_sy > -0.5f && sy <= -0.5f);
+        prev_sx = sx; prev_sy = sy;
 
-        // Tab per cambiare campo (solo nella schermata principale)
-        if (IsKeyPressed(KEY_TAB) && screen == Screen::MAIN)
-            focused = 0;  // un solo campo nome nella schermata principale
+        // ---- Navigazione bottoni (frecce / D-pad / stick)
+        // WASD esclusi: D/S andrebbero in conflitto con la digitazione nel campo testo.
+        const bool nav_next = !skip_input && (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_DOWN) ||
+                              (gp && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) ||
+                                      IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN))) ||
+                              stick_right || stick_down);
+        const bool nav_prev = !skip_input && (IsKeyPressed(KEY_LEFT)  || IsKeyPressed(KEY_UP) ||
+                              (gp && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT) ||
+                                      IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP))) ||
+                              stick_left || stick_up);
+        // Conferma: Enter o Cross (no Space: aggiungerebbe un carattere al campo testo)
+        const bool nav_ok = !skip_input && (IsKeyPressed(KEY_ENTER) ||
+                            (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)));
 
-        // Input testo nel campo attivo
+        if (nav_next) btn_focus = 1;
+        if (nav_prev) btn_focus = 0;
+
+        // ---- Input testo nel campo attivo ----
         if (screen == Screen::MAIN) PollFieldInput(res.username,  (int)sizeof(res.username));
         else                        PollFieldInput(res.server_ip, (int)sizeof(res.server_ip));
 
-        // ---- Azioni tasti ----
+        // ---- Azioni ----
         MenuChoice pending_choice = MenuChoice::QUIT;
         bool       has_action     = false;
 
         if (screen == Screen::ONLINE) {
-            if (IsKeyPressed(KEY_ENTER)) {
-                pending_choice = MenuChoice::ONLINE;
+            if (!skip_input && IsKeyPressed(KEY_ESCAPE)) {
+                screen    = Screen::MAIN;
+                btn_focus = 0;
+            }
+            if (nav_ok && !has_action) {
+                if (btn_focus == 1) { pending_choice = MenuChoice::ONLINE; has_action = true; }
+                else                { screen = Screen::MAIN; btn_focus = 0; }
+            }
+        } else { // Screen::MAIN
+            // ESC o Start gamepad --> esci dal gioco
+            if (!skip_input &&
+                (IsKeyPressed(KEY_ESCAPE) ||
+                (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT)))) {
+                pending_choice = MenuChoice::QUIT;
                 has_action     = true;
             }
-            if (IsKeyPressed(KEY_ESCAPE)) {
-                screen  = Screen::MAIN;
-                focused = 0;
+            if (nav_ok && !has_action) {
+                if (btn_focus == 0) { pending_choice = MenuChoice::OFFLINE; has_action = true; }
+                else                { screen = Screen::ONLINE; btn_focus = 0; }
             }
         }
 
         // ---- Render ----
         BeginDrawing();
+        skip_input = false;  // da ora PollInputEvents() ha azzerato i pressed del frame precedente
         ClearBackground(BG_COL);
 
         if (screen == Screen::MAIN) {
             // Titolo
             DrawCentered(font_title, "Tile Race", cx, H * 0.18f, 64.f, ACCENT_COL);
 
-            // Campo nome
+            // Campo nome (sempre attivo per la digitazione)
             const float field_y = H * 0.40f;
-            // Area click campo nome
-            Rectangle r_name = {cx - 150, field_y - 4, 300, SZ * 2 + 16};
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
-                CheckCollisionPointRec(GetMousePosition(), r_name))
-                focused = 0;
-            DrawTextField(font, "name", cx, field_y, res.username, focused == 0);
+            DrawTextField(font, "name", cx, field_y, res.username, true);
 
             // Pulsanti
             const float btn_y = H * 0.62f;
-            Rectangle r_off = DrawTextBtn(font, "OFFLINE", cx - 120, btn_y);
-            Rectangle r_on  = DrawTextBtn(font, "ONLINE",  cx + 120, btn_y);
+            Rectangle r_off = DrawTextBtn(font, "OFFLINE", cx - 120, btn_y, btn_focus == 0);
+            Rectangle r_on  = DrawTextBtn(font, "ONLINE",  cx + 120, btn_y, btn_focus == 1);
+
+            // Aggiorna btn_focus se il mouse si sposta sopra un bottone
+            if (Hovered(r_off)) btn_focus = 0;
+            if (Hovered(r_on))  btn_focus = 1;
 
             if (Clicked(r_off)) { pending_choice = MenuChoice::OFFLINE; has_action = true; }
-            if (Clicked(r_on))  { screen = Screen::ONLINE; focused = 0; }
+            if (Clicked(r_on))  { screen = Screen::ONLINE; btn_focus = 0; }
 
             // Hint
-            DrawCentered(font, "tab: switch field", cx, H - SZ - 16, SZ * 0.6f, TXT_DIM);
+            DrawCentered(font, "left/right: select   enter/cross: confirm   esc: quit",
+                         cx, H - SZ - 16, SZ, TXT_DIM);
 
         } else {  // Screen::ONLINE
             // Titolo
             DrawCentered(font_title, "ONLINE", cx, H * 0.18f, 48.f, ACCENT_COL);
 
-            // Campo IP — unico campo
+            // Campo IP (sempre attivo per la digitazione)
             const float ip_y = H * 0.45f;
             DrawTextField(font, "server ip", cx, ip_y, res.server_ip, true);
 
-            // Pulsanti
+            // Pulsanti: 0=BACK (sinistra), 1=CONNECT (destra)
             const float btn_y = H * 0.66f;
-            Rectangle r_back = DrawTextBtn(font, "BACK",    cx - 110, btn_y);
-            Rectangle r_conn = DrawTextBtn(font, "CONNECT", cx + 110, btn_y);
+            Rectangle r_back = DrawTextBtn(font, "BACK",    cx - 110, btn_y, btn_focus == 0);
+            Rectangle r_conn = DrawTextBtn(font, "CONNECT", cx + 110, btn_y, btn_focus == 1);
+
+            // Aggiorna btn_focus se il mouse si sposta sopra un bottone
+            if (Hovered(r_back)) btn_focus = 0;
+            if (Hovered(r_conn)) btn_focus = 1;
 
             if (Clicked(r_conn)) { pending_choice = MenuChoice::ONLINE; has_action = true; }
-            if (Clicked(r_back)) { screen = Screen::MAIN; focused = 0; }
+            if (Clicked(r_back)) { screen = Screen::MAIN; btn_focus = 0; }
 
             // Hint
-            DrawCentered(font, "enter: connect   esc: back",
-                         cx, H - SZ - 16, SZ * 0.6f, TXT_DIM);
+            DrawCentered(font, "left/right: select   enter/cross: confirm   esc: back",
+                         cx, H - SZ - 16, SZ, TXT_DIM);
+        }
+
+        // Versione (angolo in basso a destra, visibile in entrambe le schermate)
+        {
+            const char* ver = TextFormat("v%s", GAME_VERSION);
+            const Vector2 vs = MeasureTextEx(font, ver, SZ * 0.6f, 1);
+            DrawTextEx(font, ver, {W - vs.x - 10, H - vs.y - 8}, SZ * 0.6f, 1, TXT_DIM);
         }
 
         EndDrawing();

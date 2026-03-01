@@ -16,7 +16,7 @@ public:
     bool LoadFromFile(const char* path);
 
     // Ritorna true se il tile (tx, ty) è solido ('0' o 'E').
-    // Fuori dai limiti → false (non si rimane incastrati ai bordi della mappa).
+    // Fuori dai limiti --> false (non si rimane incastrati ai bordi della mappa).
     bool IsSolid(int tx, int ty) const;
 
     // Ritorna il carattere grezzo del tile, o ' ' se fuori dai limiti.

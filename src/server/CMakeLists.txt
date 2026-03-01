@@ -1,8 +1,8 @@
 # --- SERVER ---
 # File aggiunti passo per passo:
-#   passo 11 → main.cpp + TileRace_Server (ping/pong ENet)  ← COMPLETATO
-#   passo 14 → server autoritativo multi-giocatore          ← COMPLETATO
-#   passo 20 → ServerLogic.cpp → server_logic lib (condiviso con client per offline) ← COMPLETATO
+#   passo 11 --> main.cpp + TileRace_Server (ping/pong ENet)  ← COMPLETATO
+#   passo 14 --> server autoritativo multi-giocatore          ← COMPLETATO
+#   passo 20 --> ServerLogic.cpp --> server_logic lib (condiviso con client per offline) ← COMPLETATO
 
 # --- server_logic: logica del server riusabile (standalone + LocalServer) ---
 add_library(server_logic STATIC ServerLogic.cpp)

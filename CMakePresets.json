@@ -52,6 +52,18 @@
       "name": "run-release",
       "configurePreset": "release",
       "targets": ["run"]
+    },
+    {
+      "name": "run-scc-debug",
+      "displayName": "Run: Server + 2 Client (Debug)",
+      "configurePreset": "debug",
+      "targets": ["run_ccs"]
+    },
+    {
+      "name": "run-scc-release",
+      "displayName": "Run: Server + 2 Client (Release)",
+      "configurePreset": "release",
+      "targets": ["run_ccs"]
     }
   ]
 }

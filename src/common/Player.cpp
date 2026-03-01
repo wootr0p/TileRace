@@ -244,7 +244,7 @@ void Player::MoveY(float dt, const World& world) {
     // --- Gravità e integrazione ---
     if (was_on_ground && state_.vel_y >= 0.f) {
         // Già a terra e nessun salto attivo: usa un probe di 1 px verso il basso invece
-        // di accumulare gravità ogni tick. Elimina il jitter vel_y~0→23→0 e on_ground
+        // di accumulare gravità ogni tick. Elimina il jitter vel_y~0-->23-->0 e on_ground
         // che oscillava tra true/false. Se il tile sotto sparisce (bordo), on_ground rimane
         // false e la caduta libera inizia normalmente dal tick successivo.
         state_.vel_y  = 1.f;  // valore minimo positivo perché ResolveCollisionsY usi il ramo "caduta"

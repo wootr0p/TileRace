@@ -1,40 +1,45 @@
 # TileRace
 
-**Prototype of a Vertical(?) Racing Multiplayer 2D Platform** _with potential cross-platform support._
+**Competitive multiplayer 2D side-scrolling platformer.** Two or more players race across tile-based levels to reach the goal first. Supports both online (dedicated server) and offline (embedded local server) modes. Up to 8 players per match.
 
 ---
 
 ## Build Instructions
 
-This project uses CMake and CMake Presets for a cross-platform and IDE-independent build process.
+This project uses **CMake 3.16+** with CMake Presets and Ninja. All dependencies (Raylib 5.5, ENet) are fetched and compiled from source via `FetchContent` — no pre-built binaries required.
 
 ### Prerequisites
 
-- CMake (3.21 or higher)
-- A C++17 compatible compiler (MSVC, GCC, or Clang)
+- CMake 3.16 or higher
+- A C++20-compatible compiler (MSVC, GCC, or Clang)
 - Ninja build system (recommended)
 
-### Build and Run
-
-You can automatically build and launch both the Server and the Client with a single command using the provided presets.
-
-**Debug Mode:**
+### First-time configure
 
 ```bash
+# Debug
 cmake --preset debug
-cmake --build --preset run-debug
-```
 
-**Release Mode:**
-
-```bash
+# Release
 cmake --preset release
-cmake --build --preset run-release
 ```
+
+Only needs to be run once (or after changing `CMakeLists.txt` / `CMakePresets.json`).
+
+### Build & Run
+
+| Command | Effect |
+|---|---|
+| `cmake --build --preset run-debug` | Build (debug) → launch client |
+| `cmake --build --preset run-release` | Build (release) → launch client |
+| `cmake --build --preset run-scc-debug` | Build (debug) → launch server + 2 clients |
+| `cmake --build --preset run-scc-release` | Build (release) → launch server + 2 clients |
+| `cmake --build --preset debug` | Build only (debug) |
+| `cmake --build --preset release` | Build only (release) |
+
+The `run-scc-*` presets open the server and each client in separate windows via PowerShell `Start-Process`. The server starts first; clients follow after a 1-second delay.
 
 ### Create a Distributable Build
-
-To create a clean `dist` folder containing only the files needed to distribute the game (executables, shared libraries, and assets), run the following commands:
 
 ```bash
 cmake --preset release
@@ -42,4 +47,5 @@ cmake --build --preset release
 cmake --install build/release --component TileRaceRuntime
 ```
 
-The output will be located in the `dist/` directory at the root of the project.
+Output is placed in `dist/` at the project root and contains exactly what is needed to distribute the game.
+

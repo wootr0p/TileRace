@@ -17,6 +17,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <unordered_map>
 #include <raylib.h>
 #include "World.h"
@@ -39,6 +40,7 @@ static constexpr GamepadButton GP_JUMP    = GAMEPAD_BUTTON_RIGHT_FACE_DOWN;   //
 static constexpr GamepadButton GP_DASH_A  = GAMEPAD_BUTTON_RIGHT_FACE_LEFT;   // Quadrato
 static constexpr GamepadButton GP_DASH_B  = GAMEPAD_BUTTON_RIGHT_FACE_RIGHT;  // Cerchio
 static constexpr GamepadButton GP_RESTART = GAMEPAD_BUTTON_RIGHT_FACE_UP;     // Triangolo
+static constexpr GamepadButton GP_START   = GAMEPAD_BUTTON_MIDDLE_RIGHT;       // Options / Start
 
 // Fattore di smorzamento della camera (valori alti = segue più stretto).
 static constexpr float CAM_SMOOTH  = 8.f;
@@ -207,26 +209,33 @@ int main() {
         fprintf(stderr, "[client] ERRORE: enet_initialize fallita\n");
         return 1;
     }
+    printf("[client] TileRace v%s  (protocol %u)\n", GAME_VERSION, PROTOCOL_VERSION);
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    InitWindow(1280, 720, "TileRace");
+    InitWindow(1280, 720, TextFormat("TileRace v%s", GAME_VERSION));
     SetTargetFPS(120);
+    SetExitKey(KEY_NULL);  // ESC gestito manualmente (pausa in-game, quit da menu)
 
     Font font_hud   = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 24, nullptr, 0);
     Font font_debug = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 20, nullptr, 0);
+    Font font_timer = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 48, nullptr, 0);
+    SetTextureFilter(font_timer.texture, TEXTURE_FILTER_BILINEAR);
 
     // Carica i dati salvati (nickname, ultimo IP).
     SaveData save{};
     LoadSaveData(save);
 
     // -----------------------------------------------------------------------
-    // Loop principale: menu → partita → menu (riparte se la connessione fallisce)
+    // Loop principale: menu --> partita --> menu (riparte se la connessione fallisce)
     // -----------------------------------------------------------------------
     while (!WindowShouldClose()) {
 
     // Menu iniziale (passo 19)
     const MenuResult menu = ShowMainMenu(font_hud, save);
     if (menu.choice == MenuChoice::QUIT) break;
+
+    std::string session_error;      // non-empty = mostra messaggio di errore prima di tornare al menu
+    std::string session_error_sub;   // riga di dettaglio opzionale sotto il messaggio principale
 
     // Modalità offline: avvia il server locale in un thread (passo 20)
     LocalServer local_srv;
@@ -328,6 +337,14 @@ int main() {
     float    prev_y         = ps.y;
 
     bool session_over = false;
+    // Ragione di disconnessione ricevuta via PKT_VERSION_MISMATCH prima del DISCONNECT.
+    std::string pending_disc_reason;
+    std::string pending_disc_sub;
+    enum class PauseState { PLAYING, PAUSED, CONFIRM_QUIT };
+    float prev_pause_stick_y = 0.f;  // edge detection stick per navigazione pausa
+    PauseState pause_state     = PauseState::PLAYING;
+    int        pause_focused   = 0;  // 0 = Resume, 1 = Quit to Menu
+    int        confirm_focused = 0;  // 0 = No, 1 = Yes
     while (!WindowShouldClose() && !session_over) {
         const float dt = GetFrameTime();
         accumulator += dt;
@@ -335,16 +352,65 @@ int main() {
         // --- Input sticky (va campionato PRIMA di BeginDrawing) ---
         const bool gp = IsGamepadAvailable(GP);
 
-        if (IsKeyPressed(KEY_SPACE) || (gp && IsGamepadButtonPressed(GP, GP_JUMP)))
+        // --- Pausa / resume ---
+        {
+            const bool toggle   = IsKeyPressed(KEY_ESCAPE) ||
+                                  (gp && IsGamepadButtonPressed(GP, GP_START));
+            // Stick edge detection per navigazione pausa
+            const float gp_sy = gp ? GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_Y) : 0.f;
+            const bool stick_nav_up   = (prev_pause_stick_y > -0.5f && gp_sy <= -0.5f);
+            const bool stick_nav_down = (prev_pause_stick_y <  0.5f && gp_sy >=  0.5f);
+            prev_pause_stick_y = gp_sy;
+            // Nav: su / sinistra  (frecce, WASD, D-pad, stick)
+            const bool nav_up   = IsKeyPressed(KEY_UP)    || IsKeyPressed(KEY_W) ||
+                                  IsKeyPressed(KEY_LEFT)  || IsKeyPressed(KEY_A) ||
+                                  (gp && (IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_UP) ||
+                                          IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_LEFT))) ||
+                                  stick_nav_up;
+            // Nav: giù / destra
+            const bool nav_down = IsKeyPressed(KEY_DOWN)  || IsKeyPressed(KEY_S) ||
+                                  IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D) ||
+                                  (gp && (IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_DOWN) ||
+                                          IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_RIGHT))) ||
+                                  stick_nav_down;
+            // Conferma: Enter, Space (tasto salta) o Cross
+            const bool ok       = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) ||
+                                  (gp && IsGamepadButtonPressed(GP, GP_JUMP));
+
+            if (pause_state == PauseState::PLAYING && toggle) {
+                pause_state   = PauseState::PAUSED;
+                pause_focused = 0;
+            } else if (pause_state == PauseState::PAUSED) {
+                if      (toggle)             pause_state   = PauseState::PLAYING;
+                else if (nav_up || nav_down) pause_focused = 1 - pause_focused;
+                else if (ok) {
+                    if (pause_focused == 0)  pause_state   = PauseState::PLAYING;
+                    else { pause_state = PauseState::CONFIRM_QUIT; confirm_focused = 0; }
+                }
+            } else if (pause_state == PauseState::CONFIRM_QUIT) {
+                if      (toggle)             pause_state     = PauseState::PAUSED;
+                else if (nav_up || nav_down) confirm_focused = 1 - confirm_focused;
+                else if (ok) {
+                    if (confirm_focused == 1) session_over = true;
+                    else                      pause_state  = PauseState::PAUSED;
+                }
+            }
+        }
+        if (session_over) continue;
+
+        if (pause_state == PauseState::PLAYING &&
+            (IsKeyPressed(KEY_SPACE) || (gp && IsGamepadButtonPressed(GP, GP_JUMP))))
             jump_pressed = true;
 
-        if (IsKeyPressed(KEY_LEFT_SHIFT) || IsKeyPressed(KEY_RIGHT_SHIFT) ||
+        if (pause_state == PauseState::PLAYING &&
+            (IsKeyPressed(KEY_LEFT_SHIFT) || IsKeyPressed(KEY_RIGHT_SHIFT) ||
             (gp && (IsGamepadButtonPressed(GP, GP_DASH_A) ||
-                    IsGamepadButtonPressed(GP, GP_DASH_B))))
+                    IsGamepadButtonPressed(GP, GP_DASH_B)))))
             dash_pending = true;
 
-        if (IsKeyPressed(KEY_BACKSPACE) ||
-            (gp && IsGamepadButtonPressed(GP, GP_RESTART)))
+        if (pause_state == PauseState::PLAYING &&
+            (IsKeyPressed(KEY_BACKSPACE) ||
+            (gp && IsGamepadButtonPressed(GP, GP_RESTART))))
             restart_pending = true;
 
         // --- Restart: invia pacchetto e azzera stato record ---
@@ -357,6 +423,7 @@ int main() {
         }
 
         // --- Tick fisso 60 Hz ---
+        if (pause_state != PauseState::PLAYING) accumulator = 0.f;
         while (accumulator >= FIXED_DT) {
             // Trail (usa stato locale predetto)
             if (player.GetState().dash_active_ticks > 0)
@@ -415,14 +482,28 @@ int main() {
                         s.player_id     = local_player_id;
                         player.SetState(s);
 
-                        // Invia il nome al server.
+                        // Invia nome + versione al server.
                         PktPlayerInfo info{};
+                        info.protocol_version = PROTOCOL_VERSION;
                         std::strncpy(info.name, menu.username, sizeof(info.name) - 1);
                         ENetPacket* pi = enet_packet_create(&info, sizeof(info),
                                                             ENET_PACKET_FLAG_RELIABLE);
                         enet_peer_send(net_peer, CHANNEL_RELIABLE, pi);
-                        printf("[client] player_id = %u  nome = '%s'\n",
-                               local_player_id, menu.username);
+                        printf("[client] player_id = %u  nome = '%s'  protocol_version = %u\n",
+                               local_player_id, menu.username, PROTOCOL_VERSION);
+                    }
+                    // Versione protocollo incompatibile: memorizza il motivo.
+                    // Il DISCONNECT arriverà subito dopo; lì verrà usato.
+                    else if (pkt_type == PKT_VERSION_MISMATCH &&
+                             ev.packet->dataLength >= sizeof(PktVersionMismatch)) {
+                        PktVersionMismatch vm{};
+                        std::memcpy(&vm, ev.packet->data, sizeof(vm));
+                        printf("[client] PKT_VERSION_MISMATCH ricevuto: server=%u client=%u\n",
+                               vm.server_version, PROTOCOL_VERSION);
+                        pending_disc_reason = "Version Mismatch: please update your client.";
+                        pending_disc_sub    = TextFormat(
+                            "Server protocol: %u  \xe2\x80\x94  Your client: %u",
+                            vm.server_version, PROTOCOL_VERSION);
                     }
                     // GameState broadcast: reconciliation + aggiornamento remoti.
                     else if (pkt_type == PKT_GAME_STATE &&
@@ -507,6 +588,16 @@ int main() {
                     }
                     enet_packet_destroy(ev.packet);
                 } else if (ev.type == ENET_EVENT_TYPE_DISCONNECT) {
+                    if (!pending_disc_reason.empty()) {
+                        // Motivo noto: arrivato via PKT_VERSION_MISMATCH prima del DISCONNECT.
+                        session_error     = pending_disc_reason;
+                        session_error_sub = pending_disc_sub;
+                    } else if (ev.data == DISCONNECT_VERSION_MISMATCH) {
+                        // Fallback: motivo codificato nel campo data del DISCONNECT.
+                        session_error = "Version Mismatch: please update your client.";
+                    } else if (session_error.empty()) {
+                        session_error = "Disconnected from server.";
+                    }
                     session_over = true;
                 }
                 if (session_over) break;
@@ -575,9 +666,9 @@ int main() {
             const uint32_t cs   =  total_cs % 100;
             const char* t_str = TextFormat("%02u:%02u.%02u", mins, secs, cs);
             const Color   t_col = local.finished ? Color{0, 230, 100, 255} : WHITE;
-            const Vector2 t_sz  = MeasureTextEx(font_hud, t_str, 24, 1);
-            DrawTextEx(font_hud, t_str,
-                {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 24, 1, t_col);
+            const Vector2 t_sz  = MeasureTextEx(font_timer, t_str, 48, 1);
+            DrawTextEx(font_timer, t_str,
+                {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 48, 1, t_col);
         }
 
         // --- Best time (sotto il timer, centro in alto) ---
@@ -589,7 +680,7 @@ int main() {
             const char* b_str = TextFormat("Best: %02u:%02u.%02u", b_mins, b_secs, b_frac);
             const Vector2 b_sz = MeasureTextEx(font_hud, b_str, 24, 1);
             DrawTextEx(font_hud, b_str,
-                {GetScreenWidth() * 0.5f - b_sz.x * 0.5f, 38}, 24, 1, {0, 220, 255, 200});
+                {GetScreenWidth() * 0.5f - b_sz.x * 0.5f, 62}, 24, 1, {0, 220, 255, 200});
         }
 
         // --- Tempo limite livello (top right, aggiorna 1 volta/s) ---
@@ -634,23 +725,95 @@ int main() {
                 24, 1, {0, 220, 255, 200});
         }
 
+        // --- Menu pausa ---
+        if (pause_state != PauseState::PLAYING) {
+            DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Color{5, 5, 15, 200});
+            const float pcx = GetScreenWidth()  * 0.5f;
+            const float pcy = GetScreenHeight() * 0.5f;
+            static constexpr Color PAU_ACCENT = {  0, 220, 255, 255};
+            static constexpr Color PAU_TXT    = {200, 200, 220, 255};
+            static constexpr Color PAU_DIM    = { 80,  80, 100, 255};
+
+            if (pause_state == PauseState::PAUSED) {
+                const char* title = "PAUSED";
+                const Vector2 ts = MeasureTextEx(font_timer, title, 48, 1);
+                DrawTextEx(font_timer, title, {pcx - ts.x * 0.5f, pcy - 110.f}, 48, 1, PAU_ACCENT);
+
+                const char* items[2] = {"Resume", "Quit to Menu"};
+                for (int i = 0; i < 2; i++) {
+                    const bool  sel = (pause_focused == i);
+                    const Color col = sel ? PAU_ACCENT : PAU_TXT;
+                    const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
+                    const Vector2 sz = MeasureTextEx(font_hud, buf, 24, 1);
+                    DrawTextEx(font_hud, buf, {pcx - sz.x * 0.5f, pcy - 10.f + i * 44.f}, 24, 1, col);
+                }
+
+                const char* hint = "up/down: navigate   enter: confirm   esc: resume";
+                const Vector2 hs = MeasureTextEx(font_hud, hint, 16, 1);
+                DrawTextEx(font_hud, hint, {pcx - hs.x * 0.5f, pcy + 120.f}, 16, 1, PAU_DIM);
+
+            } else { // CONFIRM_QUIT
+                const char* msg = "Quit to main menu?";
+                const Vector2 ms = MeasureTextEx(font_hud, msg, 32, 1);
+                DrawTextEx(font_hud, msg, {pcx - ms.x * 0.5f, pcy - 90.f}, 32, 1, PAU_TXT);
+
+                const char* items[2] = {"No", "Yes"};
+                for (int i = 0; i < 2; i++) {
+                    const bool  sel = (confirm_focused == i);
+                    const Color col = sel ? PAU_ACCENT : PAU_TXT;
+                    const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
+                    const Vector2 sz = MeasureTextEx(font_hud, buf, 24, 1);
+                    DrawTextEx(font_hud, buf, {pcx - sz.x * 0.5f, pcy - 10.f + i * 44.f}, 24, 1, col);
+                }
+
+                const char* hint = "up/down: navigate   enter: confirm   esc: back";
+                const Vector2 hs = MeasureTextEx(font_hud, hint, 16, 1);
+                DrawTextEx(font_hud, hint, {pcx - hs.x * 0.5f, pcy + 100.f}, 16, 1, PAU_DIM);
+            }
+        }
+
         EndDrawing();
     }
 
-    // Disconnessione ENet pulita.
-    if (net_peer->state == ENET_PEER_STATE_CONNECTED)
+    // Disconnessione ENet pulita (net_peer può essere nullptr se già disconnesso).
+    if (net_peer && net_peer->state == ENET_PEER_STATE_CONNECTED)
         enet_peer_disconnect_now(net_peer, 0);
     enet_host_destroy(net_host);
 
     // Ferma il server locale (no-op se non avviato).
     local_srv.Stop();
 
-    } // fine outer loop menu → partita
+    // Mostra errore di sessione per 2 secondi prima di tornare al menu.
+    if (!session_error.empty()) {
+        const float cx  = GetScreenWidth()  * 0.5f;
+        const float cy  = GetScreenHeight() * 0.5f;
+        const double t0 = GetTime();
+        while (!WindowShouldClose() && GetTime() - t0 < 3.0) {
+            BeginDrawing();
+            ClearBackground({8, 12, 40, 255});
+            // Titolo principale
+            const Vector2 ms = MeasureTextEx(font_hud, session_error.c_str(), 24, 1);
+            DrawTextEx(font_hud, session_error.c_str(),
+                {cx - ms.x * 0.5f, cy - 22.f},
+                24, 1, {255, 80, 80, 255});
+            // Dettaglio versione
+            if (!session_error_sub.empty()) {
+                const Vector2 ms2 = MeasureTextEx(font_hud, session_error_sub.c_str(), 18, 1);
+                DrawTextEx(font_hud, session_error_sub.c_str(),
+                    {cx - ms2.x * 0.5f, cy + 8.f},
+                    18, 1, {180, 180, 180, 255});
+            }
+            EndDrawing();
+        }
+    }
+
+    } // fine outer loop menu --> partita
 
     enet_deinitialize();
 
     UnloadFont(font_hud);
     UnloadFont(font_debug);
+    UnloadFont(font_timer);
     CloseWindow();
     return 0;
 }

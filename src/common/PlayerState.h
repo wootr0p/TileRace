@@ -3,11 +3,11 @@
 
 // Dati POD del player — nessuna logica, solo stato serializzabile.
 // Aggiornato incrementalmente passo per passo:
-//   passo 4  → x, y, player_id
-//   passo 5  → vel_x, vel_y, on_ground
-//   passo 6  → on_wall_left, on_wall_right, jump_buffer_ticks, coyote_ticks
-//   passo 9  → last_processed_tick
-//   passo 17 → dash_active_ticks, dash_cooldown_ticks, last_dir
+//   passo 4  --> x, y, player_id
+//   passo 5  --> vel_x, vel_y, on_ground
+//   passo 6  --> on_wall_left, on_wall_right, jump_buffer_ticks, coyote_ticks
+//   passo 9  --> last_processed_tick
+//   passo 17 --> dash_active_ticks, dash_cooldown_ticks, last_dir
 struct PlayerState {
     // posizione
     float    x         = 0.f;

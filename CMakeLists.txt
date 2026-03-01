@@ -46,7 +46,7 @@ add_subdirectory(src/client)
 # --- INSTALLAZIONE RUNTIME (solo ciò che serve per distribuire il gioco) ---
 set(TILERACE_RUNTIME_COMPONENT TileRaceRuntime)
 
-install(TARGETS TileRace
+install(TARGETS TileRace TileRace_Server
   RUNTIME DESTINATION .
   COMPONENT ${TILERACE_RUNTIME_COMPONENT}
 )
@@ -54,6 +54,7 @@ install(TARGETS TileRace
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets"
   DESTINATION .
   COMPONENT ${TILERACE_RUNTIME_COMPONENT}
+  PATTERN "*.url" EXCLUDE
 )
 
 # --- LOGICA DI RUN ---
@@ -69,5 +70,12 @@ if(WIN32)
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         DEPENDS TileRace_Server
         COMMENT "Avvio TileRace_Server..."
+    )
+    # Lancia server + 2 client in finestre separate (non bloccanti tramite PowerShell Start-Process)
+    add_custom_target(run_ccs
+        COMMAND powershell -NoProfile -Command
+            "Start-Process '$<TARGET_FILE:TileRace_Server>' -WorkingDirectory '${CMAKE_BINARY_DIR}/bin'; Start-Sleep 1; Start-Process '$<TARGET_FILE:TileRace>' -WorkingDirectory '${CMAKE_BINARY_DIR}/bin'; Start-Process '$<TARGET_FILE:TileRace>' -WorkingDirectory '${CMAKE_BINARY_DIR}/bin'"
+        DEPENDS TileRace TileRace_Server copy_assets
+        COMMENT "Avvio Server + 2 Client..."
     )
 endif()

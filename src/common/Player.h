@@ -4,8 +4,8 @@
 
 // Classe Player: possiede uno PlayerState e lo aggiorna.
 // Evoluzione prevista:
-//   passo 4-7  → MoveX/MoveY + meccaniche di salto   — COMPLETATO
-//   passo 9    → Simulate(InputFrame, World)           — COMPLETATO
+//   passo 4-7  --> MoveX/MoveY + meccaniche di salto   — COMPLETATO
+//   passo 9    --> Simulate(InputFrame, World)           — COMPLETATO
 class World;   // forward declaration; World.h incluso solo in Player.cpp
 
 class Player {

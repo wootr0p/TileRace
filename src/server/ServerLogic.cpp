@@ -12,6 +12,7 @@
 #include "Physics.h"
 
 void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag) {
+    printf("[server] TileRace v%s  (protocol %u)\n", GAME_VERSION, PROTOCOL_VERSION);
     // Percorso e livello iniziali: usati per il reset a fine sessione.
     const std::string initial_map_path(map_path);
     int initial_level = 1;
@@ -208,10 +209,28 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                             }
                         }
                     }
-                    // Aggiornamento nome player.
+                    // Aggiornamento nome player + controllo versione protocollo.
                     else if (type == PKT_PLAYER_INFO && len >= sizeof(PktPlayerInfo)) {
                         PktPlayerInfo info{};
                         std::memcpy(&info, event.packet->data, sizeof(PktPlayerInfo));
+
+                        // --- Controllo versione ---
+                        if (info.protocol_version != PROTOCOL_VERSION) {
+                            printf("[server] VERSION MISMATCH peer=%08x client=%u server=%u --> disconnesso\n",
+                                   event.peer->address.host,
+                                   info.protocol_version, PROTOCOL_VERSION);
+                            // 1) Pacchetto applicativo: contiene la versione del server.
+                            PktVersionMismatch vm{};
+                            ENetPacket* vmpkt = enet_packet_create(&vm, sizeof(vm),
+                                                                   ENET_PACKET_FLAG_RELIABLE);
+                            enet_peer_send(event.peer, CHANNEL_RELIABLE, vmpkt);
+                            // 2) Disconnessione morbida: ENet la esegue dopo aver
+                            //    consegnato tutti i pacchetti reliable pendenti.
+                            enet_peer_disconnect(event.peer, DISCONNECT_VERSION_MISMATCH);
+                            players.erase(event.peer);
+                            break;
+                        }
+
                         auto it = players.find(event.peer);
                         if (it != players.end()) {
                             PlayerState s = it->second.GetState();
@@ -253,7 +272,7 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                     zone_start_ms  = 0;
                     level_start_ms = enet_time_get();
                     next_player_id = 1;
-                    printf("[server] tutti disconnessi — reset a level %d\n", initial_level);
+                    printf("[server] tutti disconnessi --> reset a level %d\n", initial_level);
                 }
                 break;
 
@@ -284,14 +303,14 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                 }
                 ll_pkt.is_last = 0;
                 std::strncpy(ll_pkt.path, next_path, sizeof(ll_pkt.path) - 1);
-                printf("[server] LEVEL CHANGE → %s\n", next_path);
+                printf("[server] LEVEL CHANGE --> %s\n", next_path);
             } else {
                 // Ultimo livello completato: notifica i client, poi resetta
                 // il server allo stato iniziale senza uscire dal loop.
                 // Così sia il server dedicato che la LocalServer restano
                 // pronti per una nuova sessione senza bisogno di riavvio.
                 ll_pkt.is_last = 1;
-                printf("[server] all levels complete — reset to level %d\n", initial_level);
+                printf("[server] all levels complete --> reset to level %d\n", initial_level);
             }
             ENetPacket* ll = enet_packet_create(&ll_pkt, sizeof(ll_pkt),
                                                 ENET_PACKET_FLAG_RELIABLE);
