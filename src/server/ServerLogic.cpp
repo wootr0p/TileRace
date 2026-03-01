@@ -2,9 +2,12 @@
 // Estratto da server/main.cpp (passo 20) per supportare la modalità offline.
 
 #include "ServerLogic.h"
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include <enet/enet.h>
 #include "Protocol.h"
 #include "World.h"
@@ -28,6 +31,10 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
     bool     in_lobby      = (std::strstr(map_path, "_lobby") != nullptr);
     bool     game_locked   = false;
     uint32_t session_token = 0u;
+    // Fase classifica: true tra l'invio di PktLevelResults e il successivo do_level_change.
+    bool     in_results       = false;
+    uint32_t results_start_ms = 0u;
+    std::unordered_set<ENetPeer*> ready_peers;
 
     World world;
     float spawn_x = 0.f, spawn_y = 0.f;
@@ -73,7 +80,12 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
            port, static_cast<size_t>(MAX_CLIENTS));
 
     uint32_t next_player_id = 1;
-    std::unordered_map<ENetPeer*, Player> players;
+    std::unordered_map<ENetPeer*, Player>   players;
+    // Miglior tempo di finish per ogni player nel livello corrente.
+    // Non viene azzerato da PKT_RESTART: un giocatore che ha finito e riparte
+    // conserva il proprio risultato per la classifica di fine livello.
+    // 0 = non ha ancora finito questo livello.
+    std::unordered_map<ENetPeer*, uint32_t> player_best_ticks;
 
     // Tempo ENet (ms) in cui TUTTI i player sono entrati nella zona finale.
     // 0 = nessuno o non tutti dentro. Solo il loop esterno lo aggiorna (una volta
@@ -81,7 +93,8 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
     uint32_t zone_start_ms  = 0;
     uint32_t level_start_ms = enet_time_get();   // inizio livello corrente
     static constexpr uint32_t LEVEL_TIME_LIMIT_MS = 120000; // 2 minuti
-    static constexpr uint32_t NEXT_LEVEL_MS = 3000;
+    static constexpr uint32_t NEXT_LEVEL_MS       = 3000;
+    static constexpr uint32_t RESULTS_DURATION_MS = 15000;  // 15 s schermata classifica
 
     // Controlla se tutti i player hanno almeno un angolo su un tile 'E'.
     // Restituisce false se non ci sono player.
@@ -110,6 +123,47 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
         const uint32_t elapsed = enet_time_get() - zone_start_ms;
         if (elapsed >= NEXT_LEVEL_MS) return 0;
         return (NEXT_LEVEL_MS - elapsed) * 60u / 1000u;
+    };
+
+    // Costruisce e broadcast il PktLevelResults, poi entra in fase classifica.
+    auto send_results = [&](const char* reason) {
+        PktLevelResults res_pkt{};
+        res_pkt.level = static_cast<uint8_t>(current_level);
+        std::vector<ResultEntry> entries;
+        for (auto& [p2, pl2] : players) {
+            const PlayerState& s2 = pl2.GetState();
+            ResultEntry e{};
+            e.player_id = s2.player_id;
+            std::strncpy(e.name, s2.name, sizeof(e.name) - 1);
+            // Usa il miglior finish salvato per questo livello, non lo stato
+            // attuale: un giocatore che ha finito e poi ha premuto restart non
+            // viene penalizzato con DNF nella classifica.
+            const auto best_it = player_best_ticks.find(p2);
+            if (best_it != player_best_ticks.end() && best_it->second > 0) {
+                e.finished    = 1u;
+                e.level_ticks = best_it->second;
+            } else {
+                e.finished    = 0u;
+                e.level_ticks = s2.level_ticks;  // tempo parziale per i DNF
+            }
+            entries.push_back(e);
+        }
+        std::sort(entries.begin(), entries.end(),
+            [](const ResultEntry& a, const ResultEntry& b) {
+                if (a.finished != b.finished) return a.finished > b.finished;
+                return a.level_ticks < b.level_ticks;
+            });
+        res_pkt.count = static_cast<uint8_t>(entries.size());
+        for (size_t i2 = 0; i2 < entries.size() && i2 < static_cast<size_t>(MAX_PLAYERS); i2++)
+            res_pkt.entries[i2] = entries[i2];
+        ENetPacket* resl = enet_packet_create(&res_pkt, sizeof(res_pkt), ENET_PACKET_FLAG_RELIABLE);
+        enet_host_broadcast(server, CHANNEL_RELIABLE, resl);
+        enet_host_flush(server);
+        in_results       = true;
+        results_start_ms = enet_time_get();
+        ready_peers.clear();
+        printf("[server] RESULTS (%s) level=%d players=%zu\n",
+               reason, current_level, entries.size());
     };
 
     ENetEvent event;
@@ -180,6 +234,12 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                                     s.finished = true;
                                     printf("[server] FINISH player_id=%u ticks=%u\n",
                                            s.player_id, s.level_ticks);
+                                    // Salva il risultato per la classifica: non viene
+                                    // sovrascritto da restart, solo da un nuovo finish
+                                    // più veloce nello stesso livello.
+                                    uint32_t& best = player_best_ticks[event.peer];
+                                    if (best == 0 || s.level_ticks < best)
+                                        best = s.level_ticks;
                                 }
                             }
                             it->second.SetState(s);
@@ -204,7 +264,7 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                             }
                             gs_pkt.state.next_level_countdown_ticks = countdown_ticks();
                             gs_pkt.state.is_lobby = in_lobby ? 1u : 0u;
-                            if (!in_lobby) {
+                            if (!in_lobby && !in_results) {
                                 const uint32_t el = enet_time_get() - level_start_ms;
                                 gs_pkt.state.time_limit_secs = el < LEVEL_TIME_LIMIT_MS
                                     ? (LEVEL_TIME_LIMIT_MS - el) / 1000u
@@ -219,13 +279,17 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                             if (zone_start_ms != 0 && !players.empty() &&
                                 enet_time_get() - zone_start_ms >= NEXT_LEVEL_MS) {
                                 zone_start_ms = 0;
-                                goto do_level_change;
+                                if (in_lobby) {
+                                    goto do_level_change;
+                                } else if (!in_results) {
+                                    send_results("zona");
+                                }
                             }
-                            // --- Scatta il cambio livello per scadenza tempo (2 min) ---
-                            if (!in_lobby && !players.empty() &&
+                            // --- Scatta la fase results per scadenza tempo (2 min) ---
+                            if (!in_lobby && !in_results && !players.empty() &&
                                 enet_time_get() - level_start_ms >= LEVEL_TIME_LIMIT_MS) {
                                 zone_start_ms = 0;
-                                goto do_level_change;
+                                send_results("timeout");
                             }
                         }
                     }
@@ -275,6 +339,20 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                             printf("[server] RESTART player_id=%u\n", s.player_id);
                         }
                     }
+                    // Giocatore pronto per il livello successivo (durante fase results).
+                    else if (type == PKT_READY && in_results) {
+                        ready_peers.insert(event.peer);
+                        const auto it2 = players.find(event.peer);
+                        const uint32_t pid = (it2 != players.end())
+                            ? it2->second.GetState().player_id : 0u;
+                        printf("[server] READY player_id=%u  (%zu/%zu)\n",
+                               pid, ready_peers.size(), players.size());
+                        if (ready_peers.size() >= players.size()) {
+                            in_results = false;
+                            ready_peers.clear();
+                            goto do_level_change;
+                        }
+                    }
                 }
                 enet_packet_destroy(event.packet);
                 break;
@@ -285,8 +363,19 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                        event.peer->address.host,
                        event.peer->address.port);
                 players.erase(event.peer);
+                player_best_ticks.erase(event.peer);
+                ready_peers.erase(event.peer);
+                // Se in results e tutti i rimanenti sono già ready, salta subito.
+                if (in_results && !players.empty() && ready_peers.size() >= players.size()) {
+                    in_results = false;
+                    ready_peers.clear();
+                    goto do_level_change;
+                }
                 // Se non ci sono più player, resetta alla lobby e riapri le connessioni.
                 if (players.empty()) {
+                    in_results    = false;
+                    ready_peers.clear();
+                    player_best_ticks.clear();
                     in_lobby      = (std::strstr(initial_map_path.c_str(), "_lobby") != nullptr);
                     game_locked   = false;
                     session_token = 0u;
@@ -305,10 +394,20 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
             }
         }
 
-        // Continua al prossimo ciclo (il cambio livello avviene via goto dal PKT_INPUT).
+        // Scatta il cambio livello quando scade il timer della fase results.
+        if (in_results && !players.empty() &&
+            enet_time_get() - results_start_ms >= RESULTS_DURATION_MS) {
+            in_results = false;
+            ready_peers.clear();
+            goto do_level_change;
+        }
+        // Continua al prossimo ciclo (il cambio livello avviene via goto dal PKT_INPUT o dal timer results).
         continue;
 
         do_level_change:
+            in_results = false;
+            ready_peers.clear();
+            player_best_ticks.clear();  // nuovi risultati per il prossimo livello
             // Lobby → primo livello reale: blocca nuove connessioni per questa sessione.
             if (in_lobby) {
                 in_lobby    = false;

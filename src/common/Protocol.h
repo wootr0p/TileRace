@@ -12,8 +12,8 @@
 //                    (strutture pacchetti, PlayerState, logica di simulazione).
 //                    Client e server devono avere lo stesso valore per giocare.
 // ---------------------------------------------------------------------------
-static constexpr const char*  GAME_VERSION     = "0.1.0";
-static constexpr uint16_t     PROTOCOL_VERSION = 1;
+static constexpr const char*  GAME_VERSION     = "0.3.0";
+static constexpr uint16_t     PROTOCOL_VERSION = 3;
 
 // ---------------------------------------------------------------------------
 // Costanti di protocollo condivise tra client e server.
@@ -48,6 +48,8 @@ enum PktType : uint8_t {
     PKT_LOAD_LEVEL        = 7,   // Server --> Client: carica il livello successivo (o fine partita)
     PKT_VERSION_MISMATCH  = 8,   // Server --> Client: versione incompatibile, aggiorna il gioco
     PKT_SERVER_BUSY       = 9,   // Server --> Client: sessione già in corso, ritenta più tardi
+    PKT_LEVEL_RESULTS     = 10,  // Server --> Client: classifica al termine di ogni livello
+    PKT_READY             = 11,  // Client --> Server: giocatore pronto per il livello successivo
 };
 
 // Client --> Server: inviato ogni tick fisso.
@@ -100,4 +102,29 @@ struct PktVersionMismatch {
 // Il server manda DISCONNECT con data=DISCONNECT_SERVER_BUSY (nessun pacchetto applicativo).
 struct PktServerBusy {
     uint8_t type = PKT_SERVER_BUSY;
+};
+
+// Un'entry della classifica di fine livello.
+struct ResultEntry {
+    uint32_t player_id   = 0;
+    uint32_t level_ticks = 0;
+    char     name[16]    = {};
+    uint8_t  finished    = 0;   // 1 = ha raggiunto l'exit, 0 = DNF
+    uint8_t  _pad[3]     = {};
+};
+
+// Server --> Client: classifica inviata al termine di ogni livello (non lobby).
+// Il client la mostra per RESULTS_DURATION_S secondi; premendo Ready si può saltare.
+struct PktLevelResults {
+    uint8_t     type    = PKT_LEVEL_RESULTS;
+    uint8_t     count   = 0;          // numero di entry
+    uint8_t     level   = 0;          // numero del livello appena completato
+    uint8_t     _pad    = 0;
+    ResultEntry entries[MAX_PLAYERS]; // ordinate: finished first, poi per tempo crescente
+};
+
+// Client --> Server: giocatore pronto per il livello successivo.
+// Se tutti inviano PKT_READY prima della scadenza, si salta la schermata.
+struct PktReady {
+    uint8_t type = PKT_READY;
 };

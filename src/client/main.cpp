@@ -15,6 +15,7 @@
 // PASSO 19: Menu iniziale (Offline/Online, nome player)              — COMPLETATO
 // PASSO 20: Modalità offline (LocalServer in thread background)      — COMPLETATO
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -286,6 +287,15 @@ int main() {
     // Ultimo GameState ricevuto: usato per renderare gli altri giocatori.
     GameState last_game_state{};
 
+    // --- Classifica fine livello ---
+    static constexpr double RESULTS_DURATION_S = 15.0;
+    bool        in_results_screen  = false;
+    bool        local_ready        = false;
+    double      results_start_time = 0.0;
+    uint8_t     results_count      = 0;
+    uint8_t     results_level      = 0;
+    ResultEntry results_entries[MAX_PLAYERS] = {};
+
     // --- Connessione ENet al server ---
     ENetHost* net_host = enet_host_create(nullptr, 1, CHANNEL_COUNT, 0, 0);
     ENetAddress net_addr{};
@@ -401,7 +411,7 @@ int main() {
             const Vector2 mouse    = GetMousePosition();
             const bool    clicked  = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 
-            if (pause_state == PauseState::PLAYING && toggle) {
+            if (pause_state == PauseState::PLAYING && toggle && !in_results_screen) {
                 pause_state   = PauseState::PAUSED;
                 pause_focused = 0;
             } else if (pause_state == PauseState::PAUSED) {
@@ -453,7 +463,7 @@ int main() {
         }
 
         // --- Tick fisso 60 Hz ---
-        if (pause_state != PauseState::PLAYING) accumulator = 0.f;
+        if (pause_state != PauseState::PLAYING || in_results_screen) accumulator = 0.f;
         while (accumulator >= FIXED_DT) {
             // Trail (usa stato locale predetto)
             if (player.GetState().dash_active_ticks > 0)
@@ -598,11 +608,25 @@ int main() {
                             }
                         }
                     }
+                    // Classifica di fine livello.
+                    else if (pkt_type == PKT_LEVEL_RESULTS &&
+                             ev.packet->dataLength >= sizeof(PktLevelResults)) {
+                        PktLevelResults rpkt{};
+                        std::memcpy(&rpkt, ev.packet->data, sizeof(rpkt));
+                        in_results_screen  = true;
+                        local_ready        = false;
+                        results_start_time = GetTime();
+                        results_count      = rpkt.count;
+                        results_level      = rpkt.level;
+                        const int rn = std::min((int)rpkt.count, MAX_PLAYERS);
+                        for (int ri = 0; ri < rn; ri++) results_entries[ri] = rpkt.entries[ri];
+                    }
                     // Carica il livello successivo o termina la partita.
                     else if (pkt_type == PKT_LOAD_LEVEL &&
                              ev.packet->dataLength >= sizeof(PktLoadLevel)) {
                         PktLoadLevel lpkt{};
                         std::memcpy(&lpkt, ev.packet->data, sizeof(lpkt));
+                        in_results_screen = false;
                         if (lpkt.is_last) {
                             session_error       = "Game over.";
                             session_error_sub   = "Returning to main menu...";
@@ -654,6 +678,19 @@ int main() {
                     session_over = true;
                 }
                 if (session_over) break;
+            }
+        }
+
+        // --- Results screen: input Ready ---
+        if (in_results_screen && !local_ready) {
+            const bool rdy = IsKeyPressed(KEY_SPACE) ||
+                             (gp && IsGamepadButtonPressed(GP, GP_JUMP));
+            if (rdy) {
+                PktReady rp{};
+                enet_peer_send(net_peer, CHANNEL_RELIABLE,
+                    enet_packet_create(&rp, sizeof(rp), ENET_PACKET_FLAG_RELIABLE));
+                local_ready = true;
+                printf("[client] READY inviato\n");
             }
         }
 
@@ -850,6 +887,53 @@ int main() {
                 const Vector2 hs = MeasureTextEx(font_small, hint, 18, 1);
                 DrawTextEx(font_small, hint, {pcx - hs.x * 0.5f, pcy + 100.f}, 18, 1, PAU_DIM);
             }
+        }
+
+        // --- Schermata classifica fine livello ---
+        if (in_results_screen) {
+            const float rw  = static_cast<float>(GetScreenWidth());
+            const float rh  = static_cast<float>(GetScreenHeight());
+            const float rcx = rw * 0.5f;
+            DrawRectangle(0, 0, (int)rw, (int)rh, Color{5, 10, 30, 220});
+            // Titolo
+            const char* r_title = TextFormat("LEVEL %u COMPLETE", (unsigned)results_level);
+            const Vector2 r_tsz = MeasureTextEx(font_timer, r_title, 48, 1);
+            DrawTextEx(font_timer, r_title, {rcx - r_tsz.x * 0.5f, 40.f}, 48, 1, {80, 220, 80, 255});
+            // Classifica
+            static const Color r_rank_col[3] = {{255, 215,   0, 255},   // oro
+                                                {200, 200, 200, 255},   // argento
+                                                {205, 127,  50, 255}};  // bronzo
+            const float r_board_y = 120.f;
+            for (int ri = 0; ri < (int)results_count; ri++) {
+                const ResultEntry& re  = results_entries[ri];
+                const Color        rc  = (ri < 3) ? r_rank_col[ri] : Color{200, 200, 220, 255};
+                // Spazio extra dopo il terzo posto
+                const float        ry  = r_board_y + ri * 44.f + (ri >= 3 ? 20.f : 0.f);
+                DrawTextEx(font_hud, TextFormat("#%d", ri + 1), {rcx - 230.f, ry}, 24, 1, rc);
+                DrawTextEx(font_hud, re.name[0] ? re.name : "?", {rcx - 180.f, ry}, 24, 1, rc);
+                const char* r_time;
+                if (re.finished) {
+                    const uint32_t r_cs = re.level_ticks * 100 / 60;
+                    r_time = TextFormat("%02u:%02u.%02u",
+                        r_cs / 6000, (r_cs % 6000) / 100, r_cs % 100);
+                } else {
+                    r_time = "DNF";
+                }
+                const Vector2 r_tsz2 = MeasureTextEx(font_hud, r_time, 24, 1);
+                DrawTextEx(font_hud, r_time, {rcx + 180.f - r_tsz2.x, ry}, 24, 1, rc);
+            }
+            // Countdown top-right
+            const int r_remain = (int)(RESULTS_DURATION_S - (GetTime() - results_start_time));
+            if (r_remain >= 0) {
+                const char*   r_cd  = TextFormat("%d", r_remain);
+                const Vector2 r_csz = MeasureTextEx(font_timer, r_cd, 48, 1);
+                DrawTextEx(font_timer, r_cd, {rw - r_csz.x - 20.f, 10.f}, 48, 1, {255, 255, 255, 200});
+            }
+            // Bottone Ready
+            const char* r_btn  = local_ready ? "Waiting for others..." : "Press JUMP to ready up";
+            const Color r_bcol = local_ready ? Color{100, 220, 100, 255} : Color{0, 220, 255, 255};
+            const Vector2 r_bsz = MeasureTextEx(font_hud, r_btn, 24, 1);
+            DrawTextEx(font_hud, r_btn, {rcx - r_bsz.x * 0.5f, rh - 60.f}, 24, 1, r_bcol);
         }
 
         EndDrawing();
