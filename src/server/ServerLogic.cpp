@@ -12,29 +12,40 @@
 #include "Physics.h"
 
 void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag) {
+    // Percorso e livello iniziali: usati per il reset a fine sessione.
+    const std::string initial_map_path(map_path);
+    int initial_level = 1;
+    {
+        const char* p = std::strstr(map_path, "level_");
+        if (p) std::sscanf(p + 6, "%d", &initial_level);
+    }
+
+    // Lambda per (ri)caricare una mappa e aggiornare spawn + current_level.
+    // Ritorna false se il file non esiste.
     World world;
-    if (!world.LoadFromFile(map_path)) {
+    float spawn_x = 0.f, spawn_y = 0.f;
+    int   current_level = initial_level;
+
+    auto load_level = [&](const char* path) -> bool {
+        World tmp;
+        if (!tmp.LoadFromFile(path)) return false;
+        world = tmp;
+        spawn_x = 0.f; spawn_y = 0.f;
+        for (int ty = 0; ty < world.GetHeight(); ty++)
+            for (int tx = 0; tx < world.GetWidth(); tx++)
+                if (world.GetTile(tx, ty) == 'X') {
+                    spawn_x = static_cast<float>(tx * TILE_SIZE);
+                    spawn_y = static_cast<float>(ty * TILE_SIZE);
+                }
+        return true;
+    };
+
+    if (!load_level(map_path)) {
         fprintf(stderr, "[server] ERRORE: mappa non trovata: %s\n", map_path);
         return;
     }
     printf("[server] mappa caricata (%d x %d tile)\n",
            world.GetWidth(), world.GetHeight());
-
-    // Trova la posizione di spawn ('X') nella tilemap.
-    float spawn_x = 0.f, spawn_y = 0.f;
-    for (int ty = 0; ty < world.GetHeight(); ty++)
-        for (int tx = 0; tx < world.GetWidth(); tx++)
-            if (world.GetTile(tx, ty) == 'X') {
-                spawn_x = static_cast<float>(tx * TILE_SIZE);
-                spawn_y = static_cast<float>(ty * TILE_SIZE);
-            }
-
-    // Estrae il numero del livello corrente dal nome del file (es. "level_03.txt" → 3).
-    int current_level = 1;
-    {
-        const char* p = std::strstr(map_path, "level_");
-        if (p) std::sscanf(p + 6, "%d", &current_level);
-    }
 
     ENetAddress address{};
     address.host = ENET_HOST_ANY;
@@ -54,20 +65,44 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
     printf("[server] in ascolto su UDP porta %u  (max %zu client)\n",
            port, static_cast<size_t>(MAX_CLIENTS));
 
-    uint32_t next_player_id = 1;   // 0 = "sconosciuto" sul client
+    uint32_t next_player_id = 1;
     std::unordered_map<ENetPeer*, Player> players;
 
-    // Conto alla rovescia per il cambio livello.
-    uint32_t all_finished_time = 0;                       // enet_time quando tutti sono finished
-    static constexpr uint32_t NEXT_LEVEL_DELAY_MS = 3000; // 3 secondi
+    // Tempo ENet (ms) in cui TUTTI i player sono entrati nella zona finale.
+    // 0 = nessuno o non tutti dentro. Solo il loop esterno lo aggiorna (una volta
+    // per iterazione di ~16 ms) per evitare falsi reset da jitter fisico.
+    uint32_t zone_start_ms  = 0;
+    uint32_t level_start_ms = enet_time_get();   // inizio livello corrente
+    static constexpr uint32_t LEVEL_TIME_LIMIT_MS = 120000; // 2 minuti
+    static constexpr uint32_t NEXT_LEVEL_MS = 3000;
 
-    // Ricalcola se tutti i player sono finished e aggiorna all_finished_time.
-    auto recheck_all_finished = [&]() {
-        if (players.empty()) { all_finished_time = 0; return; }
-        for (auto& [peer, pl] : players)
-            if (!pl.GetState().finished) { all_finished_time = 0; return; }
-        if (all_finished_time == 0)
-            all_finished_time = enet_time_get();
+    // Controlla se tutti i player hanno almeno un angolo su un tile 'E'.
+    // Restituisce false se non ci sono player.
+    auto all_in_zone = [&]() -> bool {
+        if (players.empty()) return false;
+        for (auto& [peer, pl] : players) {
+            (void)peer;
+            const PlayerState& s = pl.GetState();
+            const int tx0 = static_cast<int>(s.x)               / TILE_SIZE;
+            const int ty0 = static_cast<int>(s.y)               / TILE_SIZE;
+            const int tx1 = static_cast<int>(s.x + TILE_SIZE - 1.f) / TILE_SIZE;
+            const int ty1 = static_cast<int>(s.y + TILE_SIZE - 1.f) / TILE_SIZE;
+            const bool on_e = world.GetTile(tx0, ty0) == 'E' ||
+                              world.GetTile(tx1, ty0) == 'E' ||
+                              world.GetTile(tx0, ty1) == 'E' ||
+                              world.GetTile(tx1, ty1) == 'E';
+            if (!on_e) return false;
+        }
+        return true;
+    };
+
+    // Calcola il valore next_level_countdown_ticks da trasmettere ai client.
+    // 0 = countdown non attivo.
+    auto countdown_ticks = [&]() -> uint32_t {
+        if (zone_start_ms == 0) return 0;
+        const uint32_t elapsed = enet_time_get() - zone_start_ms;
+        if (elapsed >= NEXT_LEVEL_MS) return 0;
+        return (NEXT_LEVEL_MS - elapsed) * 60u / 1000u;
     };
 
     ENetEvent event;
@@ -110,11 +145,10 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                         if (it != players.end()) {
                             it->second.Simulate(pkt.frame, world);
 
-                            // Timer e rilevamento endpoint.
+                            // Timer di livello e latch "finished" (first-touch, 4 angoli).
                             PlayerState s = it->second.GetState();
                             if (!s.finished) {
                                 s.level_ticks++;
-                                // Controlla se uno degli angoli del player è sul tile 'E'.
                                 const int tx0 = static_cast<int>(s.x) / TILE_SIZE;
                                 const int ty0 = static_cast<int>(s.y) / TILE_SIZE;
                                 const int tx1 = static_cast<int>(s.x + TILE_SIZE - 1.f) / TILE_SIZE;
@@ -127,29 +161,51 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                                     printf("[server] FINISH player_id=%u ticks=%u\n",
                                            s.player_id, s.level_ticks);
                                 }
-                                it->second.SetState(s);
                             }
-                            recheck_all_finished();
+                            it->second.SetState(s);
 
-                            // Costruisce il GameState con tutti i player e lo
-                            // trasmette in broadcast a tutti i peer connessi.
+                            // --- Aggiorna zona e controlla cambio livello ---
+                            // Fatto qui (dentro PKT_INPUT) con wall-clock enet_time_get:
+                            // zone_start_ms viene impostato UNA SOLA VOLTA (quando tutti
+                            // i player entrano) e rimane fisso finché qualcuno non esce.
+                            // Leggere enet_time_get() N volte al secondo è corretto:
+                            // non si accumula nulla, si confronta solo con un punto fisso.
+                            if (all_in_zone()) {
+                                if (zone_start_ms == 0)
+                                    zone_start_ms = enet_time_get();
+                            } else {
+                                zone_start_ms = 0;
+                            }
                             PktGameState gs_pkt{};
                             gs_pkt.state.count = 0;
                             for (auto& [p, pl] : players) {
                                 if (gs_pkt.state.count < static_cast<uint32_t>(MAX_PLAYERS))
                                     gs_pkt.state.players[gs_pkt.state.count++] = pl.GetState();
                             }
-                            // Propaga il conto alla rovescia ai client.
-                            if (all_finished_time != 0 && !players.empty()) {
-                                const uint32_t el = enet_time_get() - all_finished_time;
-                                if (el < NEXT_LEVEL_DELAY_MS)
-                                    gs_pkt.state.next_level_countdown_ticks =
-                                        (NEXT_LEVEL_DELAY_MS - el) * 60 / 1000;
+                            gs_pkt.state.next_level_countdown_ticks = countdown_ticks();
+                            {
+                                const uint32_t el = enet_time_get() - level_start_ms;
+                                gs_pkt.state.time_limit_secs = el < LEVEL_TIME_LIMIT_MS
+                                    ? (LEVEL_TIME_LIMIT_MS - el) / 1000u
+                                    : 0u;
                             }
                             ENetPacket* bcast = enet_packet_create(
                                 &gs_pkt, sizeof(gs_pkt), 0);
                             enet_host_broadcast(server, CHANNEL_RELIABLE, bcast);
                             enet_host_flush(server);
+
+                            // --- Scatta il cambio livello se il timer zona è scaduto ---
+                            if (zone_start_ms != 0 && !players.empty() &&
+                                enet_time_get() - zone_start_ms >= NEXT_LEVEL_MS) {
+                                zone_start_ms = 0;
+                                goto do_level_change;
+                            }
+                            // --- Scatta il cambio livello per scadenza tempo (2 min) ---
+                            if (!players.empty() &&
+                                enet_time_get() - level_start_ms >= LEVEL_TIME_LIMIT_MS) {
+                                zone_start_ms = 0;
+                                goto do_level_change;
+                            }
                         }
                     }
                     // Aggiornamento nome player.
@@ -190,7 +246,15 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                        event.peer->address.host,
                        event.peer->address.port);
                 players.erase(event.peer);
-                recheck_all_finished();
+                // Se non ci sono più player, resetta il server al livello iniziale.
+                if (players.empty()) {
+                    current_level = initial_level;
+                    load_level(initial_map_path.c_str());
+                    zone_start_ms  = 0;
+                    level_start_ms = enet_time_get();
+                    next_player_id = 1;
+                    printf("[server] tutti disconnessi — reset a level %d\n", initial_level);
+                }
                 break;
 
             default:
@@ -198,24 +262,17 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
             }
         }
 
-        // --- Controlla se è ora di passare al livello successivo ---
-        if (all_finished_time != 0 && !players.empty() &&
-            enet_time_get() - all_finished_time >= NEXT_LEVEL_DELAY_MS) {
+        // Continua al prossimo ciclo (il cambio livello avviene via goto dal PKT_INPUT).
+        continue;
+
+        do_level_change:
             current_level++;
             char next_path[128];
             std::snprintf(next_path, sizeof(next_path),
                           "assets/levels/level_%02d.txt", current_level);
             PktLoadLevel ll_pkt{};
-            World next_world;
-            if (next_world.LoadFromFile(next_path)) {
-                world = next_world;
-                spawn_x = 0.f; spawn_y = 0.f;
-                for (int ty = 0; ty < world.GetHeight(); ty++)
-                    for (int tx = 0; tx < world.GetWidth(); tx++)
-                        if (world.GetTile(tx, ty) == 'X') {
-                            spawn_x = static_cast<float>(tx * TILE_SIZE);
-                            spawn_y = static_cast<float>(ty * TILE_SIZE);
-                        }
+            if (load_level(next_path)) {
+                // Riporta tutti i player allo spawn del nuovo livello.
                 for (auto& [peer, pl] : players) {
                     PlayerState s = pl.GetState();
                     s.x = spawn_x;  s.y = spawn_y;
@@ -227,18 +284,34 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                 }
                 ll_pkt.is_last = 0;
                 std::strncpy(ll_pkt.path, next_path, sizeof(ll_pkt.path) - 1);
-                printf("[server] LEVEL CHANGE \u2192 %s\n", next_path);
+                printf("[server] LEVEL CHANGE → %s\n", next_path);
             } else {
+                // Ultimo livello completato: notifica i client, poi resetta
+                // il server allo stato iniziale senza uscire dal loop.
+                // Così sia il server dedicato che la LocalServer restano
+                // pronti per una nuova sessione senza bisogno di riavvio.
                 ll_pkt.is_last = 1;
-                printf("[server] all levels complete, game over\n");
+                printf("[server] all levels complete — reset to level %d\n", initial_level);
             }
             ENetPacket* ll = enet_packet_create(&ll_pkt, sizeof(ll_pkt),
                                                 ENET_PACKET_FLAG_RELIABLE);
             enet_host_broadcast(server, CHANNEL_RELIABLE, ll);
             enet_host_flush(server);
-            all_finished_time = 0;
-            if (ll_pkt.is_last) stop_flag = true;
-        }
+            zone_start_ms  = 0;
+            level_start_ms = enet_time_get();
+
+            if (ll_pkt.is_last) {
+                // Disconnetti tutti i peer e svuota le mappe: la prossima
+                // connessione ripartirà dal livello 1 come una sessione nuova.
+                for (auto& [peer, pl] : players)
+                    enet_peer_disconnect_now(peer, 0);
+                players.clear();
+                // Ricarica il livello iniziale.
+                current_level = initial_level;
+                load_level(initial_map_path.c_str());
+                level_start_ms = enet_time_get();
+                printf("[server] reset completato, in attesa di nuove connessioni\n");
+            }
     }
 
     enet_host_destroy(server);

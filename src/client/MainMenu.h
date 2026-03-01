@@ -1,6 +1,7 @@
 #pragma once
 #include <raylib.h>
 #include <cstdint>
+#include "SaveData.h"
 
 enum class MenuChoice { OFFLINE, ONLINE, QUIT };
 
@@ -13,4 +14,5 @@ struct MenuResult {
 
 // Mostra il menu principale (blocca finché l'utente non sceglie).
 // La finestra deve già essere aperta (InitWindow già chiamato).
-MenuResult ShowMainMenu(Font& font);
+// Legge i valori iniziali da `save` e aggiorna+salva automaticamente prima di tornare.
+MenuResult ShowMainMenu(Font& font, SaveData& save);

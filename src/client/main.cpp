@@ -17,6 +17,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <unordered_map>
 #include <raylib.h>
 #include "World.h"
 #include "Player.h"
@@ -26,6 +27,7 @@
 #include "Protocol.h"
 #include "MainMenu.h"
 #include "LocalServer.h"
+#include "SaveData.h"
 
 // ---------------------------------------------------------------------------
 // Costanti gamepad (layout PS)
@@ -94,7 +96,7 @@ struct TrailState {
     }
     void Clear() { count = 0; }
 
-    void Draw() const {
+    void Draw(Color base_col) const {
         for (int i = count - 1; i >= 0; i--) {
             const float   t     = 1.f - static_cast<float>(i + 1) / static_cast<float>(LEN + 1);
             const uint8_t alpha = static_cast<uint8_t>(t * 80.f);
@@ -103,7 +105,7 @@ struct TrailState {
                 static_cast<int>(pts[i].x) + sh / 2,
                 static_cast<int>(pts[i].y) + sh / 2,
                 TILE_SIZE - sh, TILE_SIZE - sh,
-                {0, 180, 255, alpha});
+                {base_col.r, base_col.g, base_col.b, alpha});
         }
     }
 };
@@ -117,7 +119,7 @@ static void DrawTilemap(const World& world) {
         for (int tx = 0; tx < world.GetWidth(); tx++) {
             const char c = world.GetTile(tx, ty);
             Color col;
-            if      (c == '0') col = { 80,  80, 120, 255};  // muro
+            if      (c == '0') col = { 60, 100, 180, 255};  // muro
             else if (c == 'E') col = {  0, 230, 100, 255};  // endpoint
 #ifndef NDEBUG
             else if (c == 'X') col = { 60,  80, 220, 255};  // spawn (solo debug)
@@ -132,11 +134,14 @@ static void DrawPlayer(Font& font, float rx, float ry,
                        const PlayerState& s, bool is_local = true) {
     // Corpo del player.
     Color col;
+    // Bright = dash disponibile OPPURE dash attivo in quel momento.
+    // Scuro = solo durante il cooldown (dash esaurito, non ancora ricaricato).
     if (is_local) {
-        const bool avail = s.dash_ready && s.dash_cooldown_ticks == 0;
-        col = avail ? Color{0, 220, 255, 255} : Color{130, 130, 145, 255};
+        const bool bright = s.dash_active_ticks > 0 || s.dash_cooldown_ticks == 0;
+        col = bright ? Color{0, 220, 255, 255} : Color{0, 90, 115, 255};
     } else {
-        col = {255, 140, 60, 200};   // arancio semitrasparente per i remoti
+        const bool bright = s.dash_active_ticks > 0 || s.dash_cooldown_ticks == 0;
+        col = bright ? Color{255, 140, 60, 200} : Color{140, 80, 40, 160};
     }
     DrawRectangle(static_cast<int>(rx), static_cast<int>(ry),
                   TILE_SIZE, TILE_SIZE, col);
@@ -203,10 +208,16 @@ int main() {
         return 1;
     }
 
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, "TileRace");
+    SetTargetFPS(120);
 
     Font font_hud   = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 24, nullptr, 0);
     Font font_debug = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 20, nullptr, 0);
+
+    // Carica i dati salvati (nickname, ultimo IP).
+    SaveData save{};
+    LoadSaveData(save);
 
     // -----------------------------------------------------------------------
     // Loop principale: menu → partita → menu (riparte se la connessione fallisce)
@@ -214,7 +225,7 @@ int main() {
     while (!WindowShouldClose()) {
 
     // Menu iniziale (passo 19)
-    const MenuResult menu = ShowMainMenu(font_hud);
+    const MenuResult menu = ShowMainMenu(font_hud, save);
     if (menu.choice == MenuChoice::QUIT) break;
 
     // Modalità offline: avvia il server locale in un thread (passo 20)
@@ -279,7 +290,7 @@ int main() {
             const double t0 = GetTime();
             while (!WindowShouldClose() && GetTime() - t0 < 2.0) {
                 BeginDrawing();
-                ClearBackground({5, 5, 15, 255});
+                ClearBackground({8, 12, 40, 255});
                 const char* msg = "Connection failed. Check IP and port.";
                 const Vector2 ms = MeasureTextEx(font_hud, msg, 24, 1);
                 DrawTextEx(font_hud, msg,
@@ -293,6 +304,8 @@ int main() {
     }
 
     TrailState trail;
+    std::unordered_map<uint32_t, TrailState>  remote_trails;      // key = player_id
+    std::unordered_map<uint32_t, uint32_t>    remote_last_ticks;   // key = player_id
 
     // Camera con smooth follow; il target insegue il player con lerp esponenziale.
     Camera2D camera{};
@@ -325,7 +338,7 @@ int main() {
         if (IsKeyPressed(KEY_SPACE) || (gp && IsGamepadButtonPressed(GP, GP_JUMP)))
             jump_pressed = true;
 
-        if (IsKeyPressed(KEY_LEFT_SHIFT) ||
+        if (IsKeyPressed(KEY_LEFT_SHIFT) || IsKeyPressed(KEY_RIGHT_SHIFT) ||
             (gp && (IsGamepadButtonPressed(GP, GP_DASH_A) ||
                     IsGamepadButtonPressed(GP, GP_DASH_B))))
             dash_pending = true;
@@ -418,6 +431,21 @@ int main() {
                         std::memcpy(&resp, ev.packet->data, sizeof(PktGameState));
                         last_game_state = resp.state;
 
+                        // Aggiorna trail remote: solo quando arriva un tick
+                        // effettivamente nuovo per quel player (evita clear spurii
+                        // causati da broadcast generati da altri peer).
+                        for (uint32_t i = 0; i < resp.state.count; i++) {
+                            const PlayerState& rp = resp.state.players[i];
+                            if (rp.player_id == 0 || rp.player_id == local_player_id) continue;
+                            uint32_t& prev = remote_last_ticks[rp.player_id];
+                            if (rp.last_processed_tick != prev) {
+                                prev = rp.last_processed_tick;
+                                TrailState& rt = remote_trails[rp.player_id];
+                                if (rp.dash_active_ticks > 0) rt.Push(rp.x, rp.y);
+                                else                          rt.Clear();
+                            }
+                        }
+
                         if (local_player_id != 0) {
                             for (uint32_t i = 0; i < resp.state.count; i++) {
                                 const PlayerState& auth = resp.state.players[i];
@@ -471,6 +499,8 @@ int main() {
                             show_record   = false;
                             best_ticks    = 0;
                             trail.Clear();
+                            remote_trails.clear();
+                            remote_last_ticks.clear();
                             last_game_state = {};
                             std::memset(input_history, 0, sizeof(input_history));
                         }
@@ -505,14 +535,22 @@ int main() {
         const float k  = 1.f - expf(-CAM_SMOOTH * dt);
         camera.target.x += (cx - camera.target.x) * k;
         camera.target.y += (cy - camera.target.y) * k;
+        // Aggiorna l'offset ogni frame: mantiene il player centrato anche dopo resize.
+        camera.offset = {GetScreenWidth() * 0.5f, GetScreenHeight() * 0.5f};
 
         // --- Render ---
         BeginDrawing();
-        ClearBackground({5, 5, 15, 255});
+        ClearBackground({8, 12, 40, 255});
 
         BeginMode2D(camera);
             DrawTilemap(world);
-            trail.Draw();
+            // Trail remoti (aggiornati sui dati autoritativi).
+            for (uint32_t i = 0; i < last_game_state.count; i++) {
+                const PlayerState& rp = last_game_state.players[i];
+                if (rp.player_id == 0 || rp.player_id == local_player_id) continue;
+                remote_trails[rp.player_id].Draw({255, 140, 60, 200});
+            }
+            trail.Draw({0, 220, 255, 255});
             // Altri giocatori (posizione autoritativa dal server, non interpolata).
             if (local_player_id != 0) {
                 for (uint32_t i = 0; i < last_game_state.count; i++) {
@@ -525,7 +563,9 @@ int main() {
         EndMode2D();
 
         DrawHUD(font_hud, local, last_game_state.count, menu.choice != MenuChoice::OFFLINE);
+#ifndef NDEBUG
         DrawDebugPanel(font_debug, local);
+#endif
 
         // --- Timer al centro in alto ---
         {
@@ -540,7 +580,7 @@ int main() {
                 {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 24, 1, t_col);
         }
 
-        // --- Best time (top right) ---
+        // --- Best time (sotto il timer, centro in alto) ---
         if (best_ticks > 0) {
             const uint32_t b_cs   = best_ticks * 100 / 60;
             const uint32_t b_mins =  b_cs / 6000;
@@ -549,7 +589,20 @@ int main() {
             const char* b_str = TextFormat("Best: %02u:%02u.%02u", b_mins, b_secs, b_frac);
             const Vector2 b_sz = MeasureTextEx(font_hud, b_str, 24, 1);
             DrawTextEx(font_hud, b_str,
-                {GetScreenWidth() - b_sz.x - 10, 10}, 24, 1, {0, 220, 255, 200});
+                {GetScreenWidth() * 0.5f - b_sz.x * 0.5f, 38}, 24, 1, {0, 220, 255, 200});
+        }
+
+        // --- Tempo limite livello (top right, aggiorna 1 volta/s) ---
+        if (last_game_state.time_limit_secs > 0) {
+            const uint32_t tl_m = last_game_state.time_limit_secs / 60;
+            const uint32_t tl_s = last_game_state.time_limit_secs % 60;
+            const char* tl_str = TextFormat("%02u:%02u", tl_m, tl_s);
+            const Vector2 tl_sz = MeasureTextEx(font_hud, tl_str, 24, 1);
+            const Color tl_col = last_game_state.time_limit_secs <= 30
+                ? Color{255, 80, 80, 255}   // rosso negli ultimi 30 s
+                : Color{255, 255, 255, 200};
+            DrawTextEx(font_hud, tl_str,
+                {GetScreenWidth() - tl_sz.x - 10, 10}, 24, 1, tl_col);
         }
 
         // --- "New Record!" ---

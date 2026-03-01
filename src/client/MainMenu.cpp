@@ -3,6 +3,7 @@
 // Tutto testo, SpaceMono-Regular, nessun riquadro.
 
 #include "MainMenu.h"
+#include "SaveData.h"
 #include <cstring>
 #include <cstdio>
 
@@ -98,12 +99,18 @@ static void DrawCentered(Font& f, const char* text, float cx, float y,
 // ---------------------------------------------------------------------------
 // ShowMainMenu
 // ---------------------------------------------------------------------------
-MenuResult ShowMainMenu(Font& font) {
+MenuResult ShowMainMenu(Font& font, SaveData& save) {
     // Font grande per i titoli: caricato qui perché LoadFontEx
     // richiede InitWindow già chiamato, e la dimensione deve coincidere
     // con quella di render per evitare il pixelato da upscale.
     Font font_title = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 72, nullptr, 0);
     MenuResult res{};
+
+    // Pre-riempi dai dati salvati.
+    if (save.username[0] != '\0')
+        std::strncpy(res.username, save.username, sizeof(res.username) - 1);
+    if (save.last_ip[0] != '\0')
+        std::strncpy(res.server_ip, save.last_ip, sizeof(res.server_ip) - 1);
 
     enum class Screen { MAIN, ONLINE } screen = Screen::MAIN;
     // 0 = campo nome, 1 = campo IP
@@ -146,7 +153,7 @@ MenuResult ShowMainMenu(Font& font) {
 
         if (screen == Screen::MAIN) {
             // Titolo
-            DrawCentered(font_title, "TILE RACE", cx, H * 0.18f, 64.f, ACCENT_COL);
+            DrawCentered(font_title, "Tile Race", cx, H * 0.18f, 64.f, ACCENT_COL);
 
             // Campo nome
             const float field_y = H * 0.40f;
@@ -178,8 +185,8 @@ MenuResult ShowMainMenu(Font& font) {
 
             // Pulsanti
             const float btn_y = H * 0.66f;
-            Rectangle r_conn = DrawTextBtn(font, "CONNECT", cx - 110, btn_y);
-            Rectangle r_back = DrawTextBtn(font, "BACK",    cx + 110, btn_y);
+            Rectangle r_back = DrawTextBtn(font, "BACK",    cx - 110, btn_y);
+            Rectangle r_conn = DrawTextBtn(font, "CONNECT", cx + 110, btn_y);
 
             if (Clicked(r_conn)) { pending_choice = MenuChoice::ONLINE; has_action = true; }
             if (Clicked(r_back)) { screen = Screen::MAIN; focused = 0; }
@@ -196,6 +203,10 @@ MenuResult ShowMainMenu(Font& font) {
             res.choice = pending_choice;
             if (res.username[0]  == '\0') std::strncpy(res.username,  "Player",    sizeof(res.username));
             if (res.server_ip[0] == '\0') std::strncpy(res.server_ip, "127.0.0.1", sizeof(res.server_ip));
+            // Aggiorna e salva i dati persistenti.
+            std::strncpy(save.username, res.username,  sizeof(save.username) - 1);
+            std::strncpy(save.last_ip,  res.server_ip, sizeof(save.last_ip)  - 1);
+            SaveSaveData(save);
             UnloadFont(font_title);
             return res;
         }

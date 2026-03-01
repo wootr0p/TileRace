@@ -46,7 +46,7 @@ add_subdirectory(src/client)
 # --- INSTALLAZIONE RUNTIME (solo ciò che serve per distribuire il gioco) ---
 set(TILERACE_RUNTIME_COMPONENT TileRaceRuntime)
 
-install(TARGETS TileRace_Client
+install(TARGETS TileRace
   RUNTIME DESTINATION .
   COMPONENT ${TILERACE_RUNTIME_COMPONENT}
 )
@@ -59,10 +59,10 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets"
 # --- LOGICA DI RUN ---
 if(WIN32)
     add_custom_target(run
-        COMMAND "$<TARGET_FILE:TileRace_Client>"
+        COMMAND "$<TARGET_FILE:TileRace>"
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-        DEPENDS TileRace_Client copy_assets
-        COMMENT "Avvio TileRace_Client..."
+        DEPENDS TileRace copy_assets
+        COMMENT "Avvio TileRace..."
     )
     add_custom_target(run_server
         COMMAND "$<TARGET_FILE:TileRace_Server>"

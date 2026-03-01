@@ -13,4 +13,5 @@ struct GameState {
     uint32_t    count                        = 0;   // player attualmente in partita
     PlayerState players[MAX_PLAYERS]         = {};  // stati autoritativi
     uint32_t    next_level_countdown_ticks   = 0;  // > 0: conto alla rovescia cambio livello
+    uint32_t    time_limit_secs              = 0;  // secondi rimanenti del limite di 2 minuti
 };

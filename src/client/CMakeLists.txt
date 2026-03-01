@@ -8,20 +8,21 @@
 #   passo 19 → MainMenu.h / MainMenu.cpp                ← COMPLETATO
 #   passo 20 → LocalServer.h / LocalServer.cpp          ← COMPLETATO
 #   fase avanzata → AudioManager.h / AudioManager.cpp
-add_executable(TileRace_Client
+add_executable(TileRace
     main.cpp
     MainMenu.cpp
     LocalServer.cpp
+    SaveData.cpp
 )
 
 # ENet non esporta include dir come PUBLIC, quindi la aggiungiamo manualmente.
 # Aggiungiamo anche src/server per ServerLogic.h (usato da LocalServer).
-target_include_directories(TileRace_Client PRIVATE
+target_include_directories(TileRace PRIVATE
     ${enet_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../server
 )
 
-target_link_libraries(TileRace_Client PRIVATE
+target_link_libraries(TileRace PRIVATE
     common_logic
     server_logic
     raylib
@@ -29,13 +30,13 @@ target_link_libraries(TileRace_Client PRIVATE
 )
 
 if(WIN32)
-    target_compile_definitions(TileRace_Client PRIVATE
+    target_compile_definitions(TileRace PRIVATE
         WIN32_LEAN_AND_MEAN
         NOMINMAX
         NOGDI
         NOUSER
     )
-    target_link_libraries(TileRace_Client PRIVATE
+    target_link_libraries(TileRace PRIVATE
         winmm    # Raylib Timer
         gdi32    # Raylib Graphics
         user32   # Raylib Window management
@@ -44,12 +45,12 @@ if(WIN32)
     )
 endif()
 
-target_compile_definitions(TileRace_Client PRIVATE CLIENT_BUILD)
-target_compile_features(TileRace_Client PRIVATE cxx_std_20)
+target_compile_definitions(TileRace PRIVATE CLIENT_BUILD)
+target_compile_features(TileRace PRIVATE cxx_std_20)
 
 # In Release non mostrare la console Windows (subsystem WINDOWS invece di CONSOLE)
 if(WIN32)
-    set_target_properties(TileRace_Client PROPERTIES
+    set_target_properties(TileRace PROPERTIES
         WIN32_EXECUTABLE $<CONFIG:Release>
     )
 endif()
