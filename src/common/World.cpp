@@ -29,7 +29,7 @@ bool World::LoadFromFile(const char* path) {
 
 bool World::IsSolid(int tx, int ty) const {
     char c = GetTile(tx, ty);
-    return c == '0';  // solo muri; 'E' è endpoint non solido (il player ci passa attraverso)
+    return c == '0';  // solo muri; 'E' ed 'K' sono non solidi (il player ci passa attraverso)
 }
 
 char World::GetTile(int tx, int ty) const {

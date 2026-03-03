@@ -13,7 +13,7 @@
 //                    Client e server devono avere lo stesso valore per giocare.
 // ---------------------------------------------------------------------------
 static constexpr const char*  GAME_VERSION     = "0.1.0";
-static constexpr uint16_t     PROTOCOL_VERSION = 1;
+static constexpr uint16_t     PROTOCOL_VERSION = 2;
 
 // ---------------------------------------------------------------------------
 // Costanti di protocollo condivise tra client e server.

@@ -33,6 +33,7 @@ struct PlayerState {
     int8_t   last_dir            = 1;   // ultima dir orizzontale non-zero (-1/+1); fallback dash
     float    dash_dir_x          = 0.f; // componente X normalizzata della direzione di dash
     float    dash_dir_y          = 0.f; // componente Y normalizzata della direzione di dash
+    uint8_t  dash_jump_ticks     = 0;   // > 0: finestra post-dash in cui il salto è potenziato
     // identificazione
     uint32_t player_id           = 0;
     uint32_t last_processed_tick = 0;   // ultimo frame.tick processato (usato per reconciliation)
@@ -41,4 +42,7 @@ struct PlayerState {
     // timer livello (passo 21)
     uint32_t level_ticks         = 0;   // tick trascorsi dal via; fermo quando finished
     bool     finished            = false; // true quando ha toccato l'endpoint
+    // morte da kill tile 'K'
+    uint8_t  kill_respawn_ticks  = 0;   // > 0: morto (kill tile); conta a 0 poi respawn
+    uint8_t  respawn_grace_ticks = 0;   // > 0: appena respawnato, input bloccati (3-2-1)
 };

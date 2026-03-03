@@ -8,6 +8,7 @@
 // Caratteri riconosciuti:
 //   '0' = muro        (solido)
 //   'E' = endpoint    (non solido — vincere toccandolo; il player ci passa attraverso)
+//   'K' = kill        (non solido — toccare = ricomincia il livello dal via)
 //   'X' = spawn       (non solido — posizione iniziale giocatori)
 //   ' ' = aria        (non solido)
 class World {

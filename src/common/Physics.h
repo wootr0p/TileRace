@@ -32,3 +32,13 @@ inline constexpr int   WALL_PROBE_REACH    = TILE_SIZE / 4; // px extra oltre il
 inline constexpr float DASH_SPEED          = 1200.f; // px/s durante il dash
 inline constexpr int   DASH_ACTIVE_TICKS   =  12;   // durata del dash (~200ms a 60Hz) — da bilanciare
 inline constexpr int   DASH_COOLDOWN_TICKS =  25;   // cooldown dopo dash (~417ms a 60Hz) — da bilanciare
+
+// --- Corner Correction ---
+// Massimo overlap in px oltre lo spigolo entro cui si applica il nudge orizzontale
+// invece di bloccare la testa. 1/4 di tile = 8 px a TILE_SIZE=32.
+inline constexpr int   CORNER_CORRECTION_PX = TILE_SIZE / 4;  // 8 px
+
+// --- Dash Jump ---
+// Finestra di tick dopo la fine del dash in cui il salto è potenziato.
+inline constexpr int   DASH_JUMP_WINDOW_TICKS = 10;    // ~167ms a 60Hz
+inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 1.15× JUMP_FORCE normale (1000)

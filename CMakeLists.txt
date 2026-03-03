@@ -43,6 +43,20 @@ add_subdirectory(src/common)
 add_subdirectory(src/server)
 add_subdirectory(src/client)
 
+# --- LINK STATICO RUNTIME MinGW (solo Windows + GCC) ---
+# Senza questo il gioco richiede libgcc_s_seh-1.dll / libstdc++-6.dll /
+# libwinpthread-1.dll sul PC dell'utente. Con il link statico vengono
+# incorporati nell'eseguibile: nessuna DLL aggiuntiva da distribuire.
+if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    foreach(_target TileRace TileRace_Server)
+        target_link_options(${_target} PRIVATE
+            -static-libgcc
+            -static-libstdc++
+            -Wl,-Bstatic,--whole-archive,-lwinpthread,--no-whole-archive,-Bdynamic
+        )
+    endforeach()
+endif()
+
 # --- ICONA ESEGUIBILI (solo Windows) ---
 # Genera app_icon.rc con il percorso assoluto all'icona, poi lo aggiunge ad
 # entrambi gli eseguibili. Il percorso è assoluto per evitare problemi con le

@@ -45,12 +45,31 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
         if (!tmp.LoadFromFile(path)) return false;
         world = tmp;
         spawn_x = 0.f; spawn_y = 0.f;
-        for (int ty = 0; ty < world.GetHeight(); ty++)
-            for (int tx = 0; tx < world.GetWidth(); tx++)
-                if (world.GetTile(tx, ty) == 'X') {
-                    spawn_x = static_cast<float>(tx * TILE_SIZE);
-                    spawn_y = static_cast<float>(ty * TILE_SIZE);
+        // Trova spawn ottimale: Y dal tile con il miglior punteggio, X = centro medio della zona X.
+        {
+            float sum_tx = 0.f;
+            int   count  = 0;
+            int   best_ty = -1, best_score = -1;
+            const int half_w = world.GetWidth() / 2;
+            for (int ty = 0; ty < world.GetHeight(); ty++) {
+                for (int tx = 0; tx < world.GetWidth(); tx++) {
+                    if (world.GetTile(tx, ty) != 'X') continue;
+                    sum_tx += static_cast<float>(tx);
+                    count++;
+                    const bool grounded = world.IsSolid(tx, ty + 1);
+                    const int score = (grounded ? 100000 : 0)
+                                    + ty * 1000
+                                    - std::abs(tx - half_w);
+                    if (score > best_score) { best_score = score; best_ty = ty; }
                 }
+            }
+            if (count > 0) {
+                const float avg_tx    = sum_tx / static_cast<float>(count);
+                const float center_px = (avg_tx + 0.5f) * static_cast<float>(TILE_SIZE);
+                spawn_x = center_px - TILE_SIZE * 0.5f;
+                spawn_y = static_cast<float>(best_ty * TILE_SIZE);
+            }
+        }
         return true;
     };
 
@@ -220,8 +239,14 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                             it->second.Simulate(pkt.frame, world);
 
                             // Timer di livello e latch "finished" (first-touch, 4 angoli).
+                            // Condizioni:
+                            //  - non parte durante la morte (kill_respawn_ticks > 0)
+                            //  - non parte durante il 3-2-1 (respawn_grace_ticks > 0)
+                            //  - si azzera al restart/morte (level_ticks = 0 in quei rami)
                             PlayerState s = it->second.GetState();
-                            if (!s.finished) {
+                            if (!s.finished &&
+                                s.kill_respawn_ticks  == 0 &&
+                                s.respawn_grace_ticks == 0) {
                                 s.level_ticks++;
                                 const int tx0 = static_cast<int>(s.x) / TILE_SIZE;
                                 const int ty0 = static_cast<int>(s.y) / TILE_SIZE;
@@ -240,6 +265,38 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                                     uint32_t& best = player_best_ticks[event.peer];
                                     if (best == 0 || s.level_ticks < best)
                                         best = s.level_ticks;
+                                }
+                            }
+                            // Kill tile 'K': toccare = ricomincia dal via.
+                            {
+                                const int tx0k = static_cast<int>(s.x)               / TILE_SIZE;
+                                const int ty0k = static_cast<int>(s.y)               / TILE_SIZE;
+                                const int tx1k = static_cast<int>(s.x + TILE_SIZE - 1.f) / TILE_SIZE;
+                                const int ty1k = static_cast<int>(s.y + TILE_SIZE - 1.f) / TILE_SIZE;
+                                if (world.GetTile(tx0k, ty0k) == 'K' ||
+                                    world.GetTile(tx1k, ty0k) == 'K' ||
+                                    world.GetTile(tx0k, ty1k) == 'K' ||
+                                    world.GetTile(tx1k, ty1k) == 'K') {
+                                    s.x = spawn_x;  s.y = spawn_y;
+                                    s.vel_x = 0.f;  s.vel_y = 0.f;
+                                    s.move_vel_x = 0.f;
+                                    s.on_ground       = false;
+                                    s.on_wall_left    = false;
+                                    s.on_wall_right   = false;
+                                    s.jump_buffer_ticks  = 0;
+                                    s.coyote_ticks       = 0;
+                                    s.last_wall_jump_dir = 0;
+                                    s.dash_active_ticks   = 0;
+                                    s.dash_cooldown_ticks = 0;
+                                    s.dash_ready      = true;
+                                    s.dash_dir_x      = 0.f;
+                                    s.dash_dir_y      = 0.f;
+                                    s.dash_jump_ticks = 0;
+                                    s.level_ticks = 0;
+                                    s.finished    = false;
+                                    s.respawn_grace_ticks = 0;
+                                    s.kill_respawn_ticks  = 60;  // ~1 s a 60 Hz
+                                    printf("[server] KILL player_id=%u --> respawn in 1s\n", s.player_id);
                                 }
                             }
                             it->second.SetState(s);
@@ -330,11 +387,27 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
                         auto it = players.find(event.peer);
                         if (it != players.end()) {
                             PlayerState s = it->second.GetState();
+                            // Ignora il restart se il player è morto (kill tile).
+                            if (s.kill_respawn_ticks > 0) break;
                             s.x = spawn_x;  s.y = spawn_y;
                             s.vel_x = 0.f;  s.vel_y = 0.f;
                             s.move_vel_x = 0.f;
+                            s.on_ground       = false;
+                            s.on_wall_left    = false;
+                            s.on_wall_right   = false;
+                            s.jump_buffer_ticks  = 0;
+                            s.coyote_ticks       = 0;
+                            s.last_wall_jump_dir = 0;
+                            s.dash_active_ticks   = 0;
+                            s.dash_cooldown_ticks = 0;
+                            s.dash_ready      = true;
+                            s.dash_dir_x      = 0.f;
+                            s.dash_dir_y      = 0.f;
+                            s.dash_jump_ticks = 0;
                             s.level_ticks = 0;
                             s.finished    = false;
+                            s.kill_respawn_ticks  = 0;
+                            s.respawn_grace_ticks = 60;  // avvia 3-2-1 anche al restart
                             it->second.SetState(s);
                             printf("[server] RESTART player_id=%u\n", s.player_id);
                         }

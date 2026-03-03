@@ -11,6 +11,22 @@ void Player::Simulate(const InputFrame& frame, const World& world) {
     // Registra il tick processato per permettere la reconciliation lato client.
     state_.last_processed_tick = frame.tick;
 
+    // Morto: conta alla rovescia prima del respawn, salta tutta la fisica.
+    if (state_.kill_respawn_ticks > 0) {
+        state_.kill_respawn_ticks--;
+        // Al termine del countdown avvia il grace period (3-2-1).
+        if (state_.kill_respawn_ticks == 0)
+            state_.respawn_grace_ticks = 60;  // 1 s a 60 Hz (3-2-1, 20 tick ciascuno)
+        return;
+    }
+
+    // Grace period post-respawn: player visibile ma bloccato (3-2-1).
+    // Impedisce cheat: anche se il client invia BTN, il server ignora.
+    if (state_.respawn_grace_ticks > 0) {
+        state_.respawn_grace_ticks--;
+        return;
+    }
+
     // 1. Jump buffer (edge rising)
     if (frame.Has(BTN_JUMP_PRESS))
         RequestJump();
@@ -69,7 +85,8 @@ void Player::RequestDash(float dx, float dy) {
         state_.dash_active_ticks = static_cast<uint8_t>(DASH_ACTIVE_TICKS);
         state_.dash_ready         = false;  // carica consumata finché non si tocca terra
         state_.vel_x              = 0.f;
-        state_.vel_y             = 0.f;
+        state_.vel_y              = 0.f;
+        state_.last_wall_jump_dir = 0;  // resetta: può wall-jumpare su entrambi i lati dopo il dash
     }
 }
 
@@ -211,6 +228,9 @@ void Player::MoveY(float dt, const World& world) {
         state_.dash_active_ticks--;
         if (state_.dash_active_ticks == 0) {
             state_.dash_cooldown_ticks = static_cast<uint8_t>(DASH_COOLDOWN_TICKS);
+            // Apre la finestra di dash jump: per DASH_JUMP_WINDOW_TICKS tick
+            // il prossimo salto avrà forza potenziata.
+            state_.dash_jump_ticks = static_cast<uint8_t>(DASH_JUMP_WINDOW_TICKS);
             // Se il dash era verso il basso, trasferisci la velocità verticale anziché
             // resettarla a 0: evita la pausa "galleggiante" post-dash in caduta.
             if (state_.dash_dir_y > 0.f)
@@ -231,9 +251,12 @@ void Player::MoveY(float dt, const World& world) {
     }
 
     // --- Salto normale (con buffer + coyote) ---
-    // Eseguito PRIMA della gravità per risposta immediata
+    // Eseguito PRIMA della gravità per risposta immediata.
+    // Se la finestra di dash jump è aperta, il salto ha forza potenziata.
     if (state_.jump_buffer_ticks > 0 && (was_on_ground || state_.coyote_ticks > 0)) {
-        state_.vel_y              = -JUMP_FORCE;
+        const float force         = (state_.dash_jump_ticks > 0) ? DASH_JUMP_FORCE : JUMP_FORCE;
+        state_.vel_y              = -force;
+        state_.dash_jump_ticks    = 0;  // consuma la finestra (una sola volta)
         state_.coyote_ticks       = 0;
         state_.jump_buffer_ticks  = 0;
         state_.last_wall_jump_dir = 0;  // a terra: reset, può saltare su qualsiasi muro
@@ -261,6 +284,9 @@ void Player::MoveY(float dt, const World& world) {
     // --- Decrementa jump buffer (se non è stato consumato sopra) ---
     if (state_.jump_buffer_ticks > 0)
         state_.jump_buffer_ticks--;
+    // --- Decrementa finestra dash jump ---
+    if (state_.dash_jump_ticks > 0)
+        state_.dash_jump_ticks--;
 }
 
 void Player::ResolveCollisionsY(const World& world) {
@@ -283,13 +309,42 @@ void Player::ResolveCollisionsY(const World& world) {
             }
         }
     } else if (state_.vel_y < 0.f) {
-        // Salto: controlla bordo superiore
+        // Salto: controlla bordo superiore.
+        // Corner Correction: se solo uno dei due lati tocca un tile e la penetrazione
+        // orizzontale è minore di CORNER_CORRECTION_PX, spingiamo il player di lato
+        // invece di bloccargli la testa — permette di superare gli spigoli.
         int ty = static_cast<int>(state_.y) / TILE_SIZE;
-        for (int tx = tx_left; tx <= tx_right; tx++) {
-            if (world.IsSolid(tx, ty)) {
+        const bool hit_left  = world.IsSolid(tx_left,  ty);
+        const bool hit_right = world.IsSolid(tx_right, ty);
+
+        if (hit_left || hit_right) {
+            if (hit_left && hit_right) {
+                // Entrambi i lati: blocco normale.
                 state_.y     = static_cast<float>((ty + 1) * TILE_SIZE);
                 state_.vel_y = 0.f;
-                break;
+            } else if (hit_right && !hit_left) {
+                // Solo il lato destro tocca: calcola di quanto siamo dentro il tile.
+                // overlap_x = (bordo_destro_player) - (bordo_sinistro_tile)
+                const float tile_left  = static_cast<float>(tx_right * TILE_SIZE);
+                const float overlap_x  = (state_.x + TILE_SIZE - 1 - inset) - tile_left;
+                if (overlap_x > 0.f && overlap_x <= static_cast<float>(CORNER_CORRECTION_PX)) {
+                    // Nudge a sinistra per far scivolare il player oltre lo spigolo.
+                    state_.x -= overlap_x + 1.f;
+                } else {
+                    state_.y     = static_cast<float>((ty + 1) * TILE_SIZE);
+                    state_.vel_y = 0.f;
+                }
+            } else {  // hit_left && !hit_right
+                // Solo il lato sinistro tocca.
+                const float tile_right = static_cast<float>((tx_left + 1) * TILE_SIZE);
+                const float overlap_x  = tile_right - (state_.x + inset);
+                if (overlap_x > 0.f && overlap_x <= static_cast<float>(CORNER_CORRECTION_PX)) {
+                    // Nudge a destra.
+                    state_.x += overlap_x + 1.f;
+                } else {
+                    state_.y     = static_cast<float>((ty + 1) * TILE_SIZE);
+                    state_.vel_y = 0.f;
+                }
             }
         }
     }

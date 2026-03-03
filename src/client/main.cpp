@@ -115,8 +115,88 @@ struct TrailState {
 };
 
 // ---------------------------------------------------------------------------
+// Particelle di morte (client-side, puramente visuale)
+// ---------------------------------------------------------------------------
+struct DeathParticle { float x, y, vx, vy, life; };
+
+struct DeathParticles {
+    static constexpr int MAX = 18;
+    DeathParticle parts[MAX] = {};
+    Color col = {};
+
+    void Spawn(float cx, float cy, Color c) {
+        col = c;
+        for (int i = 0; i < MAX; i++) {
+            const float angle = static_cast<float>(i) / static_cast<float>(MAX) * 6.2832f
+                                + GetRandomValue(0, 314) * 0.01f;
+            const float speed = 100.f + GetRandomValue(0, 320);
+            parts[i] = { cx, cy, cosf(angle) * speed, sinf(angle) * speed, 1.f };
+        }
+    }
+
+    void Update(float dt) {
+        for (auto& p : parts) {
+            if (p.life <= 0.f) continue;
+            p.x  += p.vx * dt;
+            p.y  += p.vy * dt;
+            p.vy += 400.f * dt;  // gravità visuale
+            p.life -= 1.5f * dt; // ~0.67 s di vita totale
+        }
+    }
+
+    bool Active() const {
+        for (const auto& p : parts) if (p.life > 0.f) return true;
+        return false;
+    }
+
+    void Draw() const {
+        for (const auto& p : parts) {
+            if (p.life <= 0.f) continue;
+            const uint8_t a  = static_cast<uint8_t>(p.life * 255.f);
+            const int     sz = static_cast<int>(p.life * 10.f) + 2;
+            DrawRectangle(static_cast<int>(p.x) - sz / 2,
+                          static_cast<int>(p.y) - sz / 2,
+                          sz, sz, {col.r, col.g, col.b, a});
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------
 // Rendering helpers (world-space, chiamati dentro BeginMode2D)
 // ---------------------------------------------------------------------------
+
+// Helper: posizione dello spawn ottimale tra tutti i tile 'X'.
+// Priorità: 1) tile con solido direttamente sotto (player a terra),
+//           2) tile più in basso (ty massimo),
+//           3) tile più vicino al centro orizzontale della mappa.
+// X (orizzontale): centrata rispetto alla media di tutti i tile X.
+static Vector2 FindCenterSpawn(const World& world) {
+    // Calcola la media X e trova il best_ty con lo scoring.
+    float sum_tx = 0.f;
+    int   count   = 0;
+    int   best_ty = -1;
+    int   best_score = -1;
+    const int half_w = world.GetWidth() / 2;
+    for (int ty = 0; ty < world.GetHeight(); ty++) {
+        for (int tx = 0; tx < world.GetWidth(); tx++) {
+            if (world.GetTile(tx, ty) != 'X') continue;
+            sum_tx += static_cast<float>(tx);
+            count++;
+            const bool grounded = world.IsSolid(tx, ty + 1);
+            const int score = (grounded ? 100000 : 0)
+                            + ty * 1000
+                            - abs(tx - half_w);
+            if (score > best_score) { best_score = score; best_ty = ty; }
+        }
+    }
+    if (count == 0) return {0.f, 0.f};
+    // Centro orizzontale della zona X (centro pixel del gruppo).
+    const float avg_tx     = sum_tx / static_cast<float>(count);
+    const float center_px  = (avg_tx + 0.5f) * static_cast<float>(TILE_SIZE);
+    const float spawn_x    = center_px - TILE_SIZE * 0.5f;  // bordo sinistro del player
+    const float spawn_y    = static_cast<float>(best_ty * TILE_SIZE);
+    return {spawn_x, spawn_y};
+}
 
 static void DrawTilemap(const World& world) {
     for (int ty = 0; ty < world.GetHeight(); ty++) {
@@ -124,10 +204,9 @@ static void DrawTilemap(const World& world) {
             const char c = world.GetTile(tx, ty);
             Color col;
             if      (c == '0') col = { 60, 100, 180, 255};  // muro
-            else if (c == 'E') col = {  0, 230, 100, 255};  // endpoint
-#ifndef NDEBUG
-            else if (c == 'X') col = { 60,  80, 220, 255};  // spawn (solo debug)
-#endif
+            else if (c == 'E') col = { 14, 140, 124, 255};  // endpoint  (stessa luminosità del kill tile)
+            else if (c == 'K') col = {220,  50,  50, 255};  // kill tile
+            else if (c == 'X') col = { 106, 111, 50, 255};  // spawn     (stessa luminosità del kill tile)
             else continue;
             DrawRectangle(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE, col);
         }
@@ -138,13 +217,15 @@ static void DrawPlayer(Font& font, float rx, float ry,
                        const PlayerState& s, bool is_local = true) {
     // Corpo del player.
     Color col;
-    // Bright = dash disponibile OPPURE dash attivo in quel momento.
-    // Scuro = solo durante il cooldown (dash esaurito, non ancora ricaricato).
+    // Bright = dash disponibile (anche durante il dash attivo).
+    // Scuro  = dash NON disponibile: sia durante il cooldown post-dash
+    //          sia quando è stato usato a mezz'aria e non si è ancora atterrati
+    //          (dash_ready == false ma cooldown già a 0).
     if (is_local) {
-        const bool bright = s.dash_active_ticks > 0 || s.dash_cooldown_ticks == 0;
+        const bool bright = s.dash_active_ticks > 0 || s.dash_ready;
         col = bright ? Color{0, 220, 255, 255} : Color{0, 90, 115, 255};
     } else {
-        const bool bright = s.dash_active_ticks > 0 || s.dash_cooldown_ticks == 0;
+        const bool bright = s.dash_active_ticks > 0 || s.dash_ready;
         col = bright ? Color{255, 140, 60, 200} : Color{140, 80, 40, 160};
     }
     DrawRectangle(static_cast<int>(rx), static_cast<int>(ry),
@@ -171,6 +252,35 @@ static void DrawHUD(Font& font, const PlayerState& s, uint32_t player_count, boo
         ? TextFormat("fps: %d  players: %u", GetFPS(), player_count)
         : TextFormat("fps: %d", GetFPS());
     DrawTextEx(font, txt, {10, 10}, 24, 1, WHITE);
+}
+
+static void DrawNetStats(Font& font, ENetPeer* peer) {
+    if (!peer) return;
+    const uint32_t rtt       = peer->roundTripTime;          // RTT medio (ms)
+    const uint32_t jitter    = peer->roundTripTimeVariance;  // varianza RTT (ms)
+    const uint32_t loss_pct  = peer->packetLoss * 100u / ENET_PEER_PACKET_LOSS_SCALE;
+    // Colore: verde fino a 60ms, giallo fino a 120ms, rosso oltre.
+    Color rtt_col = rtt <  60 ? Color{100, 230, 100, 200}
+                  : rtt < 120 ? Color{230, 200,  60, 200}
+                              : Color{230,  80,  80, 200};
+    Color loss_col = loss_pct == 0 ? Color{100, 230, 100, 200}
+                   : loss_pct < 5  ? Color{230, 200,  60, 200}
+                                   : Color{230,  80,  80, 200};
+    const float sz  = 24.f;
+    const float sw  = static_cast<float>(GetScreenWidth());
+    const float sh  = static_cast<float>(GetScreenHeight());
+    const char* rtt_str   = TextFormat("ping: %u ms",  rtt);
+    const char* jit_str   = TextFormat("jitter: %u ms", jitter);
+    const char* loss_str  = TextFormat("loss: %u%%",   loss_pct);
+    const float pad = 10.f;
+    const float line = sz + 2.f;
+    // Riga 1: loss (in basso)
+    const Vector2 ls = MeasureTextEx(font, loss_str,  sz, 1);
+    const Vector2 js = MeasureTextEx(font, jit_str,   sz, 1);
+    const Vector2 rs = MeasureTextEx(font, rtt_str,   sz, 1);
+    DrawTextEx(font, loss_str,  {sw - ls.x - pad, sh - pad - line * 3.f}, sz, 1, loss_col);
+    DrawTextEx(font, jit_str,   {sw - js.x - pad, sh - pad - line * 4.f}, sz, 1, {200, 200, 200, 160});
+    DrawTextEx(font, rtt_str,   {sw - rs.x - pad, sh - pad - line * 5.f}, sz, 1, rtt_col);
 }
 
 static void DrawDebugPanel(Font& font, const PlayerState& s) {
@@ -223,10 +333,12 @@ int main() {
     SetTargetFPS(120);
     SetExitKey(KEY_NULL);  // ESC gestito manualmente (pausa in-game, quit da menu)
 
-    Font font_small = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 18, nullptr, 0);
-    Font font_hud   = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 24, nullptr, 0);
-    Font font_timer = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 48, nullptr, 0);
+    Font font_small = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf",  18, nullptr, 0);
+    Font font_hud   = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf",  24, nullptr, 0);
+    Font font_timer = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf",  48, nullptr, 0);
+    Font font_bold  = LoadFontEx("assets/fonts/SpaceMono-Bold.ttf",    144, nullptr, 0);
     SetTextureFilter(font_timer.texture, TEXTURE_FILTER_BILINEAR);
+    SetTextureFilter(font_bold.texture,  TEXTURE_FILTER_BILINEAR);
 
     // Carica i dati salvati (nickname, ultimo IP).
     SaveData save{};
@@ -266,12 +378,10 @@ int main() {
     ps.player_id = 0;   // assegnato dal server via PktWelcome
     std::strncpy(ps.name, menu.username, sizeof(ps.name) - 1);
     ps.name[sizeof(ps.name) - 1] = '\0';
-    for (int ty = 0; ty < world.GetHeight(); ty++)
-        for (int tx = 0; tx < world.GetWidth(); tx++)
-            if (world.GetTile(tx, ty) == 'X') {
-                ps.x = static_cast<float>(tx * TILE_SIZE);
-                ps.y = static_cast<float>(ty * TILE_SIZE);
-            }
+    {
+        const Vector2 sp = FindCenterSpawn(world);
+        ps.x = sp.x;  ps.y = sp.y;
+    }
 
     // Stato predetto localmente (client-side prediction, passo 15).
     Player player;
@@ -338,6 +448,23 @@ int main() {
     TrailState trail;
     std::unordered_map<uint32_t, TrailState>  remote_trails;      // key = player_id
     std::unordered_map<uint32_t, uint32_t>    remote_last_ticks;   // key = player_id
+
+    // Particelle di morte per il player locale e i remoti.
+    DeathParticles local_death{};
+    std::unordered_map<uint32_t, DeathParticles> remote_deaths;
+    // Ultima pos "viva" del player locale: dove spawnare le particelle.
+    float last_safe_x = ps.x, last_safe_y = ps.y;
+    // Stato precedente di kill_respawn_ticks (per rilevare il fronte di discesa).
+    uint8_t prev_kill_ticks_local = 0;
+    std::unordered_map<uint32_t, uint8_t>   remote_prev_kill_ticks;
+    // Ultima posizione "viva" dei player remoti: usata per spawnare le particelle
+    // nel posto giusto (il server sposta già x/y allo spawn prima di inviare kill_respawn_ticks).
+    std::unordered_map<uint32_t, Vector2>   remote_last_alive_pos;
+    // Camera shake: decresce ogni frame, 0 = nessuno shake.
+    float cam_shake_timer = 0.f;
+    // Migliori tempi del livello corrente (player_id -> best level_ticks).
+    // Azzerata a ogni cambio livello. Aggiornata quando finished == true.
+    std::unordered_map<uint32_t, uint32_t> live_best_ticks;
 
     // Camera con smooth follow; il target insegue il player con lerp esponenziale.
     Camera2D camera{};
@@ -451,7 +578,10 @@ int main() {
         if (pause_state == PauseState::PLAYING &&
             (IsKeyPressed(KEY_BACKSPACE) ||
             (gp && IsGamepadButtonPressed(GP, GP_RESTART))))
-            restart_pending = true;
+            // Blocca il restart mentre il player è morto (kill tile) o nel 3-2-1.
+            if (player.GetState().kill_respawn_ticks  == 0 &&
+                player.GetState().respawn_grace_ticks == 0)
+                restart_pending = true;
 
         // --- Restart: invia pacchetto e azzera stato record ---
         if (restart_pending) {
@@ -501,6 +631,19 @@ int main() {
             if (jump_held)    frame.buttons |= BTN_JUMP;
             if (jump_pressed) { frame.buttons |= BTN_JUMP_PRESS; jump_pressed = false; }
             if (dash_pending) { frame.buttons |= BTN_DASH;       dash_pending = false; }
+
+            // Blocca input durante morte (kill tile) e grace period (3-2-1).
+            // Server-side: Player::Simulate ignora comunque i BTN in questi stati,
+            // ma azzériamo anche localmente per evitare accodamento indesiderato.
+            {
+                const PlayerState& cur = player.GetState();
+                if (cur.kill_respawn_ticks > 0 || cur.respawn_grace_ticks > 0) {
+                    frame.buttons = 0;
+                    frame.move_x  = 0.f;
+                    frame.dash_dx = 0.f;
+                    frame.dash_dy = 0.f;
+                }
+            }
 
             // Invia input al server.
             PktInput pkt{};
@@ -637,12 +780,10 @@ int main() {
                             PlayerState new_ps{};
                             new_ps.player_id = local_player_id;
                             std::strncpy(new_ps.name, menu.username, sizeof(new_ps.name) - 1);
-                            for (int ty2 = 0; ty2 < world.GetHeight(); ty2++)
-                                for (int tx2 = 0; tx2 < world.GetWidth(); tx2++)
-                                    if (world.GetTile(tx2, ty2) == 'X') {
-                                        new_ps.x = static_cast<float>(tx2 * TILE_SIZE);
-                                        new_ps.y = static_cast<float>(ty2 * TILE_SIZE);
-                                    }
+                            {
+                                const Vector2 sp = FindCenterSpawn(world);
+                                new_ps.x = sp.x;  new_ps.y = sp.y;
+                            }
                             player.SetState(new_ps);
                             prev_x = new_ps.x;  prev_y = new_ps.y;
                             camera.target = {new_ps.x + TILE_SIZE * 0.5f,
@@ -656,6 +797,15 @@ int main() {
                             trail.Clear();
                             remote_trails.clear();
                             remote_last_ticks.clear();
+                            local_death = {};
+                            remote_deaths.clear();
+                            remote_prev_kill_ticks.clear();
+                            remote_last_alive_pos.clear();
+                            prev_kill_ticks_local = 0;
+                            cam_shake_timer       = 0.f;
+                            last_safe_x = new_ps.x;
+                            last_safe_y = new_ps.y;
+                            live_best_ticks.clear();
                             last_game_state = {};
                             std::memset(input_history, 0, sizeof(input_history));
                         }
@@ -711,13 +861,68 @@ int main() {
         const float draw_x = prev_x + (local.x - prev_x) * alpha;
         const float draw_y = prev_y + (local.y - prev_y) * alpha;
 
+        // --- Rilevamento morte (kill tile) e particelle ---
+        // Aggiorna la posizione "sicura" solo quando il player è vivo e non in grace.
+        if (local.kill_respawn_ticks == 0 && local.respawn_grace_ticks == 0)
+            { last_safe_x = draw_x; last_safe_y = draw_y; }
+        // Fronte morte: kill_respawn_ticks appena impostato → spawn particelle + shake.
+        const bool just_died      = (local.kill_respawn_ticks > 0 && prev_kill_ticks_local == 0);
+        // Fronte respawn: kill_respawn_ticks appena azzerato → camera snap allo spawn.
+        const bool just_respawned = (prev_kill_ticks_local > 0 && local.kill_respawn_ticks == 0);
+        if (just_died) {
+            local_death.Spawn(last_safe_x + TILE_SIZE * 0.5f,
+                              last_safe_y + TILE_SIZE * 0.5f,
+                              {0, 220, 255, 255});
+            cam_shake_timer = 0.4f;
+        }
+        prev_kill_ticks_local = local.kill_respawn_ticks;
+        // Morte player remoti.
+        for (uint32_t i = 0; i < last_game_state.count; i++) {
+            const PlayerState& rp = last_game_state.players[i];
+            if (rp.player_id == 0 || rp.player_id == local_player_id) continue;
+            // Aggiorna l'ultima posizione viva prima di controllare la morte.
+            // IMPORTANTE: quando kill_respawn_ticks diventa > 0, il server ha già
+            // spostato x/y allo spawn → usiamo la pos salvata al tick precedente.
+            if (rp.kill_respawn_ticks == 0 && rp.respawn_grace_ticks == 0)
+                remote_last_alive_pos[rp.player_id] = {rp.x, rp.y};
+            uint8_t& prev_kt = remote_prev_kill_ticks[rp.player_id];
+            if (rp.kill_respawn_ticks > 0 && prev_kt == 0) {
+                const Vector2 alive_pos = remote_last_alive_pos.count(rp.player_id)
+                    ? remote_last_alive_pos[rp.player_id]
+                    : Vector2{rp.x, rp.y};  // fallback se non abbiamo mai visto quel player
+                remote_deaths[rp.player_id].Spawn(alive_pos.x + TILE_SIZE * 0.5f,
+                                                   alive_pos.y + TILE_SIZE * 0.5f,
+                                                   {255, 140, 60, 200});
+            }
+            prev_kt = rp.kill_respawn_ticks;
+        }
+        // Aggiorna particelle di tutti i player morti.
+        local_death.Update(dt);
+        for (auto& [id, dp] : remote_deaths) dp.Update(dt);
+
         const float cx = draw_x + TILE_SIZE * 0.5f;
         const float cy = draw_y + TILE_SIZE * 0.5f;
-        const float k  = 1.f - expf(-CAM_SMOOTH * dt);
-        camera.target.x += (cx - camera.target.x) * k;
-        camera.target.y += (cy - camera.target.y) * k;
+        // Camera: ferma sul punto di morte, snap istantaneo al respawn, poi smooth follow.
+        if (local.kill_respawn_ticks > 0) {
+            // Morto: telecamera immobile sulla posizione di morte.
+        } else if (just_respawned) {
+            // Appena respawnato: snap diretto allo spawn senza lerp.
+            camera.target = {cx, cy};
+        } else {
+            const float k  = 1.f - expf(-CAM_SMOOTH * dt);
+            camera.target.x += (cx - camera.target.x) * k;
+            camera.target.y += (cy - camera.target.y) * k;
+        }
         // Aggiorna l'offset ogni frame: mantiene il player centrato anche dopo resize.
         camera.offset = {GetScreenWidth() * 0.5f, GetScreenHeight() * 0.5f};
+        // Camera shake (solo player locale).
+        if (cam_shake_timer > 0.f) {
+            cam_shake_timer -= dt;
+            if (cam_shake_timer < 0.f) cam_shake_timer = 0.f;
+            const float mag = (cam_shake_timer / 0.4f) * 9.f;
+            camera.offset.x += static_cast<float>(GetRandomValue(-100, 100)) * 0.01f * mag;
+            camera.offset.y += static_cast<float>(GetRandomValue(-100, 100)) * 0.01f * mag;
+        }
 
         // --- Render ---
         BeginDrawing();
@@ -732,18 +937,101 @@ int main() {
                 remote_trails[rp.player_id].Draw({255, 140, 60, 200});
             }
             trail.Draw({0, 220, 255, 255});
+            // Particelle di morte (remoti e locale).
+            for (auto& [id, dp] : remote_deaths) dp.Draw();
+            local_death.Draw();
             // Altri giocatori (posizione autoritativa dal server, non interpolata).
+            // Nascosti mentre sono in respawn (kill_respawn_ticks > 0).
             if (local_player_id != 0) {
                 for (uint32_t i = 0; i < last_game_state.count; i++) {
                     const PlayerState& rp = last_game_state.players[i];
-                    if (rp.player_id != 0 && rp.player_id != local_player_id)
+                    if (rp.player_id != 0 && rp.player_id != local_player_id
+                        && rp.kill_respawn_ticks == 0)
                         DrawPlayer(font_hud, rp.x, rp.y, rp, false);
                 }
             }
-            DrawPlayer(font_hud, draw_x, draw_y, local);
+            // Player locale: nascosto durante il respawn.
+            if (local.kill_respawn_ticks == 0)
+                DrawPlayer(font_hud, draw_x, draw_y, local);
         EndMode2D();
 
         DrawHUD(font_hud, local, last_game_state.count, menu.choice != MenuChoice::OFFLINE);
+        DrawNetStats(font_hud, net_peer);
+
+        // --- Classifica live (migliori tempi sotto l'HUD, solo durante il gioco) ---
+        if (!last_game_state.is_lobby && last_game_state.count > 0) {
+            // Aggiorna best ticks da tutti i player che hanno finito.
+            for (uint32_t i = 0; i < last_game_state.count; i++) {
+                const PlayerState& rp = last_game_state.players[i];
+                if (rp.player_id == 0 || !rp.finished || rp.level_ticks == 0) continue;
+                auto it = live_best_ticks.find(rp.player_id);
+                if (it == live_best_ticks.end() || rp.level_ticks < it->second)
+                    live_best_ticks[rp.player_id] = rp.level_ticks;
+            }
+            // Aggiorna anche il player locale dal proprio stato predetto.
+            if (local.player_id != 0 && local.finished && local.level_ticks > 0) {
+                auto it = live_best_ticks.find(local.player_id);
+                if (it == live_best_ticks.end() || local.level_ticks < it->second)
+                    live_best_ticks[local.player_id] = local.level_ticks;
+            }
+            // Raccoglie e ordina le voci per best_ticks crescente.
+            struct LiveEntry { uint32_t player_id; uint32_t best_ticks; char name[16]; };
+            LiveEntry entries[MAX_PLAYERS];
+            int entry_count = 0;
+            for (uint32_t i = 0; i < last_game_state.count && entry_count < MAX_PLAYERS; i++) {
+                const PlayerState& rp = last_game_state.players[i];
+                if (rp.player_id == 0) continue;
+                auto it = live_best_ticks.find(rp.player_id);
+                if (it == live_best_ticks.end()) continue;  // non ha ancora finito
+                LiveEntry& e = entries[entry_count++];
+                e.player_id  = rp.player_id;
+                e.best_ticks = it->second;
+                std::strncpy(e.name, rp.name, 15); e.name[15] = '\0';
+            }
+            // Semplice insertion sort (max 8 elementi).
+            for (int a = 1; a < entry_count; a++) {
+                LiveEntry tmp = entries[a];
+                int b = a - 1;
+                while (b >= 0 && entries[b].best_ticks > tmp.best_ticks)
+                    { entries[b + 1] = entries[b]; b--; }
+                entries[b + 1] = tmp;
+            }
+            const float lsz = 24.f;
+            const float ly0 = 10.f + lsz + 4.f;  // subito sotto la riga fps
+            for (int i = 0; i < entry_count; i++) {
+                const LiveEntry& e = entries[i];
+                const uint32_t cs   = e.best_ticks * 100 / 60;
+                const char* t_str = TextFormat("%s  %02u:%02u.%02u",
+                    e.name[0] ? e.name : "?",
+                    cs / 6000, (cs % 6000) / 100, cs % 100);
+                DrawTextEx(font_hud, t_str, {10.f, ly0 + i * (lsz + 2.f)},
+                    lsz, 1, Color{255, 255, 255, 128});
+            }
+        }
+
+        // --- Overlay 3-2-1 post-respawn (grace period) ---
+        if (local.respawn_grace_ticks > 0) {
+            const char* num_str;
+            Color       num_col;
+            if (local.respawn_grace_ticks > 40) {
+                num_str = "3"; num_col = {255, 100,  80, 255};
+            } else if (local.respawn_grace_ticks > 20) {
+                num_str = "2"; num_col = {255, 200,  50, 255};
+            } else {
+                num_str = "1"; num_col = { 80, 230,  80, 255};
+            }
+            // frac: 1.0 all'inizio del numero, 0.0 alla fine (1/3 s per cifra).
+            const float frac  = static_cast<float>(local.respawn_grace_ticks % 20) / 20.f;
+            const float hold  = frac > 0.3f ? 1.f : frac / 0.3f;
+            const uint8_t alpha = static_cast<uint8_t>(hold * 255.f);
+            const Color col = {num_col.r, num_col.g, num_col.b, alpha};
+            const float sz  = 144.f;
+            const Vector2 tsz = MeasureTextEx(font_bold, num_str, sz, 1);
+            const float tx_pos = GetScreenWidth()  * 0.5f - tsz.x * 0.5f;
+            const float ty_pos = GetScreenHeight() * 0.5f - tsz.y * 0.5f;
+            DrawTextEx(font_bold, num_str, {tx_pos, ty_pos}, sz, 1, col);
+        }
+
 #ifndef NDEBUG
         DrawDebugPanel(font_small, local);
 #endif
@@ -978,6 +1266,7 @@ int main() {
     UnloadFont(font_small);
     UnloadFont(font_hud);
     UnloadFont(font_timer);
+    UnloadFont(font_bold);
     CloseWindow();
     return 0;
 }
