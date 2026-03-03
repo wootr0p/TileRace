@@ -27,6 +27,7 @@ int main() {
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, TextFormat("TileRace v%s", GAME_VERSION));
+    InitAudioDevice();
     // Imposta l'icona sulla finestra Win32 nativa: carica dalla risorsa embedded
     // (ID 1 nel .rc), poi la forza sia come ICON_SMALL che ICON_BIG in modo che
     // la taskbar e alt+tab la mostrino correttamente anche dopo che GLFW ha
@@ -76,7 +77,7 @@ int main() {
         continue;
     }
 
-    const GameSession::Config cfg{ is_offline ? nullptr : initial_map, menu.username, is_offline };
+    const GameSession::Config cfg{ is_offline ? nullptr : initial_map, menu.username, is_offline, &save };
     GameSession session(cfg);
     while (!WindowShouldClose() && !session.IsOver())
         session.Tick(GetFrameTime(), net, renderer);
@@ -98,6 +99,7 @@ int main() {
     enet_deinitialize();
 
     renderer.Cleanup();
+    CloseAudioDevice();
     CloseWindow();
 
     return 0;

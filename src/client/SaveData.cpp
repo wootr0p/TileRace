@@ -104,6 +104,9 @@ bool LoadSaveData(SaveData& out) {
 
     JsonReadStr(json, "u", out.username, sizeof(out.username));
     JsonReadStr(json, "i", out.last_ip,  sizeof(out.last_ip));
+    char mute_buf[4] = {};
+    if (JsonReadStr(json, "m", mute_buf, sizeof(mute_buf)))
+        out.sfx_muted = (mute_buf[0] == '1');
     return true;
 }
 
@@ -111,7 +114,8 @@ void SaveSaveData(const SaveData& data) {
     // Serializza in JSON
     const std::string json =
         std::string("{\"u\":\"") + JsonEscape(data.username) +
-        "\",\"i\":\"" + JsonEscape(data.last_ip) + "\"}";
+        "\",\"i\":\"" + JsonEscape(data.last_ip) +
+        "\",\"m\":\"" + (data.sfx_muted ? "1" : "0") + "\"}";
 
     const uint32_t csum    = Checksum(json);
     const std::string enc  = XorBuffer(json);

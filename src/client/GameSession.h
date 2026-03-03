@@ -10,6 +10,9 @@
 #include "VisualEffects.h"
 #include "InputSampler.h"
 #include "NetworkClient.h"
+#include "SfxManager.h"
+#include "SaveData.h"
+#include "LevelPalette.h"
 #include <raylib.h>
 #include <unordered_map>
 #include <string>
@@ -23,6 +26,7 @@ public:
         const char* map_path   = nullptr;
         const char* username   = "";
         bool        is_offline = false;  // true → connects to a LocalServer instance
+        SaveData*   save       = nullptr; // for persisting settings (e.g. mute) changed in-session
     };
 
     explicit GameSession(const Config& cfg);
@@ -43,6 +47,7 @@ private:
     std::string username_;
     bool        is_offline_;
     uint8_t     current_level_ = 0;  // current level number from server (0 = lobby/unknown)
+    SaveData*   save_          = nullptr; // non-owning; may be null
 
     static constexpr uint32_t IHIST = 128;   // input ring-buffer capacity for reconciliation
     InputFrame  input_history_[IHIST] = {};
@@ -61,6 +66,14 @@ private:
     std::unordered_map<uint32_t, DeathParticles> remote_deaths_;
     std::unordered_map<uint32_t, uint8_t>        remote_prev_kill_ticks_;
     std::unordered_map<uint32_t, Vector2>        remote_last_alive_pos_;
+    std::unordered_map<uint32_t, uint8_t>        remote_prev_dash_ticks_;
+    std::unordered_map<uint32_t, float>          remote_prev_vel_y_;
+    std::unordered_map<uint32_t, int8_t>         remote_prev_wall_jump_dir_;
+    std::unordered_map<uint32_t, Vector2>        remote_prev_checkpoint_;
+    std::unordered_map<uint32_t, bool>           remote_prev_finished_;
+
+    SfxManager sfx_;
+    LevelPalette palette_;  // current level colour theme; default = lobby colours
 
     std::unordered_map<uint32_t, uint32_t> live_best_ticks_;
 
@@ -88,6 +101,9 @@ private:
     float   last_safe_x_           = 0.f;
     float   last_safe_y_           = 0.f;
     uint8_t prev_kill_ticks_local_ = 0;
+    uint8_t prev_grace_local_      = 0;    // tracks respawn_grace_ticks for Ready/Go SFX
+    float   prev_checkpoint_x_     = 0.f;  // tracks local checkpoint for SFX
+    float   prev_checkpoint_y_     = 0.f;
 
     PauseState pause_state_    = PauseState::PLAYING;
     int        pause_focused_  = 0;   // 0=Resume, 1=Quit to Menu
@@ -97,6 +113,12 @@ private:
     std::string end_message_;
     std::string end_sub_msg_;
     Color       end_color_{255, 80, 80, 255};
+
+    // Set by PKT_GENERATING; cleared when PKT_LEVEL_DATA arrives.
+    // While true the loading overlay is shown and disconnect-during-gen is suppressed.
+    bool    generating_level_     = false;
+    uint8_t generating_level_num_ = 0;
+    float   generating_elapsed_   = 0.f;
 
     // Queued disconnect reason received via PKT_VERSION_MISMATCH before the ENet DISCONNECT event.
     std::string pending_disc_reason_;

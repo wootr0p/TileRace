@@ -215,6 +215,11 @@ void Player::ResolveCollisionsX(const World& world, float dx) {
 void Player::MoveY(float dt, const World& world) {
     // --- Durante il dash: applica componente Y, poi sospendi gravità e logica di salto ---
     if (state_.dash_active_ticks > 0) {
+        // Il dash stacca il player da terra immediatamente. Senza questo,
+        // on_ground resterebbe true per tutta la durata del dash e un jump
+        // bufferizzato potrebbe scattare a fine dash mentre si è in aria.
+        state_.on_ground = false;
+
         if (state_.dash_dir_y != 0.f) {
             const float dy = state_.dash_dir_y * DASH_SPEED * FIXED_DT;
             state_.y    += dy;

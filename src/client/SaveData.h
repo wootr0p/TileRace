@@ -6,6 +6,7 @@
 struct SaveData {
     char username[16] = {};
     char last_ip[64]  = {};
+    bool sfx_muted    = false;
 };
 
 // Load from "save.dat" in the CWD. Returns true if the file was valid.

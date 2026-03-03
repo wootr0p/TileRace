@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-03 17:06
+ * Generated : 2026-03-03 22:59
  * ============================================================================
  *
  * PURPOSE
@@ -59,6 +59,7 @@
  *   │   ├── GameSession.h
  *   │   ├── InputSampler.cpp
  *   │   ├── InputSampler.h
+ *   │   ├── LevelPalette.h
  *   │   ├── LocalServer.cpp
  *   │   ├── LocalServer.h
  *   │   ├── main.cpp
@@ -70,6 +71,10 @@
  *   │   ├── Renderer.h
  *   │   ├── SaveData.cpp
  *   │   ├── SaveData.h
+ *   │   ├── SfxManager.cpp
+ *   │   ├── SfxManager.h
+ *   │   ├── SoundPool.cpp
+ *   │   ├── SoundPool.h
  *   │   ├── UIWidgets.cpp
  *   │   ├── UIWidgets.h
  *   │   ├── VisualEffects.cpp
@@ -106,7 +111,7 @@
  *   │   └── ServerSession.h
  *   └── app_icon.rc.in
  *
- * HEADERS INCLUDED BELOW  (26 files)
+ * HEADERS INCLUDED BELOW  (29 files)
  *   [01]  src\common\GameState.h
  *   [02]  src\common\InputFrame.h
  *   [03]  src\common\Physics.h
@@ -125,14 +130,17 @@
  *   [16]  src\client\Colors.h
  *   [17]  src\client\GameSession.h
  *   [18]  src\client\InputSampler.h
- *   [19]  src\client\LocalServer.h
- *   [20]  src\client\MainMenu.h
- *   [21]  src\client\NetworkClient.h
- *   [22]  src\client\Renderer.h
- *   [23]  src\client\SaveData.h
- *   [24]  src\client\UIWidgets.h
- *   [25]  src\client\VisualEffects.h
- *   [26]  src\client\WinIcon.h
+ *   [19]  src\client\LevelPalette.h
+ *   [20]  src\client\LocalServer.h
+ *   [21]  src\client\MainMenu.h
+ *   [22]  src\client\NetworkClient.h
+ *   [23]  src\client\Renderer.h
+ *   [24]  src\client\SaveData.h
+ *   [25]  src\client\SfxManager.h
+ *   [26]  src\client\SoundPool.h
+ *   [27]  src\client\UIWidgets.h
+ *   [28]  src\client\VisualEffects.h
+ *   [29]  src\client\WinIcon.h
  * ============================================================================
  */
 
@@ -391,6 +399,7 @@ enum PktType : uint8_t {
     PKT_LEVEL_DATA        = 14,  // S → C  generated level tile grid (variable-size packet)
     PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
     PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
+    PKT_GENERATING        = 17,  // S → C  server is generating the next level; client shows loading overlay
 };
 
 struct PktInput {
@@ -511,6 +520,13 @@ struct PktEmoteBroadcast {
     uint8_t  type      = PKT_EMOTE_BROADCAST;
     uint8_t  emote_id  = 0;  // 0-7
     uint32_t player_id = 0;
+};
+
+// Sent before PKT_LEVEL_DATA to warn clients that generation may take a moment.
+// Clients show a loading overlay and extend their disconnect timeout.
+struct PktGenerating {
+    uint8_t type  = PKT_GENERATING;
+    uint8_t level = 0;   // the level number being generated
 };
 
 
@@ -869,8 +885,9 @@ private:
     void ResetToInitial(ENetHost* host);
     void SendResults   (ENetHost* host, const char* reason);
     void BroadcastGameState(ENetHost* host);
-    void BroadcastLevelData(ENetHost* host);  // send PKT_LEVEL_DATA with generated world grid
-    void SendLevelDataToPeer(ENetPeer* peer);  // send PKT_LEVEL_DATA to a single peer
+    void BroadcastLevelData(ENetHost* host);      // send PKT_LEVEL_DATA with generated world grid
+    void BroadcastGenerating(ENetHost* host);     // send PKT_GENERATING before level generation starts
+    void SendLevelDataToPeer(ENetPeer* peer);     // send PKT_LEVEL_DATA to a single peer
     void UpdateZone();
     bool AllInZone()        const;
     uint32_t CountdownTicks() const;
@@ -949,7 +966,7 @@ static constexpr Color CLRS_PLAYER_REMOTE_NAME  = {255, 210, 150, 200};
 static constexpr Color CLRS_TILE_WALL       = { 60, 100, 180, 255};  // '0' solid wall
 static constexpr Color CLRS_TILE_EXIT       = { 14, 140, 124, 255};  // 'E' exit / win tile
 static constexpr Color CLRS_TILE_KILL       = {220,  50,  50, 255};  // 'K' lethal tile
-static constexpr Color CLRS_TILE_SPAWN      = {106, 111,  50, 255};  // 'X' spawn point
+static constexpr Color CLRS_TILE_SPAWN      = {106, 111,  50, 0};  // 'X' spawn point
 static constexpr Color CLRS_TILE_CHECKPOINT = { 50, 230,  80, 255};  // 'C' checkpoint — bright green
 
 // HUD timers
@@ -1003,6 +1020,9 @@ static constexpr Color CLRS_DEBUG_TEXT     = {200, 200, 200, 200};
 #include "VisualEffects.h"
 #include "InputSampler.h"
 #include "NetworkClient.h"
+#include "SfxManager.h"
+#include "SaveData.h"
+#include "LevelPalette.h"
 #include <raylib.h>
 #include <unordered_map>
 #include <string>
@@ -1016,6 +1036,7 @@ public:
         const char* map_path   = nullptr;
         const char* username   = "";
         bool        is_offline = false;  // true → connects to a LocalServer instance
+        SaveData*   save       = nullptr; // for persisting settings (e.g. mute) changed in-session
     };
 
     explicit GameSession(const Config& cfg);
@@ -1036,6 +1057,7 @@ private:
     std::string username_;
     bool        is_offline_;
     uint8_t     current_level_ = 0;  // current level number from server (0 = lobby/unknown)
+    SaveData*   save_          = nullptr; // non-owning; may be null
 
     static constexpr uint32_t IHIST = 128;   // input ring-buffer capacity for reconciliation
     InputFrame  input_history_[IHIST] = {};
@@ -1054,6 +1076,14 @@ private:
     std::unordered_map<uint32_t, DeathParticles> remote_deaths_;
     std::unordered_map<uint32_t, uint8_t>        remote_prev_kill_ticks_;
     std::unordered_map<uint32_t, Vector2>        remote_last_alive_pos_;
+    std::unordered_map<uint32_t, uint8_t>        remote_prev_dash_ticks_;
+    std::unordered_map<uint32_t, float>          remote_prev_vel_y_;
+    std::unordered_map<uint32_t, int8_t>         remote_prev_wall_jump_dir_;
+    std::unordered_map<uint32_t, Vector2>        remote_prev_checkpoint_;
+    std::unordered_map<uint32_t, bool>           remote_prev_finished_;
+
+    SfxManager sfx_;
+    LevelPalette palette_;  // current level colour theme; default = lobby colours
 
     std::unordered_map<uint32_t, uint32_t> live_best_ticks_;
 
@@ -1081,6 +1111,9 @@ private:
     float   last_safe_x_           = 0.f;
     float   last_safe_y_           = 0.f;
     uint8_t prev_kill_ticks_local_ = 0;
+    uint8_t prev_grace_local_      = 0;    // tracks respawn_grace_ticks for Ready/Go SFX
+    float   prev_checkpoint_x_     = 0.f;  // tracks local checkpoint for SFX
+    float   prev_checkpoint_y_     = 0.f;
 
     PauseState pause_state_    = PauseState::PLAYING;
     int        pause_focused_  = 0;   // 0=Resume, 1=Quit to Menu
@@ -1090,6 +1123,12 @@ private:
     std::string end_message_;
     std::string end_sub_msg_;
     Color       end_color_{255, 80, 80, 255};
+
+    // Set by PKT_GENERATING; cleared when PKT_LEVEL_DATA arrives.
+    // While true the loading overlay is shown and disconnect-during-gen is suppressed.
+    bool    generating_level_     = false;
+    uint8_t generating_level_num_ = 0;
+    float   generating_elapsed_   = 0.f;
 
     // Queued disconnect reason received via PKT_VERSION_MISMATCH before the ENet DISCONNECT event.
     std::string pending_disc_reason_;
@@ -1178,11 +1217,89 @@ private:
     int   emote_highlight_  = -1;     // currently highlighted direction (-1 = none)
     int   emote_pending_    = -1;     // emote to send (-1 = none)
     bool  emote_kb_was_open_= false;  // previous-frame E key state (edge detection)
-    bool  emote_kb_fired_  = false;  // true after keyboard emote fired, reset on E release
-    bool  emote_gp_was_open_= false;  // previous-frame R3 state
+    bool  emote_gp_was_open_= false;  // previous-frame L1 state
 
     void PollEmote();  // called by Poll()
 };
+
+
+// ==========================================================================
+// FILE : LevelPalette.h
+// PATH : src/client/LevelPalette.h
+// ==========================================================================
+
+#pragma once
+// LevelPalette — per-level world colour theme derived from a level number.
+//
+// Only the world/environment colours change; player colours stay fixed so every
+// player always recognises their own character regardless of the current level.
+//
+// Generation algorithm:
+//   base_hue = level_num * GOLDEN_ANGLE_DEG  (mod 360)
+//              → 8 levels spread maximally across the hue wheel
+//   Background : same hue, S=0.65, L=0.08   (almost black — guarantees player contrast)
+//   Wall       : same hue, S=0.45, L=0.42   (ΔL≈34% vs BG → always readable)
+//   Exit       : base_hue +120°, S=0.65, L=0.38  (triadic — always distinct from wall)
+//   Kill       : base_hue +180°, S=0.85, L=0.50  (complementary — always distinct)
+//   Checkpoint : base_hue +100°, S=0.70, L=0.50  (near-triadic — distinct from kill/wall)
+//   Spawn      : transparent (invisible in-game, kept for completeness)
+//
+// level_num == 0  →  returns the lobby default palette (original Colors.h values).
+//
+// Header-only; no .cpp required.  Depends only on <raylib.h> and <cmath>.
+#include <raylib.h>
+#include <cmath>
+
+struct LevelPalette {
+    Color bg;
+    Color wall;
+    Color exit_tile;
+    Color kill_tile;
+    Color checkpoint;
+    Color spawn;  // typically transparent / invisible
+
+    // Default constructor = lobby palette (original Colors.h values).
+    // Used for file-based levels and the lobby map.
+    LevelPalette()
+        : bg        {  8,  12,  40, 255}
+        , wall      { 60, 100, 180, 255}
+        , exit_tile { 14, 140, 124, 255}
+        , kill_tile {220,  50,  50, 255}
+        , checkpoint{ 50, 230,  80, 255}
+        , spawn     {106, 111,  50,   0}
+    {}
+};
+
+namespace detail {
+
+// h in [0, 360), s and l in [0, 1]  →  Color {r, g, b, alpha}
+inline Color HslToColor(float h, float s, float l, uint8_t alpha = 255) {
+    h = std::fmodf(h, 360.f);
+    if (h < 0.f) h += 360.f;
+    const float c  = (1.f - std::fabsf(2.f * l - 1.f)) * s;
+    const float x  = c * (1.f - std::fabsf(std::fmodf(h / 60.f, 2.f) - 1.f));
+    const float m  = l - c * 0.5f;
+    float r = 0.f, g = 0.f, b = 0.f;
+    if      (h <  60.f) { r = c; g = x; }
+    else if (h < 120.f) { r = x; g = c; }
+    else if (h < 180.f) {        g = c; b = x; }
+    else if (h < 240.f) {        g = x; b = c; }
+    else if (h < 300.f) { r = x;        b = c; }
+    else                { r = c;        b = x; }
+    return { static_cast<uint8_t>((r + m) * 255.f),
+             static_cast<uint8_t>((g + m) * 255.f),
+             static_cast<uint8_t>((b + m) * 255.f),
+             alpha };
+}
+
+} // namespace detail
+
+// Returns the palette for a given level number (1-based).
+// level_num == 0 returns the default lobby palette (same as LevelPalette{}).
+inline LevelPalette MakeLevelPalette(uint8_t level_num) { /* body stripped */ }
+    // Golden-angle distribution: maximally separates up to ~16 distinct hues.
+    // Exit and checkpoint share the same visual role ("reach me") — same color.
+    // Kill tile stays fixed red regardless of hue — universal danger signal.
 
 
 // ==========================================================================
@@ -1294,6 +1411,11 @@ public:
     void SendReliable  (const void* data, size_t size);
     void SendUnreliable(const void* data, size_t size);
 
+    // Increase the ENet peer timeout so the connection survives server-side operations
+    // that temporarily stall the ENet loop (e.g. level generation).
+    // timeout_ms: max milliseconds before hard-disconnect (default ENet ≈ 5 s).
+    void SetLongTimeout(uint32_t timeout_ms = 60000);
+
     // Returns the next queued event. Call in a loop until type == None.
     // Packet bytes are already copied; the underlying ENet packet is destroyed internally.
     NetEvent Poll();
@@ -1323,6 +1445,7 @@ private:
 #include "VisualEffects.h"
 #include "GameState.h"
 #include "Protocol.h"   // EMOTE_TEXTS, EMOTE_COUNT
+#include "LevelPalette.h"
 
 class  World;
 struct PlayerState;
@@ -1381,9 +1504,13 @@ public:
 
     void DrawDebugPanel(const PlayerState& s);
 
+    // Level colour palette — call once per level load, before the first BeginFrame.
+    // Affects ClearBackground and all tile colours in DrawTilemap.
+    void SetPalette(const LevelPalette& p);
+
     // Pause menu
     Rectangle GetPauseItemRect(int item_index) const;  // for mouse hit-testing in GameSession
-    void DrawPauseMenu(PauseState state, int focused, int confirm_focused);
+    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted);
 
     // End-of-level results screen
     void DrawResultsScreen(bool in_results, bool local_ready,
@@ -1400,6 +1527,10 @@ public:
     void DrawConnectionErrorScreen(const char* msg);
     void DrawSessionEndScreen(const char* main_msg, const char* sub_msg, Color col);
 
+    // Loading overlay shown while the server generates a level.
+    // Call every frame until PKT_LEVEL_DATA arrives.
+    void DrawGeneratingLevel(uint8_t level_num, float elapsed_secs);
+
 private:
     Font     font_small_ = {};
     Font     font_hud_   = {};
@@ -1407,6 +1538,8 @@ private:
     Font     font_bold_  = {};   // loaded at 200 px — all draw sizes are downscales, no blur
     Camera2D camera_     = {};
     float    cam_shake_timer_ = 0.f;
+
+    LevelPalette palette_;  // current level colour theme; updated via SetPalette()
 
     enum class ReadyGoPhase { NONE, READY, GO };
     ReadyGoPhase rg_phase_      = ReadyGoPhase::NONE;
@@ -1428,6 +1561,7 @@ private:
 struct SaveData {
     char username[16] = {};
     char last_ip[64]  = {};
+    bool sfx_muted    = false;
 };
 
 // Load from "save.dat" in the CWD. Returns true if the file was valid.
@@ -1435,6 +1569,116 @@ struct SaveData {
 bool LoadSaveData(SaveData& out);
 
 void SaveSaveData(const SaveData& data);
+
+
+// ==========================================================================
+// FILE : SfxManager.h
+// PATH : src/client/SfxManager.h
+// ==========================================================================
+
+#pragma once
+// SfxManager — owns all SoundPools and one-shot sounds for the game.
+// Loads all assets once during GameSession construction; unloads on destruction.
+// Play*()   methods: local player (full volume, centre pan).
+// Play*At() methods: remote players (2-D spatialized).
+#include "SoundPool.h"
+#include <raylib.h>
+
+class SfxManager {
+public:
+    SfxManager();
+    ~SfxManager();
+
+    // No copy.
+    SfxManager(const SfxManager&)            = delete;
+    SfxManager& operator=(const SfxManager&) = delete;
+
+    void SetMuted(bool muted) { muted_ = muted; }
+    bool IsMuted()      const { return muted_; }
+
+    // --- Movement sounds ---
+    // Local
+    void PlayJump();
+    void PlayWallJump();
+    void PlayDash();
+    // Remote (spatialized)
+    void PlayJumpAt    (float sx, float sy, float lx, float ly);
+    void PlayWallJumpAt(float sx, float sy, float lx, float ly);
+    void PlayDashAt    (float sx, float sy, float lx, float ly);
+
+    // --- Death sounds ---
+    void PlayDeath();
+    void PlayDeathAt(float sx, float sy, float lx, float ly);
+
+    // --- Checkpoint ---
+    void PlayCheckpoint();
+    void PlayCheckpointAt(float sx, float sy, float lx, float ly);
+
+    // --- Level complete ---
+    void PlayLevelEnd();
+    void PlayLevelEndAt(float sx, float sy, float lx, float ly);
+
+    // --- UI / level events (local only, no spatialization) ---
+    void PlayReady();
+    void PlayGo();
+
+private:
+    SoundPool jump_pool_;      // 3 variants
+    SoundPool wall_jump_pool_; // 3 variants
+    SoundPool dash_pool_;      // 3 variants
+    SoundPool death_pool_;     // 3 variants
+    SoundPool checkpoint_pool_;// 1 variant
+    Sound     ready_sound_    = {};
+    Sound     go_sound_       = {};
+    Sound     level_end_sound_= {};
+    bool      muted_ = false;
+};
+
+
+// ==========================================================================
+// FILE : SoundPool.h
+// PATH : src/client/SoundPool.h
+// ==========================================================================
+
+#pragma once
+// SoundPool — pool of N audio variants for the same effect.
+// Picks a random variant and applies a slight pitch randomisation on every play.
+// PlayAt() additionally maps world-space distance to volume attenuation
+// and horizontal offset to stereo pan (L/R).
+// No external dependencies beyond Raylib.
+#include <raylib.h>
+#include <vector>
+
+class SoundPool {
+public:
+    // Load all N sound files whose paths are listed in [paths, paths+count).
+    // Call once at startup (after InitAudioDevice).
+    void Load(const char* const* paths, int count);
+
+    // Unload all loaded sounds. Call before CloseAudioDevice.
+    void Unload();
+
+    // Play a random variant at full volume, centre pan.
+    // pitch_variance: ± range around 1.0 (e.g. 0.07 → pitch in [0.93, 1.07]).
+    void Play(float pitch_variance = 0.07f);
+
+    // Play with 2-D spatial audio.
+    //   source_x / source_y  : world-space pixel position of the emitter.
+    //   listener_x / listener_y: world-space pixel position of the listener (camera target).
+    //   max_dist             : distance (px) at which volume hits 0.
+    void PlayAt(float source_x, float source_y,
+                float listener_x, float listener_y,
+                float max_dist       = 1200.f,
+                float pitch_variance = 0.07f);
+
+private:
+    std::vector<Sound> sounds_;
+
+    // Returns the next sound to play (round-robin through the pool so concurrent
+    // calls on different remote players don't stomp each other's pitch/pan state).
+    Sound& NextVoice();
+    int next_idx_ = 0;
+};
 
 
 // ==========================================================================
@@ -1523,6 +1767,8 @@ struct EmoteBubble {
     uint8_t emote_id = 0;      // 0-7 index into EMOTE_TEXTS
     float   timer    = 0.f;    // counts down from EMOTE_DURATION to 0
     bool    active   = false;
+    float   last_x   = 0.f;    // last known world position (frozen on death)
+    float   last_y   = 0.f;
 };
 
 

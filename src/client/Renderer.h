@@ -7,6 +7,7 @@
 #include "VisualEffects.h"
 #include "GameState.h"
 #include "Protocol.h"   // EMOTE_TEXTS, EMOTE_COUNT
+#include "LevelPalette.h"
 
 class  World;
 struct PlayerState;
@@ -65,9 +66,13 @@ public:
 
     void DrawDebugPanel(const PlayerState& s);
 
+    // Level colour palette — call once per level load, before the first BeginFrame.
+    // Affects ClearBackground and all tile colours in DrawTilemap.
+    void SetPalette(const LevelPalette& p);
+
     // Pause menu
     Rectangle GetPauseItemRect(int item_index) const;  // for mouse hit-testing in GameSession
-    void DrawPauseMenu(PauseState state, int focused, int confirm_focused);
+    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted);
 
     // End-of-level results screen
     void DrawResultsScreen(bool in_results, bool local_ready,
@@ -84,6 +89,10 @@ public:
     void DrawConnectionErrorScreen(const char* msg);
     void DrawSessionEndScreen(const char* main_msg, const char* sub_msg, Color col);
 
+    // Loading overlay shown while the server generates a level.
+    // Call every frame until PKT_LEVEL_DATA arrives.
+    void DrawGeneratingLevel(uint8_t level_num, float elapsed_secs);
+
 private:
     Font     font_small_ = {};
     Font     font_hud_   = {};
@@ -91,6 +100,8 @@ private:
     Font     font_bold_  = {};   // loaded at 200 px — all draw sizes are downscales, no blur
     Camera2D camera_     = {};
     float    cam_shake_timer_ = 0.f;
+
+    LevelPalette palette_;  // current level colour theme; updated via SetPalette()
 
     enum class ReadyGoPhase { NONE, READY, GO };
     ReadyGoPhase rg_phase_      = ReadyGoPhase::NONE;

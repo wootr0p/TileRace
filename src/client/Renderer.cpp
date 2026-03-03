@@ -76,9 +76,13 @@ void Renderer::TickShake(float dt) {
 // ---------------------------------------------------------------------------
 // Frame
 // ---------------------------------------------------------------------------
+void Renderer::SetPalette(const LevelPalette& p) {
+    palette_ = p;
+}
+
 void Renderer::BeginFrame() {
     BeginDrawing();
-    ClearBackground(CLRS_BG_GAME);
+    ClearBackground(palette_.bg);
 }
 
 void Renderer::EndFrame() {
@@ -200,11 +204,11 @@ void Renderer::DrawTilemap(const World& world) {
         for (int tx = 0; tx < world.GetWidth(); tx++) {
             const char c = world.GetTile(tx, ty);
             Color col;
-            if      (c == '0') col = CLRS_TILE_WALL;
-            else if (c == 'E') col = CLRS_TILE_EXIT;
-            else if (c == 'K') col = CLRS_TILE_KILL;
-            else if (c == 'X') col = CLRS_TILE_SPAWN;
-            else if (c == 'C') col = CLRS_TILE_CHECKPOINT;
+            if      (c == '0') col = palette_.wall;
+            else if (c == 'E') col = palette_.exit_tile;
+            else if (c == 'K') col = palette_.kill_tile;
+            else if (c == 'X') col = palette_.spawn;
+            else if (c == 'C') col = palette_.checkpoint;
             else continue;
             DrawRectangle(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE, col);
         }
@@ -574,12 +578,12 @@ void Renderer::DrawDebugPanel(const PlayerState& s) {
 Rectangle Renderer::GetPauseItemRect(int idx) const {
     const float pcx    = GetScreenWidth()  * 0.5f;
     const float pcy    = GetScreenHeight() * 0.5f;
-    const float item_y = pcy - 10.f + idx * 44.f;
+    const float item_y = pcy - 44.f + idx * 44.f;
     const Vector2 sz   = MeasureTextEx(font_hud_, "  Quit to Menu", 24, 1);
     return Rectangle{pcx - sz.x * 0.5f - 8, item_y - 4, sz.x + 16, 24.f + 8};
 }
 
-void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused) {
+void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted) {
     if (state == PauseState::PLAYING) return;
 
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), CLRS_BG_OVERLAY);
@@ -589,19 +593,20 @@ void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused)
     if (state == PauseState::PAUSED) {
         const char* title = "PAUSED";
         const Vector2 ts = MeasureTextEx(font_timer_, title, 48, 1);
-        DrawTextEx(font_timer_, title, {pcx - ts.x * 0.5f, pcy - 110.f}, 48, 1, CLRS_ACCENT);
+        DrawTextEx(font_timer_, title, {pcx - ts.x * 0.5f, pcy - 130.f}, 48, 1, CLRS_ACCENT);
 
-        const char* items[2] = {"Resume", "Quit to Menu"};
-        for (int i = 0; i < 2; i++) {
+        const char* sfx_label = sfx_muted ? "SFX: OFF" : "SFX: ON";
+        const char* items[3] = {"Resume", sfx_label, "Quit to Menu"};
+        for (int i = 0; i < 3; i++) {
             const bool  sel = (focused == i);
             const Color col = sel ? CLRS_ACCENT : CLRS_TEXT_MAIN;
             const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
             const Vector2 sz = MeasureTextEx(font_hud_, buf, 24, 1);
-            DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, pcy - 10.f + i * 44.f}, 24, 1, col);
+            DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, pcy - 44.f + i * 44.f}, 24, 1, col);
         }
         const char* hint = "up/down: navigate   enter: confirm   esc: resume";
         const Vector2 hs = MeasureTextEx(font_small_, hint, 18, 1);
-        DrawTextEx(font_small_, hint, {pcx - hs.x * 0.5f, pcy + 120.f}, 18, 1, CLRS_TEXT_DIM);
+        DrawTextEx(font_small_, hint, {pcx - hs.x * 0.5f, pcy + 130.f}, 18, 1, CLRS_TEXT_DIM);
 
     } else {  // CONFIRM_QUIT
         const char* msg = "Quit to main menu?";
@@ -748,6 +753,43 @@ void Renderer::DrawGlobalResultsScreen(bool in_global, bool local_ready,
     const Color g_bcol = local_ready ? CLRS_RESULTS_READY : CLRS_ACCENT;
     const Vector2 g_bsz = MeasureTextEx(font_hud_, g_btn, 24, 1);
     DrawTextEx(font_hud_, g_btn, {rcx - g_bsz.x * 0.5f, rh - 60.f}, 24, 1, g_bcol);
+}
+
+// ---------------------------------------------------------------------------
+// Loading overlay — server is generating the next level
+// ---------------------------------------------------------------------------
+void Renderer::DrawGeneratingLevel(uint8_t level_num, float elapsed_secs) {
+    const float sw = static_cast<float>(GetScreenWidth());
+    const float sh = static_cast<float>(GetScreenHeight());
+    const float cx = sw * 0.5f;
+    const float cy = sh * 0.5f;
+
+    // Dark semi-transparent full-screen background
+    DrawRectangle(0, 0, (int)sw, (int)sh, {0, 0, 0, 210});
+
+    // Title
+    const char* title = level_num > 0
+        ? TextFormat("Generating Level %u", (unsigned)level_num)
+        : "Generating next level";
+    const float   title_sz  = 48.f;
+    const Vector2 title_ts  = MeasureTextEx(font_bold_, title, title_sz, 1);
+    DrawTextEx(font_bold_, title,
+               {cx - title_ts.x * 0.5f, cy - title_sz - 24.f},
+               title_sz, 1.f, CLRS_TEXT_MAIN);
+
+    // Animated dots (3 dots cycling every 0.5 s)
+    const int dots = static_cast<int>(elapsed_secs / 0.5f) % 4;
+    const char* dot_str = dots == 0 ? "   " : dots == 1 ? ".  " : dots == 2 ? ".. " : "...";
+    const float   dot_sz = 40.f;
+    const Vector2 dot_ts = MeasureTextEx(font_bold_, "...", dot_sz, 1);
+    DrawTextEx(font_bold_, dot_str,
+               {cx - dot_ts.x * 0.5f, cy + 8.f},
+               dot_sz, 1.f, CLRS_ACCENT);
+
+    // Hint at the bottom
+    const char* hint = "please wait";
+    const Vector2 hs  = MeasureTextEx(font_small_, hint, 18, 1);
+    DrawTextEx(font_small_, hint, {cx - hs.x * 0.5f, cy + 70.f}, 18, 1, CLRS_TEXT_DIM);
 }
 
 // ---------------------------------------------------------------------------

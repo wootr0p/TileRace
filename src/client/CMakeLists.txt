@@ -20,6 +20,8 @@ add_executable(TileRace
     NetworkClient.cpp
     InputSampler.cpp
     GameSession.cpp
+    SoundPool.cpp
+    SfxManager.cpp
 )
 
 # ENet non esporta include dir come PUBLIC, quindi la aggiungiamo manualmente.

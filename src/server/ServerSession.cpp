@@ -403,6 +403,9 @@ void ServerSession::DoLevelChange(ENetHost* host) {
     // Generate level from chunks (or fall back to file-based loading).
     bool loaded = false;
     if (chunk_store_.IsReady()) {
+        // Notify clients that generation is starting so they show a loading overlay
+        // and don't time out while the ENet loop is stalled.
+        BroadcastGenerating(host);
         loaded = level_mgr_.Generate(current_level_, chunk_store_);
     }
     if (!loaded) {
@@ -534,6 +537,18 @@ void ServerSession::BroadcastGameState(ENetHost* host) {
     ENetPacket* bcast = enet_packet_create(&gs_pkt, sizeof(gs_pkt), 0);
     enet_host_broadcast(host, CHANNEL_RELIABLE, bcast);
     enet_host_flush(host);
+}
+
+// ---------------------------------------------------------------------------
+// BroadcastGenerating — notify clients that level generation is starting
+// ---------------------------------------------------------------------------
+void ServerSession::BroadcastGenerating(ENetHost* host) {
+    PktGenerating pkt{};
+    pkt.level = static_cast<uint8_t>(current_level_);
+    ENetPacket* ep = enet_packet_create(&pkt, sizeof(pkt), ENET_PACKET_FLAG_RELIABLE);
+    enet_host_broadcast(host, CHANNEL_RELIABLE, ep);
+    enet_host_flush(host);  // send immediately before blocking in Generate()
+    printf("[server] PKT_GENERATING level=%u\n", (unsigned)pkt.level);
 }
 
 // ---------------------------------------------------------------------------

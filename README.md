@@ -28,14 +28,14 @@ Only needs to be run once (or after changing `CMakeLists.txt` / `CMakePresets.js
 
 ### Build & Run
 
-| Command | Effect |
-|---|---|
-| `cmake --build --preset run-debug` | Build (debug) → launch client |
-| `cmake --build --preset run-release` | Build (release) → launch client |
-| `cmake --build --preset run-scc-debug` | Build (debug) → launch server + 2 clients |
+| Command                                  | Effect                                      |
+| ---------------------------------------- | ------------------------------------------- |
+| `cmake --build --preset run-debug`       | Build (debug) → launch client               |
+| `cmake --build --preset run-release`     | Build (release) → launch client             |
+| `cmake --build --preset run-scc-debug`   | Build (debug) → launch server + 2 clients   |
 | `cmake --build --preset run-scc-release` | Build (release) → launch server + 2 clients |
-| `cmake --build --preset debug` | Build only (debug) |
-| `cmake --build --preset release` | Build only (release) |
+| `cmake --build --preset debug`           | Build only (debug)                          |
+| `cmake --build --preset release`         | Build only (release)                        |
 
 The `run-scc-*` presets open the server and each client in separate windows via PowerShell `Start-Process`. The server starts first; clients follow after a 1-second delay.
 
@@ -47,5 +47,4 @@ cmake --build --preset release
 cmake --install build/release --component TileRaceRuntime
 ```
 
-Output is placed in `dist/` at the project root and contains exactly what is needed to distribute the game.
-
+Output is placed in `deploy/win/`, `deploy/mac/`, or `deploy/linux/` depending on the build platform, and contains exactly what is needed to distribute the game.

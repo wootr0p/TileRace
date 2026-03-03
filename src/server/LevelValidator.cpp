@@ -134,7 +134,7 @@ static bool OverlapsTileType(float px, float py, const World& world, char type) 
 // Single-action simulation
 // ============================================================================
 
-static constexpr int   MAX_SIM_TICKS = 180;   // 3 seconds at 60 Hz
+static constexpr int   MAX_SIM_TICKS = static_cast<int>(3.0f / FIXED_DT);  // 3 s of simulated time (scales with FIXED_DT)
 static constexpr int   MAX_BFS_NODES = 50000;
 
 struct SimResult {

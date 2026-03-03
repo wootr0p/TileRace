@@ -19,7 +19,12 @@
 GameSession::GameSession(const Config& cfg)
     : username_(cfg.username ? cfg.username : "")
     , is_offline_(cfg.is_offline)
+    , save_(cfg.save)
 {
+    // Applica il mute iniziale dai dati salvati.
+    if (save_)
+        sfx_.SetMuted(save_->sfx_muted);
+
     if (cfg.map_path) {
         world_.LoadFromFile(cfg.map_path);
         const SpawnPos sp = FindCenterSpawn(world_);
@@ -127,6 +132,9 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
     PollNetwork(net);
     if (session_over_) return false;
 
+    // Advance generating overlay timer (counts up while waiting for level data)
+    if (generating_level_) generating_elapsed_ += dt;
+
     // 8. Rilevamento completamento livello e aggiornamento record
     const PlayerState& local = player_.GetState();
     if (local.finished && !prev_finished_) {
@@ -134,6 +142,7 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
             best_ticks_  = local.level_ticks;
             show_record_ = true;
         }
+        sfx_.PlayLevelEnd();
     }
     prev_finished_ = local.finished;
 
@@ -156,10 +165,35 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
                            last_safe_y_ + TILE_SIZE * 0.5f,
                            CLRS_PLAYER_LOCAL);
         renderer.TriggerShake(0.4f);
+        sfx_.PlayDeath();
     }
     prev_kill_ticks_local_ = local.kill_respawn_ticks;
 
+    // Ready / Go — local player only (grace period transitions).
+    {
+        const uint8_t cur_grace = local.respawn_grace_ticks;
+        if (prev_grace_local_ == 0 && cur_grace > 0)       sfx_.PlayReady();
+        else if (prev_grace_local_ > 0 && cur_grace == 0)  sfx_.PlayGo();
+        prev_grace_local_ = cur_grace;
+    }
+
+    // Checkpoint locale — rilevato qui dopo reconciliation (checkpoint_x/y è server-side only).
+    {
+        const float cx = local.checkpoint_x;
+        const float cy = local.checkpoint_y;
+        if (cx != prev_checkpoint_x_ || cy != prev_checkpoint_y_) {
+            // Non suonare al primo frame (init) e non suonare se il checkpoint viene rimosso (reset a 0,0).
+            if (cx != 0.f || cy != 0.f)
+                sfx_.PlayCheckpoint();
+            prev_checkpoint_x_ = cx;
+            prev_checkpoint_y_ = cy;
+        }
+    }
+
     // Morte player remoti
+    const PlayerState& local_ps    = player_.GetState();
+    const float        listener_cx = local_ps.x + TILE_SIZE * 0.5f;
+    const float        listener_cy = local_ps.y + TILE_SIZE * 0.5f;
     for (uint32_t i = 0; i < last_game_state_.count; i++) {
         const PlayerState& rp = last_game_state_.players[i];
         if (rp.player_id == 0 || rp.player_id == local_player_id_) continue;
@@ -173,6 +207,9 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
             remote_deaths_[rp.player_id].Spawn(alive_pos.x + TILE_SIZE * 0.5f,
                                                alive_pos.y + TILE_SIZE * 0.5f,
                                                CLRS_PLAYER_REMOTE);
+            sfx_.PlayDeathAt(alive_pos.x + TILE_SIZE * 0.5f,
+                             alive_pos.y + TILE_SIZE * 0.5f,
+                             listener_cx, listener_cy);
         }
         prev_kt = rp.kill_respawn_ticks;
     }
@@ -218,14 +255,22 @@ void GameSession::HandlePauseInput(Renderer& renderer) {
         pause_focused_ = 0;
 
     } else if (pause_state_ == PauseState::PAUSED) {
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < 3; i++)
             if (CheckCollisionPointRec(mouse, item_rect(i))) pause_focused_ = i;
 
-        if      (toggle)                  pause_state_   = PauseState::PLAYING;
-        else if (nav_up  || nav_dn)       pause_focused_ = 1 - pause_focused_;
+        if      (toggle)       pause_state_   = PauseState::PLAYING;
+        else if (nav_up)       pause_focused_ = (pause_focused_ + 2) % 3;
+        else if (nav_dn)       pause_focused_ = (pause_focused_ + 1) % 3;
         else if (ok || (clicked && CheckCollisionPointRec(mouse, item_rect(pause_focused_)))) {
-            if (pause_focused_ == 0) pause_state_   = PauseState::PLAYING;
-            else { pause_state_ = PauseState::CONFIRM_QUIT; confirm_focused_ = 0; }
+            if (pause_focused_ == 0) {
+                pause_state_ = PauseState::PLAYING;
+            } else if (pause_focused_ == 1) {
+                // SFX toggle — effetto immediato, salva.
+                sfx_.SetMuted(!sfx_.IsMuted());
+                if (save_) { save_->sfx_muted = sfx_.IsMuted(); SaveSaveData(*save_); }
+            } else {
+                pause_state_ = PauseState::CONFIRM_QUIT; confirm_focused_ = 0;
+            }
         }
 
     } else if (pause_state_ == PauseState::CONFIRM_QUIT) {
@@ -287,10 +332,29 @@ void GameSession::TickFixed(NetworkClient& net) {
     // Archivia per reconciliation
     input_history_[frame.tick % IHIST] = frame;
 
+    // Salva lo stato prima della simulazione per rilevare eventi sonori.
+    const float   pre_vy   = player_.GetState().vel_y;
+    const uint8_t pre_dash = player_.GetState().dash_active_ticks;
+    const int8_t  pre_wjd  = player_.GetState().last_wall_jump_dir;
+
     // Simulazione locale (prediction)
     prev_x_ = player_.GetState().x;
     prev_y_ = player_.GetState().y;
     player_.Simulate(frame, world_);
+
+    // SFX giocatore locale.
+    const int8_t post_wjd   = player_.GetState().last_wall_jump_dir;
+    const bool   is_wall_jump = (post_wjd != 0 && post_wjd != pre_wjd);
+    // Wall jump: last_wall_jump_dir transisce a ±1 (ha priorità sul suono di salto normale).
+    if (is_wall_jump)
+        sfx_.PlayWallJump();
+    // Jump normale: vel_y scende sotto la soglia di impulso (solo se non è un wall jump).
+    else if (pre_vy > -500.f && player_.GetState().vel_y <= -500.f)
+        sfx_.PlayJump();
+    // Dash: dash_active_ticks transisce da 0 a >0.
+    if (pre_dash == 0 && player_.GetState().dash_active_ticks > 0)
+        sfx_.PlayDash();
+    // Nota: checkpoint rilevato nel main Tick() dopo la reconciliation (server-side only).
 }
 
 // ---------------------------------------------------------------------------
@@ -356,16 +420,74 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
         std::memcpy(&resp, data, sizeof(PktGameState));
         last_game_state_ = resp.state;
 
-        // Aggiorna trail remoti (solo su nuovo tick per quel player)
+        // Aggiorna trail remoti e rileva eventi SFX — SOLO su nuovo tick autoritativo.
+        // Gestire qui (non nel loop di Tick) evita falsi trigger ogni frame.
         for (uint32_t i = 0; i < resp.state.count; i++) {
             const PlayerState& rp = resp.state.players[i];
             if (rp.player_id == 0 || rp.player_id == local_player_id_) continue;
-            uint32_t& prev = remote_last_ticks_[rp.player_id];
-            if (rp.last_processed_tick != prev) {
-                prev = rp.last_processed_tick;
+
+            // Prima apparizione: inizializza prev state senza suonare.
+            if (remote_prev_vel_y_.count(rp.player_id) == 0) {
+                remote_prev_vel_y_[rp.player_id]          = rp.vel_y;
+                remote_prev_dash_ticks_[rp.player_id]     = rp.dash_active_ticks;
+                remote_prev_wall_jump_dir_[rp.player_id]  = rp.last_wall_jump_dir;
+                remote_prev_checkpoint_[rp.player_id]     = {rp.checkpoint_x, rp.checkpoint_y};
+                remote_prev_finished_[rp.player_id]       = rp.finished;
+            }
+
+            uint32_t& prev_tick = remote_last_ticks_[rp.player_id];
+            if (rp.last_processed_tick != prev_tick) {
+                prev_tick = rp.last_processed_tick;
+
+                // Trail
                 TrailState& rt = remote_trails_[rp.player_id];
                 if (rp.dash_active_ticks > 0) rt.Push(rp.x, rp.y);
                 else                          rt.Clear();
+
+                // SFX spazializzato (solo player vivi e non in grace)
+                uint8_t& prev_rdash = remote_prev_dash_ticks_[rp.player_id];
+                float&   prev_rvy   = remote_prev_vel_y_[rp.player_id];
+                int8_t&  prev_rwd   = remote_prev_wall_jump_dir_[rp.player_id];
+                Vector2& prev_rcp   = remote_prev_checkpoint_[rp.player_id];
+
+                if (rp.kill_respawn_ticks == 0 && rp.respawn_grace_ticks == 0) {
+                    const float rcx = rp.x + TILE_SIZE * 0.5f;
+                    const float rcy = rp.y + TILE_SIZE * 0.5f;
+                    const float lcx = player_.GetState().x + TILE_SIZE * 0.5f;
+                    const float lcy = player_.GetState().y + TILE_SIZE * 0.5f;
+
+                    if (prev_rdash == 0 && rp.dash_active_ticks > 0)
+                        sfx_.PlayDashAt(rcx, rcy, lcx, lcy);
+
+                    // Wall jump prende priorità sul salto normale (stessa logica del locale).
+                    const bool r_is_wj = (rp.last_wall_jump_dir != 0 && rp.last_wall_jump_dir != prev_rwd);
+                    if (r_is_wj)
+                        sfx_.PlayWallJumpAt(rcx, rcy, lcx, lcy);
+                    else if (prev_rvy > -500.f && rp.vel_y <= -500.f)
+                        sfx_.PlayJumpAt(rcx, rcy, lcx, lcy);
+
+                    // Checkpoint
+                    if (rp.checkpoint_x != prev_rcp.x || rp.checkpoint_y != prev_rcp.y)
+                        sfx_.PlayCheckpointAt(rcx, rcy, lcx, lcy);
+
+                    // Level complete
+                    bool& prev_rfin = remote_prev_finished_[rp.player_id];
+                    if (rp.finished && !prev_rfin)
+                        sfx_.PlayLevelEndAt(rcx, rcy, lcx, lcy);
+                    prev_rfin = rp.finished;
+                } else {
+                    // Player morto/in grace: resetta i prev per evitare falsi trigger al respawn.
+                    prev_rdash = rp.dash_active_ticks;
+                    prev_rvy   = rp.vel_y;
+                    prev_rwd   = rp.last_wall_jump_dir;
+                    prev_rcp   = {rp.checkpoint_x, rp.checkpoint_y};
+                }
+
+                prev_rdash = rp.dash_active_ticks;
+                prev_rvy   = rp.vel_y;
+                prev_rwd   = rp.last_wall_jump_dir;
+                prev_rcp   = {rp.checkpoint_x, rp.checkpoint_y};
+                remote_prev_finished_[rp.player_id] = rp.finished;
             }
         }
 
@@ -455,8 +577,9 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
                 std::vector<std::string> rows(hdr.height);
                 for (int y = 0; y < hdr.height; ++y)
                     rows[y].assign(tile_data + y * hdr.width, hdr.width);
+                current_level_ = hdr.level;  // set before LoadLevelFromGrid so MakeLevelPalette sees the correct level
                 LoadLevelFromGrid(hdr.width, hdr.height, rows);
-                current_level_ = hdr.level;
+                generating_level_ = false;  // level data received — hide loading overlay
             }
         }
         return;
@@ -480,6 +603,19 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
                 }
             }
         }
+        return;
+    }
+
+    // PKT_GENERATING: server is about to block its ENet loop for level generation.
+    // Show a loading overlay and extend our timeout so we don't disconnect.
+    if (pkt_type == PKT_GENERATING && size >= sizeof(PktGenerating)) {
+        PktGenerating gpkt{};
+        std::memcpy(&gpkt, data, sizeof(gpkt));
+        generating_level_     = true;
+        generating_level_num_ = gpkt.level;
+        generating_elapsed_   = 0.f;
+        net.SetLongTimeout(60000);  // 60 s — enough for any generation
+        printf("[session] PKT_GENERATING level=%u\n", (unsigned)gpkt.level);
         return;
     }
 }
@@ -507,6 +643,9 @@ void GameSession::HandleDisconnect(uint32_t disconnect_data) {
 // ---------------------------------------------------------------------------
 void GameSession::LoadLevel(const char* path) {
     world_.LoadFromFile(path);
+
+    // Lobby uses the default palette; any other file-based level also resets to default.
+    palette_ = LevelPalette{};
 
     const bool loading_lobby = (std::strcmp(path, LOBBY_MAP_PATH) == 0);
 
@@ -541,7 +680,15 @@ void GameSession::LoadLevel(const char* path) {
     remote_deaths_.clear();
     remote_prev_kill_ticks_.clear();
     remote_last_alive_pos_.clear();
+    remote_prev_dash_ticks_.clear();
+    remote_prev_vel_y_.clear();
+    remote_prev_wall_jump_dir_.clear();
+    remote_prev_checkpoint_.clear();
+    remote_prev_finished_.clear();
     prev_kill_ticks_local_ = 0;
+    prev_grace_local_      = 0;
+    prev_checkpoint_x_     = 0.f;
+    prev_checkpoint_y_     = 0.f;
 
     live_best_ticks_.clear();
     last_game_state_ = {};
@@ -554,6 +701,10 @@ void GameSession::LoadLevel(const char* path) {
 // ---------------------------------------------------------------------------
 void GameSession::LoadLevelFromGrid(int w, int h, const std::vector<std::string>& rows) {
     world_.LoadFromGrid(w, h, rows);
+
+    // Generate a hue-rotated palette for this generated level.
+    // current_level_ must be set before this call (done in HandlePacket).
+    palette_ = MakeLevelPalette(current_level_);
 
     // Generated levels are never the lobby — always reset player state.
     PlayerState new_ps{};
@@ -584,7 +735,15 @@ void GameSession::LoadLevelFromGrid(int w, int h, const std::vector<std::string>
     remote_deaths_.clear();
     remote_prev_kill_ticks_.clear();
     remote_last_alive_pos_.clear();
+    remote_prev_dash_ticks_.clear();
+    remote_prev_vel_y_.clear();
+    remote_prev_wall_jump_dir_.clear();
+    remote_prev_checkpoint_.clear();
+    remote_prev_finished_.clear();
     prev_kill_ticks_local_ = 0;
+    prev_grace_local_      = 0;
+    prev_checkpoint_x_     = 0.f;
+    prev_checkpoint_y_     = 0.f;
 
     live_best_ticks_.clear();
     last_game_state_ = {};
@@ -645,7 +804,16 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
                             NetworkClient& net, Renderer& renderer) {
     (void)dt; // usato in futuro per effetti frame-interpolati
 
+    renderer.SetPalette(palette_);
     renderer.BeginFrame();
+
+    // Loading overlay: show while waiting for level data from server.
+    // Drawn over everything else; skip all other world/HUD rendering while active.
+    if (generating_level_) {
+        renderer.DrawGeneratingLevel(generating_level_num_, generating_elapsed_);
+        renderer.EndFrame();
+        return;
+    }
     renderer.BeginWorldDraw();
 
         renderer.DrawTilemap(world_);
@@ -755,7 +923,7 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
         renderer.DrawEmoteWheel(sw * 0.5f, sh * 0.5f, input_sampler_.GetEmoteWheelHighlight());
     }
 
-    renderer.DrawPauseMenu(pause_state_, pause_focused_, confirm_focused_);
+    renderer.DrawPauseMenu(pause_state_, pause_focused_, confirm_focused_, sfx_.IsMuted());
 
     renderer.DrawResultsScreen(in_results_screen_, local_ready_,
         results_entries_, results_count_, results_level_,

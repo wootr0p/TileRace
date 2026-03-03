@@ -76,6 +76,16 @@ endif()
 # --- INSTALLAZIONE RUNTIME (solo ciò che serve per distribuire il gioco) ---
 set(TILERACE_RUNTIME_COMPONENT TileRaceRuntime)
 
+# Cartella di output per-piattaforma: deploy/win, deploy/mac, deploy/linux.
+# Può essere sovrascritto a install-time con: cmake --install build/release --prefix <path>
+if(WIN32)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/deploy/win" CACHE PATH "Install prefix" FORCE)
+elseif(APPLE)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/deploy/mac" CACHE PATH "Install prefix" FORCE)
+else()
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/deploy/linux" CACHE PATH "Install prefix" FORCE)
+endif()
+
 install(TARGETS TileRace TileRace_Server
   RUNTIME DESTINATION .
   COMPONENT ${TILERACE_RUNTIME_COMPONENT}

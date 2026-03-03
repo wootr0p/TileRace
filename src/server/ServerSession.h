@@ -50,8 +50,9 @@ private:
     void ResetToInitial(ENetHost* host);
     void SendResults   (ENetHost* host, const char* reason);
     void BroadcastGameState(ENetHost* host);
-    void BroadcastLevelData(ENetHost* host);  // send PKT_LEVEL_DATA with generated world grid
-    void SendLevelDataToPeer(ENetPeer* peer);  // send PKT_LEVEL_DATA to a single peer
+    void BroadcastLevelData(ENetHost* host);      // send PKT_LEVEL_DATA with generated world grid
+    void BroadcastGenerating(ENetHost* host);     // send PKT_GENERATING before level generation starts
+    void SendLevelDataToPeer(ENetPeer* peer);     // send PKT_LEVEL_DATA to a single peer
     void UpdateZone();
     bool AllInZone()        const;
     uint32_t CountdownTicks() const;

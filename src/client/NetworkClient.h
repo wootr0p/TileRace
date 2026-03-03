@@ -32,6 +32,11 @@ public:
     void SendReliable  (const void* data, size_t size);
     void SendUnreliable(const void* data, size_t size);
 
+    // Increase the ENet peer timeout so the connection survives server-side operations
+    // that temporarily stall the ENet loop (e.g. level generation).
+    // timeout_ms: max milliseconds before hard-disconnect (default ENet ≈ 5 s).
+    void SetLongTimeout(uint32_t timeout_ms = 60000);
+
     // Returns the next queued event. Call in a loop until type == None.
     // Packet bytes are already copied; the underlying ENet packet is destroyed internally.
     NetEvent Poll();

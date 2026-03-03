@@ -7,9 +7,10 @@
 
 ## 1. What the Game Is
 
-TileRace is a competitive real-time 2D side-scrolling  platformer (cross-platform) where 2–8 players race to reach an exit tile on the same map. The player who finishes fastest wins.
+TileRace is a competitive real-time 2D side-scrolling platformer (cross-platform) where 2–8 players race to reach an exit tile on the same map. The player who finishes fastest wins.
 
 **Core mechanics (all implemented):**
+
 - Horizontal movement with acceleration/deceleration inertia
 - Jump, wall-jump, variable-height jump (hold = higher), coyote time, jump buffer
 - Dash (360°) with suspended gravity, cooldown, and post-dash enhanced jump
@@ -29,16 +30,17 @@ TileRace is a competitive real-time 2D side-scrolling  platformer (cross-platfor
 
 ## 2. Technology Stack
 
-| Component | Library / Tool |
-|---|---|
-| Graphics, window, input | Raylib 5.5 (FetchContent) |
-| UDP networking | ENet (FetchContent, GitHub mirror) |
-| Build system | CMake 3.16+ + Ninja |
-| Language | C++20 |
-| Compiler (Windows) | w64devkit (GCC) or MSVC |
-| Compiler (Linux/macOS) | GCC or Clang |
+| Component               | Library / Tool                     |
+| ----------------------- | ---------------------------------- |
+| Graphics, window, input | Raylib 5.5 (FetchContent)          |
+| UDP networking          | ENet (FetchContent, GitHub mirror) |
+| Build system            | CMake 3.16+ + Ninja                |
+| Language                | C++20                              |
+| Compiler (Windows)      | w64devkit (GCC) or MSVC            |
+| Compiler (Linux/macOS)  | GCC or Clang                       |
 
 Build presets (in `CMakePresets.json`):
+
 - `run-scc-debug` — debug build, runs from `build/debug/bin/`
 - `run-scc-release` — optimised build, runs from `build/release/bin/`
 
@@ -57,6 +59,7 @@ src/client/     Rendering, input, game loop. Links common + server_logic + rayli
 ```
 
 CMake targets:
+
 ```
 common_logic     (static lib)  ← Player.cpp, World.cpp
 server_logic     (static lib)  ← ServerLogic.cpp, LevelManager.cpp, ServerSession.cpp, ChunkStore.cpp, LevelGenerator.cpp, LevelValidator.cpp
@@ -70,22 +73,24 @@ TileRace         (exe)         ← client/main.cpp + all client .cpp files
 
 The codebase was refactored to follow SOLID and DRY principles:
 
-| File | Responsibility |
-|---|---|
-| `GameSession` | One play session: physics tick, reconciliation, render coordination |
-| `NetworkClient` | ENet abstraction; `<enet/enet.h>` never appears outside NetworkClient.cpp |
-| `InputSampler` | All keyboard + gamepad sampling; sticky flags for rising-edge events |
-| `Renderer` | All Raylib draw calls; no other file calls DrawXxx / BeginDrawing |
-| `UIWidgets` | Stateless Raylib UI helpers (buttons, text fields) |
-| `VisualEffects` | Client-only effect structs (trail, death particles) — no Raylib draw calls |
-| `LocalServer` | Wraps server thread for offline mode |
-| `ServerSession` | Full server session state machine; ENet-loop-agnostic |
-| `LevelManager` | Load maps, compute spawn, generate levels from chunks |
-| `ChunkStore` | Loads all chunk TMJ files at startup; classifies into start/mid/end pools |
-| `LevelGenerator` | Composes playable levels from chunks with difficulty-curve-based selection |
+| File             | Responsibility                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| `GameSession`    | One play session: physics tick, reconciliation, render coordination                  |
+| `NetworkClient`  | ENet abstraction; `<enet/enet.h>` never appears outside NetworkClient.cpp            |
+| `InputSampler`   | All keyboard + gamepad sampling; sticky flags for rising-edge events                 |
+| `Renderer`       | All Raylib draw calls; no other file calls DrawXxx / BeginDrawing                    |
+| `UIWidgets`      | Stateless Raylib UI helpers (buttons, text fields)                                   |
+| `VisualEffects`  | Client-only effect structs (trail, death particles) — no Raylib draw calls           |
+| `LocalServer`    | Wraps server thread for offline mode                                                 |
+| `ServerSession`  | Full server session state machine; ENet-loop-agnostic                                |
+| `LevelManager`   | Load maps, compute spawn, generate levels from chunks                                |
+| `ChunkStore`     | Loads all chunk TMJ files at startup; classifies into start/mid/end pools            |
+| `LevelGenerator` | Composes playable levels from chunks with difficulty-curve-based selection           |
 | `LevelValidator` | AI agent: BFS over ground tiles using real Player::Simulate to verify completability |
-| `SpawnFinder.h` | Header-only; shared between GameSession and LevelManager |
-| `PlayerReset.h` | Header-only; shared reset helper for kill/restart/level-change events |
+| `SpawnFinder.h`  | Header-only; shared between GameSession and LevelManager                             |
+| `PlayerReset.h`  | Header-only; shared reset helper for kill/restart/level-change events                |
+| `SoundPool`      | Pool of N sound variants; random pitch ±7 %; 2-D spatial audio (volume + stereo pan) |
+| `SfxManager`     | Owns jump + dash SoundPools; mute toggle; local vs. spatialized remote play          |
 
 ---
 
@@ -101,6 +106,7 @@ Same `PlayerState` + same `InputFrame` → same result, always. This is the foun
 Both client and server run physics at exactly **60 Hz** (`FIXED_DT = 1/60 s`).
 
 Client loop:
+
 ```
 Poll();                        // capture rising-edge input events once per render frame
 accumulator += GetFrameTime();
@@ -112,6 +118,7 @@ while (accumulator >= FIXED_DT) {
 ```
 
 Server loop (inside `enet_host_service` with 16 ms timeout):
+
 ```
 OnReceive → HandleInput → Player::Simulate → BroadcastGameState
 ```
@@ -136,14 +143,14 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 
 ### Jump mechanics
 
-| Mechanic | Implementation |
-|---|---|
-| Basic jump | `vel_y = -JUMP_FORCE` when `on_ground` (or coyote) and `jump_buffer_ticks > 0` |
-| Jump buffer | `BTN_JUMP_PRESS` sets `jump_buffer_ticks = 10`; consumed on next valid surface |
-| Coyote time | `coyote_ticks = 6` set when leaving ground without jumping |
-| Variable height | `vel_y *= JUMP_CUT_MULTIPLIER (0.45)` when jump key released while rising |
-| Wall jump | Jumps off wall when `on_wall_left/right` and `last_wall_jump_dir != current_wall` |
-| Dash jump | Within `DASH_JUMP_WINDOW_TICKS = 10` after dash ends, jump force = 1150 instead of 1000 |
+| Mechanic        | Implementation                                                                          |
+| --------------- | --------------------------------------------------------------------------------------- |
+| Basic jump      | `vel_y = -JUMP_FORCE` when `on_ground` (or coyote) and `jump_buffer_ticks > 0`          |
+| Jump buffer     | `BTN_JUMP_PRESS` sets `jump_buffer_ticks = 10`; consumed on next valid surface          |
+| Coyote time     | `coyote_ticks = 6` set when leaving ground without jumping                              |
+| Variable height | `vel_y *= JUMP_CUT_MULTIPLIER (0.45)` when jump key released while rising               |
+| Wall jump       | Jumps off wall when `on_wall_left/right` and `last_wall_jump_dir != current_wall`       |
+| Dash jump       | Within `DASH_JUMP_WINDOW_TICKS = 10` after dash ends, jump force = 1150 instead of 1000 |
 
 `on_wall_left/right` activate within `WALL_PROBE_REACH = 8 px` of a wall (not only on contact).
 
@@ -221,20 +228,20 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all
 
 ### Packet types
 
-| Packet | Direction | Event |
-|---|---|---|
-| `PKT_INPUT` | C → S | One `InputFrame` per tick |
-| `PKT_GAME_STATE` | S → C | Full `GameState` broadcast after every input |
-| `PKT_WELCOME` | S → C | On connect: `player_id` + `session_token` |
-| `PKT_PLAYER_INFO` | C → S | After welcome: `name` + `protocol_version` |
-| `PKT_LOAD_LEVEL` | S → C | Load next map from file (lobby) or `is_last=1` → return to menu |
-| `PKT_LEVEL_DATA` | S → C | Generated level tile grid (variable-size: header + width×height chars) |
-| `PKT_LEVEL_RESULTS` | S → C | End-of-level sorted leaderboard |
-| `PKT_GLOBAL_RESULTS` | S → C | Session-end win leaderboard (after last level) |
-| `PKT_RESTART` | C → S | Respawn at last checkpoint (or spawn if none reached); Backspace / Circle |
-| `PKT_RESTART_SPAWN` | C → S | Respawn always at level spawn, clearing checkpoint; Delete / Triangle |
-| `PKT_READY` | C → S | Skip results screen early |
-| `PKT_VERSION_MISMATCH` | S → C | Incompatible `PROTOCOL_VERSION` — disconnect follows |
+| Packet                 | Direction | Event                                                                     |
+| ---------------------- | --------- | ------------------------------------------------------------------------- |
+| `PKT_INPUT`            | C → S     | One `InputFrame` per tick                                                 |
+| `PKT_GAME_STATE`       | S → C     | Full `GameState` broadcast after every input                              |
+| `PKT_WELCOME`          | S → C     | On connect: `player_id` + `session_token`                                 |
+| `PKT_PLAYER_INFO`      | C → S     | After welcome: `name` + `protocol_version`                                |
+| `PKT_LOAD_LEVEL`       | S → C     | Load next map from file (lobby) or `is_last=1` → return to menu           |
+| `PKT_LEVEL_DATA`       | S → C     | Generated level tile grid (variable-size: header + width×height chars)    |
+| `PKT_LEVEL_RESULTS`    | S → C     | End-of-level sorted leaderboard                                           |
+| `PKT_GLOBAL_RESULTS`   | S → C     | Session-end win leaderboard (after last level)                            |
+| `PKT_RESTART`          | C → S     | Respawn at last checkpoint (or spawn if none reached); Backspace / Circle |
+| `PKT_RESTART_SPAWN`    | C → S     | Respawn always at level spawn, clearing checkpoint; Delete / Triangle     |
+| `PKT_READY`            | C → S     | Skip results screen early                                                 |
+| `PKT_VERSION_MISMATCH` | S → C     | Incompatible `PROTOCOL_VERSION` — disconnect follows                      |
 
 ---
 
@@ -243,12 +250,14 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all
 `Renderer` owns all Raylib calls. No other file may call `DrawXxx`, `BeginDrawing`, `BeginMode2D`, etc. Replacing Raylib means rewriting only `Renderer.cpp`.
 
 **Font sizes:**
+
 - `font_small_` — 20 px — minor HUD text
 - `font_hud_` — 28 px — HUD, pause menu, results
 - `font_timer_` — 72 px — in-game timer display
 - `font_bold_` — **200 px** — Ready?/Go! overlay (loaded large to avoid upscaling blur; all draw sizes are downscales)
 
 **Camera:**
+
 - `Camera2D` follows the local player with smooth lerp
 - Camera shake triggered on death (`TriggerShake`)
 - Sub-frame visual interpolation: render position = `lerp(prev_xy, curr_xy, alpha)`
@@ -256,6 +265,7 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all
 **Colour palette:** all colours defined in `Colors.h` as `CLRS_<AREA>_<ROLE>` constants.\n\n**Level indicator (`DrawLevelIndicator`):** shows \"Level N\" at bottom-centre using `font_hud_` 24 px. Visible only when `current_level_ > 0` (i.e. during generated levels, not in the lobby).
 
 **Off-screen player indicators (`DrawOffscreenArrows`):**
+
 - Called in `GameSession::DoRender` after `EndWorldDraw` and before any HUD draw call.
 - For each remote player whose screen-space position (via `GetWorldToScreen2D`) lies outside the viewport:
   - Computes direction from screen centre to the player's screen position.
@@ -268,7 +278,12 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all
 
 ## 8. Persistence
 
-`SaveData` (`save.dat` in CWD): stores last `username` and `last_ip`. Serialised as JSON, XOR-obfuscated on disk. Loaded at startup, saved before returning from `ShowMainMenu`.
+`SaveData` (`save.dat` in CWD): stores `username`, `last_ip`, and `sfx_muted`. Serialised as JSON (`{"u":"…","i":"…","m":"0/1"}`), XOR-obfuscated on disk with a 16-byte rotating key. Loaded at startup, saved:
+
+- Before returning from `ShowMainMenu` (username, IP, mute).
+- Immediately on each SFX toggle (main menu M key / pause menu item).
+
+Old save files without `"m"` key default to unmuted (backward-compatible).
 
 ---
 
@@ -294,6 +309,7 @@ LOBBY_MAP_PATH     = "assets/levels/tilemaps/_Lobby.tmj"
 ```
 
 Disconnect reason codes are sent as the `data` field of `enet_peer_disconnect()`:
+
 - `DISCONNECT_GENERIC = 0`
 - `DISCONNECT_VERSION_MISMATCH = 1` (bits[31:16] = server version)
 - `DISCONNECT_SERVER_BUSY = 2`
@@ -350,63 +366,136 @@ Map format: **Tiled JSON** (`.tmj`), 32 px per tile, uncompressed orthogonal.
 
 Tileset (`TileSet.tsx`) tile properties:
 
-| Tile ID | `type`     | `solid` | Legacy char | Behaviour |
-|---------|------------|---------|-------------|---------- |
-| 0       | `spawn`    | false   | `X`         | Player start position |
-| 1       | `platform` | true    | `0`         | Solid wall / floor |
-| 2       | `kill`     | true    | `K`         | Death + respawn on touch |
-| 3       | `end`      | false   | `E`         | Exit / finish tile |
-| 4       | `checkpoint` | false | `C`         | Saves a respawn position; player dies → respawns here |
-| 5       | `chunk_entry` | false | `I`       | Chunk entry connector (stripped during generation) |
-| 6       | `chunk_exit`  | false | `O`       | Chunk exit connector (stripped during generation) |
-| 8       | `chunk_entry` | false | `I`       | Chunk entry (alt tile ID) |
-| 9       | `chunk_exit`  | false | `O`       | Chunk exit (alt tile ID) |
+| Tile ID | `type`        | `solid` | Legacy char | Behaviour                                             |
+| ------- | ------------- | ------- | ----------- | ----------------------------------------------------- |
+| 0       | `spawn`       | false   | `X`         | Player start position                                 |
+| 1       | `platform`    | true    | `0`         | Solid wall / floor                                    |
+| 2       | `kill`        | true    | `K`         | Death + respawn on touch                              |
+| 3       | `end`         | false   | `E`         | Exit / finish tile                                    |
+| 4       | `checkpoint`  | false   | `C`         | Saves a respawn position; player dies → respawns here |
+| 5       | `chunk_entry` | false   | `I`         | Chunk entry connector (stripped during generation)    |
+| 6       | `chunk_exit`  | false   | `O`         | Chunk exit connector (stripped during generation)     |
+| 8       | `chunk_entry` | false   | `I`         | Chunk entry (alt tile ID)                             |
+| 9       | `chunk_exit`  | false   | `O`         | Chunk exit (alt tile ID)                              |
 
 On death (kill tile) the player respawns at their last checkpoint (`PlayerState::checkpoint_x/y`); if no checkpoint has been reached they respawn at the level spawn. `SpawnReset` clears the checkpoint; `CheckpointReset` preserves it.
 
 **Restart keys:**
+
 - Backspace / Circle: restart at last checkpoint (or spawn if none)
 - Delete / Triangle: restart at level spawn (clears checkpoint)
 
 ---
 
-## 13. Implementation Status
+## 14. Audio System
 
-| Feature | Status |
-|---|---|
-| Tilemap loading and rendering | ✅ |
-| Tiled `.tmj` map format + TSX property parsing | ✅ |
-| Checkpoint tiles ('C') + death-respawn at checkpoint | ✅ |
-| Player physics (move, accel, gravity, collision) | ✅ |
-| Jump buffer, coyote time, variable height, wall jump | ✅ |
-| Dash (360°, air limit, cooldown, dash-jump) | ✅ |
-| Fixed timestep (60 Hz) | ✅ |
-| Camera follow + shake + sub-frame interpolation | ✅ |
-| ENet client/server (online + offline) | ✅ |
-| Client-side prediction + server reconciliation | ✅ |
-| Multiple players, remote player rendering | ✅ |
-| Off-screen player indicators (compass arrows) | ✅ |
-| Kill tiles + death animation + Ready/Go! overlay | ✅ |
-| Race timer, live leaderboard | ✅ |
-| End-of-level results screen | ✅ |
-| Session-end global leaderboard (win counts per player) | ✅ |
-| Chunk-based procedural level generation | ✅ |
-| AI-driven level validation (physics BFS) | ✅ |
-| Lobby → level progression loop | ✅ |
-| 2-minute time limit per level | ✅ |
-| Restart from spawn (PKT_RESTART) | ✅ |
-| Main menu (offline/online, username, IP) | ✅ |
-| Splash screen (title + press any button) | ✅ |
-| Persistent save data (username, last IP) | ✅ |
-| Pause menu with quit confirmation | ✅ |
-| Colour palette (Colors.h) | ✅ |
-| Visual trail (dash), death particles | ✅ |
-| Personal best time tracking | ✅ |
-| Ready mechanic (skip results screen early) | ✅ |
-| Version mismatch detection + graceful error | ✅ |
-| Server-busy rejection | ✅ |
-| Win32 taskbar icon | ✅ |
-| SOLID refactoring (client + server) | ✅ |
-| Audio effects | ❌ not started |
-| Multiple spawn assignment by player_id | ❌ (all use center spawn) |
-| Linux / macOS build verification | ❌ |
+### Overview
+
+`InitAudioDevice()` / `CloseAudioDevice()` are called in `main.cpp` (after `InitWindow` / before `CloseWindow`). All audio is owned by `SfxManager`, which is a member of `GameSession` and **loaded once at construction** (never re-read at runtime).
+
+### SoundPool
+
+`SoundPool` manages N `Sound` instances loaded from explicit file paths:
+
+- `Play(pitch_variance)` — picks a variant round-robin (avoids same-sound repetition), applies random pitch in `[1 − var, 1 + var]`, centre pan, full volume.
+- `PlayAt(source, listener, max_dist, pitch_variance)` — same as `Play` but:
+  - Linear volume: `1 − dist / max_dist` (silent beyond `max_dist`).
+  - Stereo pan: `0.5 + dx / (max_dist × 0.5)` clamped to `[0, 1]`.
+  - Sounds beyond `max_dist` are culled without calling Raylib.
+
+### SfxManager
+
+Owns two `SoundPool`s: `jump_pool_` (3 variants) and `dash_pool_` (3 variants), loaded from `assets/sfx/jump_01-03.wav` and `assets/sfx/dash_01-03.wav`.
+
+API:
+
+- `PlayJump()` / `PlayDash()` — local player, full volume, centre.
+- `PlayJumpAt(sx, sy, lx, ly)` / `PlayDashAt(sx, sy, lx, ly)` — remote player, spatialized (`max_dist = 1400 px`).
+- `SetMuted(bool)` / `IsMuted()` — all four play methods are no-ops when `muted_ == true`.
+
+Initial mute state is read from `SaveData::sfx_muted` in `GameSession`'s constructor.
+
+### Event detection
+
+**Local player** (in `GameSession::TickFixed`, after `Player::Simulate`):
+
+- **Jump**: `pre_vy > −500 && post_vy ≤ −500` → `sfx_.PlayJump()`
+- **Dash**: `pre_dash == 0 && post_dash > 0` → `sfx_.PlayDash()`
+
+**Remote players** (in `GameSession::HandlePacket` → `PKT_GAME_STATE`, gated by `last_processed_tick != prev_tick`):
+
+- Same velocity / dash threshold checks as above.
+- First appearance: prev-state is initialised to the current snapshot **without** firing sounds (prevents false triggers on join).
+- Player in death/grace period: prev-state is updated without firing (prevents false triggers on respawn).
+- Sounds play via `PlayJumpAt` / `PlayDashAt` using the local player's centre as the listener.
+
+### Mute controls
+
+| Location   | Control                                                        | Behaviour                       |
+| ---------- | -------------------------------------------------------------- | ------------------------------- |
+| Main menu  | **M** key                                                      | Toggles mute, saves immediately |
+| Main menu  | Click **"SFX: ON [M]" / "SFX: OFF [M]"** label (bottom-left)   | Same                            |
+| Pause menu | Navigate to **"SFX: ON" / "SFX: OFF"** (middle item) + confirm | Same                            |
+
+Pause menu now has **3 items**: Resume / SFX toggle / Quit to Menu (navigation wraps mod-3).
+
+---
+
+## 15. Build Output / Install Path
+
+The install step writes to a **per-platform `deploy/` subdirectory** (not `dist/`):
+
+| Platform | Install prefix  |
+| -------- | --------------- |
+| Windows  | `deploy/win/`   |
+| macOS    | `deploy/mac/`   |
+| Linux    | `deploy/linux/` |
+
+Set in `CMakeLists.txt` via `CMAKE_INSTALL_PREFIX … CACHE PATH … FORCE` before the `install()` rules. The `installDir` field has been removed from `CMakePresets.json`. The prefix can still be overridden at install time:
+
+```bash
+cmake --install build/release --component TileRaceRuntime --prefix /custom/path
+```
+
+After changing `CMakeLists.txt`, run `cmake --preset release` once to apply the new prefix to the cache.
+
+| Feature                                                 | Status                    |
+| ------------------------------------------------------- | ------------------------- |
+| Tilemap loading and rendering                           | ✅                        |
+| Tiled `.tmj` map format + TSX property parsing          | ✅                        |
+| Checkpoint tiles ('C') + death-respawn at checkpoint    | ✅                        |
+| Player physics (move, accel, gravity, collision)        | ✅                        |
+| Jump buffer, coyote time, variable height, wall jump    | ✅                        |
+| Dash (360°, air limit, cooldown, dash-jump)             | ✅                        |
+| Fixed timestep (60 Hz)                                  | ✅                        |
+| Camera follow + shake + sub-frame interpolation         | ✅                        |
+| ENet client/server (online + offline)                   | ✅                        |
+| Client-side prediction + server reconciliation          | ✅                        |
+| Multiple players, remote player rendering               | ✅                        |
+| Off-screen player indicators (compass arrows)           | ✅                        |
+| Kill tiles + death animation + Ready/Go! overlay        | ✅                        |
+| Race timer, live leaderboard                            | ✅                        |
+| End-of-level results screen                             | ✅                        |
+| Session-end global leaderboard (win counts per player)  | ✅                        |
+| Chunk-based procedural level generation                 | ✅                        |
+| AI-driven level validation (physics BFS)                | ✅                        |
+| Lobby → level progression loop                          | ✅                        |
+| 2-minute time limit per level                           | ✅                        |
+| Restart from spawn (PKT_RESTART)                        | ✅                        |
+| Main menu (offline/online, username, IP)                | ✅                        |
+| Splash screen (title + press any button)                | ✅                        |
+| Persistent save data (username, last IP, sfx mute)      | ✅                        |
+| Pause menu with quit confirmation                       | ✅                        |
+| Colour palette (Colors.h)                               | ✅                        |
+| Visual trail (dash), death particles                    | ✅                        |
+| Personal best time tracking                             | ✅                        |
+| Ready mechanic (skip results screen early)              | ✅                        |
+| Version mismatch detection + graceful error             | ✅                        |
+| Server-busy rejection                                   | ✅                        |
+| Win32 taskbar icon                                      | ✅                        |
+| SOLID refactoring (client + server)                     | ✅                        |
+| Audio SFX (jump, dash) — local + 2-D spatialized remote | ✅                        |
+| SFX mute toggle (main menu + pause menu, persisted)     | ✅                        |
+| Per-platform deploy folder (deploy/win\|mac\|linux)     | ✅                        |
+| Multiple spawn assignment by player_id                  | ❌ (all use center spawn) |
+| Linux / macOS build verification                        | ❌                        |

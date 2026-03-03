@@ -114,5 +114,13 @@ uint32_t NetworkClient::GetLoss() const {
     return PEER->packetLoss * 100u / ENET_PEER_PACKET_LOSS_SCALE;
 }
 
+void NetworkClient::SetLongTimeout(uint32_t timeout_ms) {
+    if (!peer_) return;
+    // timeoutLimit=0 uses ENet's default retry count.
+    // timeoutMinimum and timeoutMaximum are both set to timeout_ms so the connection
+    // stays alive even when the server's ENet loop is blocked for extended periods.
+    enet_peer_timeout(PEER, 0, timeout_ms, timeout_ms);
+}
+
 #undef HOST
 #undef PEER

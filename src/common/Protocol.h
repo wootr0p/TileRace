@@ -6,8 +6,8 @@
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.0";
-static constexpr uint16_t     PROTOCOL_VERSION = 4;
+static constexpr const char*  GAME_VERSION     = "0.2.0b";
+static constexpr uint16_t     PROTOCOL_VERSION = 5;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -43,6 +43,7 @@ enum PktType : uint8_t {
     PKT_LEVEL_DATA        = 14,  // S → C  generated level tile grid (variable-size packet)
     PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
     PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
+    PKT_GENERATING        = 17,  // S → C  server is generating the next level; client shows loading overlay
 };
 
 struct PktInput {
@@ -165,4 +166,11 @@ struct PktEmoteBroadcast {
     uint8_t  type      = PKT_EMOTE_BROADCAST;
     uint8_t  emote_id  = 0;  // 0-7
     uint32_t player_id = 0;
+};
+
+// Sent before PKT_LEVEL_DATA to warn clients that generation may take a moment.
+// Clients show a loading overlay and extend their disconnect timeout.
+struct PktGenerating {
+    uint8_t type  = PKT_GENERATING;
+    uint8_t level = 0;   // the level number being generated
 };

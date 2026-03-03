@@ -2,8 +2,6 @@
 - Oneway platform
 - Trampolini
 
-- Generazione dei livelli casuali con chunk
-- Colori generati a tema casuale in ogni livello
 - Togliere l'input dal player quando arriva, può solo ripartire.
 
 - Replay e/o ghost della giocata
