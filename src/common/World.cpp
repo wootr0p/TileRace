@@ -174,7 +174,9 @@ static char GidToChar(int gid, int firstgid,
     if (t == "kill")     return 'K';
     if (t == "end")      return 'E';
     if (t == "spawn")    return 'X';
-    if (t == "checkpoint") return 'C';
+    if (t == "checkpoint")  return 'C';
+    if (t == "chunk_entry") return 'I';
+    if (t == "chunk_exit")  return 'O';
     return ' ';
 }
 
@@ -197,6 +199,28 @@ static bool GidToSolid(int gid, int firstgid,
 // ============================================================================
 // World public interface
 // ============================================================================
+
+bool World::LoadFromGrid(int w, int h, const std::vector<std::string>& rows) {
+    if (w <= 0 || h <= 0) return false;
+    if (static_cast<int>(rows.size()) < h) return false;
+
+    rows_.clear();
+    solid_grid_.clear();
+    width_  = w;
+    height_ = h;
+
+    rows_.resize(height_);
+    solid_grid_.resize(height_);
+    for (int y = 0; y < height_; ++y) {
+        rows_[y] = rows[y];
+        if (static_cast<int>(rows_[y].size()) < width_)
+            rows_[y].resize(width_, ' ');
+        solid_grid_[y].resize(width_);
+        for (int x = 0; x < width_; ++x)
+            solid_grid_[y][x] = (rows_[y][x] == '0');
+    }
+    return true;
+}
 
 bool World::LoadFromFile(const char* path) {
     const std::string p(path);

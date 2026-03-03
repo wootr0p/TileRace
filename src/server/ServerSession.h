@@ -3,6 +3,7 @@
 // Manages connected players, lobby / game / results phases, and level progression.
 // Socket lifecycle and the ENet service loop live in RunServer (ServerLogic.cpp).
 #include "LevelManager.h"
+#include "ChunkStore.h"
 #include "Player.h"
 #include "Protocol.h"
 #include <enet/enet.h>
@@ -14,7 +15,8 @@
 class ServerSession {
 public:
     // Load the initial map. Check IsReady() after construction.
-    ServerSession(const char* initial_map_path, int initial_level);
+    // When skip_lobby is true the lobby is skipped: level 1 is generated immediately.
+    ServerSession(const char* initial_map_path, int initial_level, bool skip_lobby = false);
 
     bool IsReady() const { return is_ready_; }
 
@@ -48,16 +50,20 @@ private:
     void ResetToInitial(ENetHost* host);
     void SendResults   (ENetHost* host, const char* reason);
     void BroadcastGameState(ENetHost* host);
+    void BroadcastLevelData(ENetHost* host);  // send PKT_LEVEL_DATA with generated world grid
+    void SendLevelDataToPeer(ENetPeer* peer);  // send PKT_LEVEL_DATA to a single peer
     void UpdateZone();
     bool AllInZone()        const;
     uint32_t CountdownTicks() const;
     PlayerState ApplySpawnReset(PlayerState s, bool with_kill) const;
 
     LevelManager level_mgr_;
+    ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator
 
     std::string  initial_map_path_;
     int          initial_level_;
     int          current_level_;
+    bool         skip_lobby_          = false;
 
     bool         is_ready_           = false;
     bool         in_lobby_            = false;

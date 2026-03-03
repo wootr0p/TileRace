@@ -6,8 +6,8 @@
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.1.5b";
-static constexpr uint16_t     PROTOCOL_VERSION = 3;
+static constexpr const char*  GAME_VERSION     = "0.2.0";
+static constexpr uint16_t     PROTOCOL_VERSION = 4;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -40,6 +40,7 @@ enum PktType : uint8_t {
     PKT_READY             = 11,  // C → S  player ready for the next level
     PKT_GLOBAL_RESULTS    = 12,  // S → C  session-end global leaderboard (wins per player)
     PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete / Square
+    PKT_LEVEL_DATA        = 14,  // S → C  generated level tile grid (variable-size packet)
 };
 
 struct PktInput {
@@ -128,3 +129,19 @@ struct PktGlobalResults {
     uint8_t           _pad         = 0;
     GlobalResultEntry entries[MAX_PLAYERS];
 };
+
+// Variable-size packet: header followed by width*height bytes of tile chars.
+// Sent by the server when a generated level is loaded (chunk-based level generator).
+// The client reconstructs the World from the char grid (solid = (ch == '0')).
+struct PktLevelDataHeader {
+    uint8_t  type    = PKT_LEVEL_DATA;
+    uint8_t  is_last = 0;       // 1 → session over, return to menu
+    uint16_t width   = 0;       // map width in tiles
+    uint16_t height  = 0;       // map height in tiles
+    uint8_t  level   = 0;       // current level number (for display)
+    uint8_t  _pad    = 0;
+    // char data[width * height] follows immediately
+};
+
+// Number of generated levels per session before returning to lobby.
+static constexpr int MAX_GENERATED_LEVELS = 8;

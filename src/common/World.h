@@ -21,6 +21,11 @@ public:
     // Accepts both .txt (legacy ASCII) and .tmj (Tiled JSON) paths.
     bool LoadFromFile(const char* path);
 
+    // Load from an in-memory char grid. solid_grid is reconstructed as (ch == '0').
+    // Used by the chunk-based level generator to load generated levels on both
+    // server and client without writing temporary files.
+    bool LoadFromGrid(int w, int h, const std::vector<std::string>& rows);
+
     // Returns true if tile (tx, ty) should block player movement.
     // For .txt: solid iff char == '0'.
     // For .tmj: solid iff the TSX "solid" property is true for that tile type.
@@ -32,6 +37,9 @@ public:
 
     int GetWidth()  const { return width_; }
     int GetHeight() const { return height_; }
+
+    const std::vector<std::string>&       GetRows()      const { return rows_; }
+    const std::vector<std::vector<bool>>& GetSolidGrid() const { return solid_grid_; }
 
 private:
     std::vector<std::string>      rows_;        // char grid ('0','E','K','X',' ')

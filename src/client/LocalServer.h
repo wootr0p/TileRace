@@ -16,7 +16,8 @@ public:
     LocalServer& operator=(const LocalServer&) = delete;
 
     // Start the server on the given port. Blocks ~200 ms waiting for the ENet bind.
-    void Start(uint16_t port, const char* map_path);
+    // When skip_lobby is true the lobby is skipped and level 1 is generated immediately.
+    void Start(uint16_t port, const char* map_path, bool skip_lobby = false);
 
     // Signal stop and join the background thread.
     void Stop();

@@ -10,7 +10,8 @@
 #include <cctype>
 #include <enet/enet.h>
 
-void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag) {
+void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag,
+               bool skip_lobby) {
     printf("[server] TileRace v%s  (protocol %u)\n", GAME_VERSION, PROTOCOL_VERSION);
 
     // Estrai il numero di livello iniziale dal nome del file
@@ -26,7 +27,7 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
         }
     }
 
-    ServerSession session(map_path, initial_level);
+    ServerSession session(map_path, initial_level, skip_lobby);
     if (!session.IsReady()) {
         fprintf(stderr, "[server] ERRORE: mappa non trovata: %s\n", map_path);
         return;

@@ -1,7 +1,10 @@
 #pragma once
 // SRP: loads maps, calculates the optimal spawn point, builds canonical level paths.
+// Supports both file-based loading and chunk-based level generation.
 // No ENet or session-logic dependency.
 #include "World.h"
+#include "ChunkStore.h"
+#include "LevelGenerator.h"
 #include <string>
 #include <cstdint>
 
@@ -9,6 +12,9 @@ class LevelManager {
 public:
     // Load map from path. Returns false if the file cannot be read.
     bool Load(const char* path);
+
+    // Generate a level from chunks. Returns false on failure.
+    bool Generate(int level_num, const ChunkStore& store, uint32_t seed = 0);
 
     // Build the canonical path for a level number (e.g. 2 → "assets/levels/tilemaps/Level02.tmj").
     static std::string BuildPath(int num);

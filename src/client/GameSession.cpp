@@ -418,6 +418,32 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
         }
         return;
     }
+
+    // PKT_LEVEL_DATA: generated level grid from server (chunk-based generator)
+    if (pkt_type == PKT_LEVEL_DATA && size >= sizeof(PktLevelDataHeader)) {
+        PktLevelDataHeader hdr{};
+        std::memcpy(&hdr, data, sizeof(hdr));
+        const size_t grid_size = static_cast<size_t>(hdr.width) * hdr.height;
+        if (size >= sizeof(PktLevelDataHeader) + grid_size && hdr.width > 0 && hdr.height > 0) {
+            in_results_screen_        = false;
+            in_global_results_screen_ = false;
+            if (hdr.is_last) {
+                end_message_ = "Game over.";
+                end_sub_msg_ = "Returning to main menu...";
+                end_color_   = CLRS_SESSION_OK;
+                session_over_ = true;
+            } else {
+                // Build rows from the char data that follows the header
+                const char* tile_data = reinterpret_cast<const char*>(data + sizeof(PktLevelDataHeader));
+                std::vector<std::string> rows(hdr.height);
+                for (int y = 0; y < hdr.height; ++y)
+                    rows[y].assign(tile_data + y * hdr.width, hdr.width);
+                LoadLevelFromGrid(hdr.width, hdr.height, rows);
+                current_level_ = hdr.level;
+            }
+        }
+        return;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -461,6 +487,49 @@ void GameSession::LoadLevel(const char* path) {
         last_safe_x_ = new_ps.x;
         last_safe_y_ = new_ps.y;
     }
+
+    sim_tick_    = 0;
+    accumulator_ = 0.f;
+
+    prev_finished_ = false;
+    show_record_   = false;
+    best_ticks_    = 0;
+
+    trail_.Clear();
+    remote_trails_.clear();
+    remote_last_ticks_.clear();
+
+    local_death_ = {};
+    remote_deaths_.clear();
+    remote_prev_kill_ticks_.clear();
+    remote_last_alive_pos_.clear();
+    prev_kill_ticks_local_ = 0;
+
+    live_best_ticks_.clear();
+    last_game_state_ = {};
+
+    std::memset(input_history_, 0, sizeof(input_history_));
+}
+
+// ---------------------------------------------------------------------------
+// LoadLevelFromGrid — same as LoadLevel but from in-memory grid (generated levels)
+// ---------------------------------------------------------------------------
+void GameSession::LoadLevelFromGrid(int w, int h, const std::vector<std::string>& rows) {
+    world_.LoadFromGrid(w, h, rows);
+
+    // Generated levels are never the lobby — always reset player state.
+    PlayerState new_ps{};
+    new_ps.player_id = local_player_id_;
+    std::strncpy(new_ps.name, username_.c_str(), sizeof(new_ps.name) - 1);
+    const SpawnPos sp = FindCenterSpawn(world_);
+    new_ps.x = sp.x;
+    new_ps.y = sp.y;
+    player_.SetState(new_ps);
+
+    prev_x_ = new_ps.x;
+    prev_y_ = new_ps.y;
+    last_safe_x_ = new_ps.x;
+    last_safe_y_ = new_ps.y;
 
     sim_tick_    = 0;
     accumulator_ = 0.f;
@@ -578,6 +647,7 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
 
     // HUD
     renderer.DrawHUD(local, last_game_state_.count, !is_offline_);
+    renderer.DrawLevelIndicator(current_level_);
     renderer.DrawNetStats(net.GetRTT(), net.GetJitter(), net.GetLoss());
 
     // Classifica live (solo durante il gioco normale, non in lobby)

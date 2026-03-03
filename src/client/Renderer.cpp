@@ -269,6 +269,16 @@ void Renderer::DrawHUD(const PlayerState& s, uint32_t player_count, bool show_pl
     DrawTextEx(font_hud_, txt, {10, 10}, 24, 1, WHITE);
 }
 
+void Renderer::DrawLevelIndicator(uint8_t level) {
+    if (level == 0) return;
+    const char* txt = TextFormat("Level %d", level);
+    const float sz  = 24.f;
+    const Vector2 ts = MeasureTextEx(font_hud_, txt, sz, 1);
+    const float sw = static_cast<float>(GetScreenWidth());
+    const float sh = static_cast<float>(GetScreenHeight());
+    DrawTextEx(font_hud_, txt, {sw * 0.5f - ts.x * 0.5f, sh - ts.y - 10.f}, sz, 1, WHITE);
+}
+
 void Renderer::DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct) {
     Color rtt_col  = rtt  <  60 ? CLRS_STAT_GOOD
                    : rtt  < 120 ? CLRS_STAT_OK

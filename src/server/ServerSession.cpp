@@ -12,16 +12,31 @@
 // ---------------------------------------------------------------------------
 // Costruttore
 // ---------------------------------------------------------------------------
-ServerSession::ServerSession(const char* initial_map_path, int initial_level)
+ServerSession::ServerSession(const char* initial_map_path, int initial_level, bool skip_lobby)
     : initial_map_path_(initial_map_path ? initial_map_path : "")
     , initial_level_(initial_level)
     , current_level_([&]{ return (std::strstr(initial_map_path, "_Lobby") ||
                                   std::strstr(initial_map_path, "_lobby"))
                                   ? 0 : initial_level_; }())
-    , in_lobby_(std::strstr(initial_map_path, "_Lobby") ||
-                std::strstr(initial_map_path, "_lobby"))
+    , skip_lobby_(skip_lobby)
+    , in_lobby_(!skip_lobby && (std::strstr(initial_map_path, "_Lobby") ||
+                                std::strstr(initial_map_path, "_lobby")))
 {
-    is_ready_      = level_mgr_.Load(initial_map_path);
+    // Load all chunks from the chunks directory for procedural generation.
+    if (!chunk_store_.LoadFromDirectory("assets/levels/chunks")) {
+        printf("[server] WARNING: no chunks loaded — level generation disabled\n");
+    }
+
+    // In skip_lobby mode, generate the first level immediately.
+    // game_locked_ is set later in OnConnect (after the local client connects).
+    if (skip_lobby_ && chunk_store_.IsReady()) {
+        current_level_ = 1;
+        is_ready_      = level_mgr_.Generate(current_level_, chunk_store_);
+        if (is_ready_)
+            printf("[server] skip_lobby: generated level 1 immediately\n");
+    } else {
+        is_ready_ = level_mgr_.Load(initial_map_path);
+    }
     level_start_ms_ = enet_time_get();
 }
 
@@ -58,6 +73,12 @@ void ServerSession::OnConnect(ENetHost* host, ENetPeer* peer) {
     printf("[server] CONNECT player_id=%u  session=%u  %08x:%u\n",
            ps.player_id, session_token_,
            peer->address.host, peer->address.port);
+
+    // In skip_lobby mode the level is already generated; lock the game and send it.
+    if (skip_lobby_ && !in_lobby_) {
+        game_locked_ = true;
+        SendLevelDataToPeer(peer);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -355,10 +376,26 @@ void ServerSession::DoLevelChange(ENetHost* host) {
         current_level_++;
     }
 
-    const std::string next_path = LevelManager::BuildPath(current_level_);
-    PktLoadLevel ll_pkt{};
+    // Check if session is over (max generated levels reached).
+    if (current_level_ > MAX_GENERATED_LEVELS) {
+        printf("[server] all levels complete --> global results\n");
+        zone_start_ms_ = 0;
+        SendGlobalResults(host);
+        return;
+    }
 
-    if (level_mgr_.Load(next_path.c_str())) {
+    // Generate level from chunks (or fall back to file-based loading).
+    bool loaded = false;
+    if (chunk_store_.IsReady()) {
+        loaded = level_mgr_.Generate(current_level_, chunk_store_);
+    }
+    if (!loaded) {
+        // Fallback: try file-based loading (legacy path).
+        const std::string next_path = LevelManager::BuildPath(current_level_);
+        loaded = level_mgr_.Load(next_path.c_str());
+    }
+
+    if (loaded) {
         for (auto& [peer, pl] : players_) {
             PlayerState s = pl.GetState();
             s.x = level_mgr_.SpawnX();  s.y = level_mgr_.SpawnY();
@@ -372,14 +409,11 @@ void ServerSession::DoLevelChange(ENetHost* host) {
             s.checkpoint_y = 0.f;
             pl.SetState(s);
         }
-        ll_pkt.is_last = 0;
-        std::strncpy(ll_pkt.path, next_path.c_str(), sizeof(ll_pkt.path) - 1);
-        printf("[server] LEVEL CHANGE --> %s\n", next_path.c_str());
 
-        ENetPacket* ll = enet_packet_create(&ll_pkt, sizeof(ll_pkt),
-                                             ENET_PACKET_FLAG_RELIABLE);
-        enet_host_broadcast(host, CHANNEL_RELIABLE, ll);
-        enet_host_flush(host);
+        // Send the generated level data to all clients.
+        BroadcastLevelData(host);
+        printf("[server] LEVEL CHANGE --> generated level %d\n", current_level_);
+
         zone_start_ms_  = 0;
         level_start_ms_ = enet_time_get();
     } else {
@@ -484,6 +518,74 @@ void ServerSession::BroadcastGameState(ENetHost* host) {
     ENetPacket* bcast = enet_packet_create(&gs_pkt, sizeof(gs_pkt), 0);
     enet_host_broadcast(host, CHANNEL_RELIABLE, bcast);
     enet_host_flush(host);
+}
+
+// ---------------------------------------------------------------------------
+// BroadcastLevelData — send PKT_LEVEL_DATA with the current world grid
+// ---------------------------------------------------------------------------
+void ServerSession::BroadcastLevelData(ENetHost* host) {
+    const World& world = level_mgr_.GetWorld();
+    const int w = world.GetWidth();
+    const int h = world.GetHeight();
+    const size_t grid_size = static_cast<size_t>(w) * h;
+    const size_t pkt_size  = sizeof(PktLevelDataHeader) + grid_size;
+
+    // Build packet buffer: header + tile char data
+    std::vector<uint8_t> buf(pkt_size, 0);
+    PktLevelDataHeader hdr{};
+    hdr.type    = PKT_LEVEL_DATA;
+    hdr.is_last = 0;
+    hdr.width   = static_cast<uint16_t>(w);
+    hdr.height  = static_cast<uint16_t>(h);
+    hdr.level   = static_cast<uint8_t>(current_level_);
+    std::memcpy(buf.data(), &hdr, sizeof(hdr));
+
+    // Copy tile chars row-by-row
+    const auto& rows = world.GetRows();
+    uint8_t* dst = buf.data() + sizeof(hdr);
+    for (int y = 0; y < h; ++y) {
+        std::memcpy(dst, rows[y].data(), w);
+        dst += w;
+    }
+
+    ENetPacket* pkt = enet_packet_create(buf.data(), pkt_size,
+                                          ENET_PACKET_FLAG_RELIABLE);
+    enet_host_broadcast(host, CHANNEL_RELIABLE, pkt);
+    enet_host_flush(host);
+    printf("[server] PKT_LEVEL_DATA sent: %dx%d = %zu bytes\n", w, h, pkt_size);
+}
+
+// ---------------------------------------------------------------------------
+// SendLevelDataToPeer — send PKT_LEVEL_DATA to a single peer (used on connect)
+// ---------------------------------------------------------------------------
+void ServerSession::SendLevelDataToPeer(ENetPeer* peer) {
+    const World& world = level_mgr_.GetWorld();
+    const int w = world.GetWidth();
+    const int h = world.GetHeight();
+    if (w == 0 || h == 0) return;
+    const size_t grid_size = static_cast<size_t>(w) * h;
+    const size_t pkt_size  = sizeof(PktLevelDataHeader) + grid_size;
+
+    std::vector<uint8_t> buf(pkt_size, 0);
+    PktLevelDataHeader hdr{};
+    hdr.type    = PKT_LEVEL_DATA;
+    hdr.is_last = 0;
+    hdr.width   = static_cast<uint16_t>(w);
+    hdr.height  = static_cast<uint16_t>(h);
+    hdr.level   = static_cast<uint8_t>(current_level_);
+    std::memcpy(buf.data(), &hdr, sizeof(hdr));
+
+    const auto& rows = world.GetRows();
+    uint8_t* dst = buf.data() + sizeof(hdr);
+    for (int y = 0; y < h; ++y) {
+        std::memcpy(dst, rows[y].data(), w);
+        dst += w;
+    }
+
+    ENetPacket* pkt = enet_packet_create(buf.data(), pkt_size,
+                                          ENET_PACKET_FLAG_RELIABLE);
+    enet_peer_send(peer, CHANNEL_RELIABLE, pkt);
+    printf("[server] PKT_LEVEL_DATA sent to peer: %dx%d = %zu bytes\n", w, h, pkt_size);
 }
 
 // ---------------------------------------------------------------------------

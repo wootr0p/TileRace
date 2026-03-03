@@ -42,6 +42,7 @@ private:
     uint32_t    local_player_id_ = 0;
     std::string username_;
     bool        is_offline_;
+    uint8_t     current_level_ = 0;  // current level number from server (0 = lobby/unknown)
 
     static constexpr uint32_t IHIST = 128;   // input ring-buffer capacity for reconciliation
     InputFrame  input_history_[IHIST] = {};
@@ -107,6 +108,7 @@ private:
     void HandlePacket(const uint8_t* data, size_t size, NetworkClient& net);
     void HandleDisconnect(uint32_t disconnect_data);
     void LoadLevel(const char* path);
+    void LoadLevelFromGrid(int w, int h, const std::vector<std::string>& rows);
     void UpdateLiveBestTicks();
     void BuildLiveLeaderboard(LiveLeaderEntry* out, int& count) const;
     void DoRender(float draw_x, float draw_y, float dt,

@@ -59,7 +59,7 @@ src/client/     Rendering, input, game loop. Links common + server_logic + rayli
 CMake targets:
 ```
 common_logic     (static lib)  ← Player.cpp, World.cpp
-server_logic     (static lib)  ← ServerLogic.cpp, LevelManager.cpp, ServerSession.cpp
+server_logic     (static lib)  ← ServerLogic.cpp, LevelManager.cpp, ServerSession.cpp, ChunkStore.cpp, LevelGenerator.cpp
 TileRace_Server  (exe)         ← server/main.cpp
 TileRace         (exe)         ← client/main.cpp + all client .cpp files
 ```
@@ -80,7 +80,9 @@ The codebase was refactored to follow SOLID and DRY principles:
 | `VisualEffects` | Client-only effect structs (trail, death particles) — no Raylib draw calls |
 | `LocalServer` | Wraps server thread for offline mode |
 | `ServerSession` | Full server session state machine; ENet-loop-agnostic |
-| `LevelManager` | Load maps, compute spawn, build level paths |
+| `LevelManager` | Load maps, compute spawn, generate levels from chunks |
+| `ChunkStore` | Loads all chunk TMJ files at startup; classifies into start/mid/end pools |
+| `LevelGenerator` | Composes playable levels from chunks with difficulty-curve-based selection |
 | `SpawnFinder.h` | Header-only; shared between GameSession and LevelManager |
 | `PlayerReset.h` | Header-only; shared reset helper for kill/restart/level-change events |
 
@@ -181,16 +183,33 @@ main()
 ### Level progression (server-side)
 
 ```
-Lobby (_Lobby.tmj)
-  → all players in zone 'E' for 3 s → DoLevelChange()
-      → Level01, Level02, … LevelN
-          → all players finish OR 2-min time limit → SendResults() (15 s or all ready)
-              → DoLevelChange() → next level
-                  → last level complete → SendGlobalResults() (25 s or all ready)
-                      → FinishSession() → PKT_LOAD_LEVEL(is_last=1) → ResetToInitial() → back to lobby
+Online mode:
+  Lobby (_Lobby.tmj)  [file-based]
+    → all players in zone 'E' for 3 s → DoLevelChange()
+        → Generated Level 1, 2, … MAX_GENERATED_LEVELS (chunk-based)
+            → all players finish OR 2-min time limit → SendResults() (15 s or all ready)
+                → DoLevelChange() → next generated level
+                    → last level complete → SendGlobalResults() (25 s or all ready)
+                        → FinishSession() → PKT_LOAD_LEVEL(is_last=1) → ResetToInitial() → back to lobby
+
+Offline mode (skip_lobby):
+  Level 1 generated immediately (no lobby) → same progression as above
 ```
 
-Online mode starts at the lobby. Offline mode starts directly at `Level01.tmj` (lobby skipped).
+Online mode starts at the lobby; offline mode skips it and generates level 1
+immediately. Levels are procedurally generated from chunk pieces stored in
+`assets/levels/chunks/` (scanned recursively, including subdirectories).
+The server loads all chunks into memory at startup via `ChunkStore`, then generates
+each level on-the-fly using `LevelGenerator`.
+Each generated level is wrapped in a 5-tile solid border for safety.
+Generated levels are transmitted to clients via `PKT_LEVEL_DATA` (variable-size packet
+containing the full tile grid, including the `level` number for HUD display).
+`MAX_GENERATED_LEVELS = 8` controls how many levels are played before the session ends.
+
+**Difficulty curve:** the generator maps `level_num / total_levels` to a `[0,1]` progression
+(`t`), then selects mid chunks whose `difficulty` property falls within a band centred on
+`min_d + t * (max_d - min_d)` (±0.5). Level length also grows with `t`: the first level
+has 4 mid chunks, the last has 14. This ensures all difficulty tiers are used evenly.
 
 The server tracks per-level 1st-place finishers in `session_wins_` (player_id → win count).
 At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all clients.
@@ -203,7 +222,8 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all
 | `PKT_GAME_STATE` | S → C | Full `GameState` broadcast after every input |
 | `PKT_WELCOME` | S → C | On connect: `player_id` + `session_token` |
 | `PKT_PLAYER_INFO` | C → S | After welcome: `name` + `protocol_version` |
-| `PKT_LOAD_LEVEL` | S → C | Load next map (or `is_last=1` → return to menu) |
+| `PKT_LOAD_LEVEL` | S → C | Load next map from file (lobby) or `is_last=1` → return to menu |
+| `PKT_LEVEL_DATA` | S → C | Generated level tile grid (variable-size: header + width×height chars) |
 | `PKT_LEVEL_RESULTS` | S → C | End-of-level sorted leaderboard |
 | `PKT_GLOBAL_RESULTS` | S → C | Session-end win leaderboard (after last level) |
 | `PKT_RESTART` | C → S | Respawn at last checkpoint (or spawn if none reached); Backspace / Circle |
@@ -228,7 +248,7 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all
 - Camera shake triggered on death (`TriggerShake`)
 - Sub-frame visual interpolation: render position = `lerp(prev_xy, curr_xy, alpha)`
 
-**Colour palette:** all colours defined in `Colors.h` as `CLRS_<AREA>_<ROLE>` constants.
+**Colour palette:** all colours defined in `Colors.h` as `CLRS_<AREA>_<ROLE>` constants.\n\n**Level indicator (`DrawLevelIndicator`):** shows \"Level N\" at bottom-centre using `font_hud_` 24 px. Visible only when `current_level_ > 0` (i.e. during generated levels, not in the lobby).
 
 **Off-screen player indicators (`DrawOffscreenArrows`):**
 - Called in `GameSession::DoRender` after `EndWorldDraw` and before any HUD draw call.
@@ -251,7 +271,8 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all
 
 `LocalServer` starts `RunServer()` in a `std::thread`. The client connects to `127.0.0.1:58721` exactly as it would online. This allows single-player practice without a separate server process.
 
-In offline mode the starting map is `Level01.tmj`; the lobby is bypassed entirely since the ready mechanic requires multiple players.
+Both offline and online mode start at the lobby (`_Lobby.tmj`). When the player enters the
+exit zone, the server generates the first level from chunks and sends it via `PKT_LEVEL_DATA`.
 
 ---
 
@@ -260,7 +281,7 @@ In offline mode the starting map is `Level01.tmj`; the lobby is bypassed entirel
 ```cpp
 SERVER_PORT        = 58291   // online / dedicated server
 SERVER_PORT_LOCAL  = 58721   // in-process LocalServer (offline mode)
-PROTOCOL_VERSION   = 3       // increment on any breaking change
+PROTOCOL_VERSION   = 4       // increment on any breaking change
 MAX_PLAYERS        = 8
 CHANNEL_RELIABLE   = 0
 CHANNEL_COUNT      = 1
@@ -307,10 +328,16 @@ assets/
   levels/
     TileSet.tsx             Tiled tileset definition (properties: type, solid)
     TileSet.png             Tileset spritesheet
+    chunks/                 Chunk .tmj files for procedural level generation (recursive scan)
+      _Start01.tmj          Start chunk (has spawn + exit)
+      _End01.tmj            End chunk (entry + end tiles)
+      01/                   Difficulty 1 mid chunks (Flat)
+      02/                   Difficulty 2 mid chunks (Simple)
+      03/                   Difficulty 3 mid chunks (Medium)
+      04/                   Difficulty 3 mid chunks (Hard)
+      __README.md           Chunk authoring guidelines
     tilemaps/
       _Lobby.tmj            Waiting room — triggers level progression when all are in zone 'E'
-      Level01.tmj
-      (Level02.tmj, …)      Additional levels created with Tiled
     _old/                   Legacy ASCII maps (no longer loaded at runtime)
 ```
 
@@ -324,8 +351,11 @@ Tileset (`TileSet.tsx`) tile properties:
 | 1       | `platform` | true    | `0`         | Solid wall / floor |
 | 2       | `kill`     | true    | `K`         | Death + respawn on touch |
 | 3       | `end`      | false   | `E`         | Exit / finish tile |
-
-| `checkpoint` | false   | `C`         | Saves a respawn position; player dies → respawns here |
+| 4       | `checkpoint` | false | `C`         | Saves a respawn position; player dies → respawns here |
+| 5       | `chunk_entry` | false | `I`       | Chunk entry connector (stripped during generation) |
+| 6       | `chunk_exit`  | false | `O`       | Chunk exit connector (stripped during generation) |
+| 8       | `chunk_entry` | false | `I`       | Chunk entry (alt tile ID) |
+| 9       | `chunk_exit`  | false | `O`       | Chunk exit (alt tile ID) |
 
 On death (kill tile) the player respawns at their last checkpoint (`PlayerState::checkpoint_x/y`); if no checkpoint has been reached they respawn at the level spawn. `SpawnReset` clears the checkpoint; `CheckpointReset` preserves it.
 
@@ -355,6 +385,7 @@ On death (kill tile) the player respawns at their last checkpoint (`PlayerState:
 | Race timer, live leaderboard | ✅ |
 | End-of-level results screen | ✅ |
 | Session-end global leaderboard (win counts per player) | ✅ |
+| Chunk-based procedural level generation | ✅ |
 | Lobby → level progression loop | ✅ |
 | 2-minute time limit per level | ✅ |
 | Restart from spawn (PKT_RESTART) | ✅ |
@@ -372,5 +403,4 @@ On death (kill tile) the player respawns at their last checkpoint (`PlayerState:
 | SOLID refactoring (client + server) | ✅ |
 | Audio effects | ❌ not started |
 | Multiple spawn assignment by player_id | ❌ (all use center spawn) |
-| Levels beyond Level01 | ❌ (Level02.tmj, … not yet created) |
 | Linux / macOS build verification | ❌ |

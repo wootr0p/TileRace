@@ -56,15 +56,13 @@ int main() {
     const MenuResult menu = ShowMainMenu(renderer.HudFont(), save);
     if (menu.choice == MenuChoice::QUIT) break;
 
-    // Nella modalità offline il server locale parte direttamente dal primo livello,
-    // bypassando la lobby (che è pensata solo per il multiplayer online).
+    // In modalità offline il server genera direttamente il primo livello,
+    // senza passare dalla lobby (skip_lobby = true).
     LocalServer local_srv;
     const bool is_offline = (menu.choice == MenuChoice::OFFLINE);
-    const char* initial_map = is_offline
-        ? "assets/levels/tilemaps/Level01.tmj"
-        : LOBBY_MAP_PATH;
+    const char* initial_map = LOBBY_MAP_PATH;
     if (is_offline)
-        local_srv.Start(SERVER_PORT_LOCAL, initial_map);
+        local_srv.Start(SERVER_PORT_LOCAL, initial_map, /*skip_lobby=*/true);
 
     const char*    connect_ip   = is_offline ? "127.0.0.1"      : menu.server_ip;
     const uint16_t connect_port = is_offline ? SERVER_PORT_LOCAL : SERVER_PORT;
@@ -78,7 +76,7 @@ int main() {
         continue;
     }
 
-    const GameSession::Config cfg{ initial_map, menu.username, is_offline };
+    const GameSession::Config cfg{ is_offline ? nullptr : initial_map, menu.username, is_offline };
     GameSession session(cfg);
     while (!WindowShouldClose() && !session.IsOver())
         session.Tick(GetFrameTime(), net, renderer);

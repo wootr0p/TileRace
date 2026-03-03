@@ -39,6 +39,7 @@ public:
 
     // Screen-space HUD
     void DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players);
+    void DrawLevelIndicator(uint8_t level);  // bottom-center level number
     void DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct);
     void DrawTimer(const PlayerState& s,
                    uint32_t best_ticks, uint32_t time_limit_secs,

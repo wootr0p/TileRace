@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-03 08:00
+ * Generated : 2026-03-03 16:10
  * ============================================================================
  *
  * PURPOSE
@@ -89,7 +89,11 @@
  *   │   ├── World.cpp
  *   │   └── World.h
  *   ├── server
+ *   │   ├── ChunkStore.cpp
+ *   │   ├── ChunkStore.h
  *   │   ├── CMakeLists.txt
+ *   │   ├── LevelGenerator.cpp
+ *   │   ├── LevelGenerator.h
  *   │   ├── LevelManager.cpp
  *   │   ├── LevelManager.h
  *   │   ├── main.cpp
@@ -100,7 +104,7 @@
  *   │   └── ServerSession.h
  *   └── app_icon.rc.in
  *
- * HEADERS INCLUDED BELOW  (23 files)
+ * HEADERS INCLUDED BELOW  (25 files)
  *   [01]  src\common\GameState.h
  *   [02]  src\common\InputFrame.h
  *   [03]  src\common\Physics.h
@@ -109,21 +113,23 @@
  *   [06]  src\common\Protocol.h
  *   [07]  src\common\SpawnFinder.h
  *   [08]  src\common\World.h
- *   [09]  src\server\LevelManager.h
- *   [10]  src\server\PlayerReset.h
- *   [11]  src\server\ServerLogic.h
- *   [12]  src\server\ServerSession.h
- *   [13]  src\client\Colors.h
- *   [14]  src\client\GameSession.h
- *   [15]  src\client\InputSampler.h
- *   [16]  src\client\LocalServer.h
- *   [17]  src\client\MainMenu.h
- *   [18]  src\client\NetworkClient.h
- *   [19]  src\client\Renderer.h
- *   [20]  src\client\SaveData.h
- *   [21]  src\client\UIWidgets.h
- *   [22]  src\client\VisualEffects.h
- *   [23]  src\client\WinIcon.h
+ *   [09]  src\server\ChunkStore.h
+ *   [10]  src\server\LevelGenerator.h
+ *   [11]  src\server\LevelManager.h
+ *   [12]  src\server\PlayerReset.h
+ *   [13]  src\server\ServerLogic.h
+ *   [14]  src\server\ServerSession.h
+ *   [15]  src\client\Colors.h
+ *   [16]  src\client\GameSession.h
+ *   [17]  src\client\InputSampler.h
+ *   [18]  src\client\LocalServer.h
+ *   [19]  src\client\MainMenu.h
+ *   [20]  src\client\NetworkClient.h
+ *   [21]  src\client\Renderer.h
+ *   [22]  src\client\SaveData.h
+ *   [23]  src\client\UIWidgets.h
+ *   [24]  src\client\VisualEffects.h
+ *   [25]  src\client\WinIcon.h
  * ============================================================================
  */
 
@@ -345,8 +351,8 @@ struct PlayerState {
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.1.5b";
-static constexpr uint16_t     PROTOCOL_VERSION = 3;
+static constexpr const char*  GAME_VERSION     = "0.2.0";
+static constexpr uint16_t     PROTOCOL_VERSION = 4;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -379,6 +385,7 @@ enum PktType : uint8_t {
     PKT_READY             = 11,  // C → S  player ready for the next level
     PKT_GLOBAL_RESULTS    = 12,  // S → C  session-end global leaderboard (wins per player)
     PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete / Square
+    PKT_LEVEL_DATA        = 14,  // S → C  generated level tile grid (variable-size packet)
 };
 
 struct PktInput {
@@ -468,6 +475,22 @@ struct PktGlobalResults {
     GlobalResultEntry entries[MAX_PLAYERS];
 };
 
+// Variable-size packet: header followed by width*height bytes of tile chars.
+// Sent by the server when a generated level is loaded (chunk-based level generator).
+// The client reconstructs the World from the char grid (solid = (ch == '0')).
+struct PktLevelDataHeader {
+    uint8_t  type    = PKT_LEVEL_DATA;
+    uint8_t  is_last = 0;       // 1 → session over, return to menu
+    uint16_t width   = 0;       // map width in tiles
+    uint16_t height  = 0;       // map height in tiles
+    uint8_t  level   = 0;       // current level number (for display)
+    uint8_t  _pad    = 0;
+    // char data[width * height] follows immediately
+};
+
+// Number of generated levels per session before returning to lobby.
+static constexpr int MAX_GENERATED_LEVELS = 8;
+
 
 // ==========================================================================
 // FILE : SpawnFinder.h
@@ -531,6 +554,11 @@ public:
     // Accepts both .txt (legacy ASCII) and .tmj (Tiled JSON) paths.
     bool LoadFromFile(const char* path);
 
+    // Load from an in-memory char grid. solid_grid is reconstructed as (ch == '0').
+    // Used by the chunk-based level generator to load generated levels on both
+    // server and client without writing temporary files.
+    bool LoadFromGrid(int w, int h, const std::vector<std::string>& rows);
+
     // Returns true if tile (tx, ty) should block player movement.
     // For .txt: solid iff char == '0'.
     // For .tmj: solid iff the TSX "solid" property is true for that tile type.
@@ -542,6 +570,9 @@ public:
 
     int GetWidth()  const { return width_; }
     int GetHeight() const { return height_; }
+
+    const std::vector<std::string>&       GetRows()      const { return rows_; }
+    const std::vector<std::vector<bool>>& GetSolidGrid() const { return solid_grid_; }
 
 private:
     std::vector<std::string>      rows_;        // char grid ('0','E','K','X',' ')
@@ -555,14 +586,122 @@ private:
 
 
 // ==========================================================================
+// FILE : ChunkStore.h
+// PATH : src/server/ChunkStore.h
+// ==========================================================================
+
+#pragma once
+// SRP: loads and classifies all chunk TMJ files from a directory at startup.
+// Stores parsed chunks (char grids + metadata) in memory for use by LevelGenerator.
+// No ENet or Raylib dependency.
+
+#include "World.h"
+#include <string>
+#include <vector>
+
+// One chunk loaded in memory, parsed from a .tmj file.
+struct Chunk {
+    int width  = 0;
+    int height = 0;
+
+    std::vector<std::string>       rows;       // char grid ('0','E','K','X','C','I','O',' ')
+    std::vector<std::vector<bool>> solid_grid; // parallel solid-flag grid
+
+    // Entry / exit tile positions (-1 if absent)
+    int entry_tx = -1, entry_ty = -1;
+    int exit_tx  = -1, exit_ty  = -1;
+
+    // Metadata from TMJ map properties
+    std::string role;       // "start", "mid", "end", "any"
+    int         difficulty = 1;
+    int         weight     = 1;
+
+    // Content flags — set during loading
+    bool has_spawn = false; // contains 'X'
+    bool has_end   = false; // contains 'E'
+};
+
+// Loads all .tmj chunk files from a directory and classifies them into
+// start, mid, and end pools.
+class ChunkStore {
+public:
+    // Scan `dir` for .tmj files, parse each into a Chunk, classify into pools.
+    // Returns true if at least one start, one mid, and one end chunk were found.
+    bool LoadFromDirectory(const char* dir);
+
+    const std::vector<Chunk>& StartChunks() const { return start_; }
+    const std::vector<Chunk>& MidChunks()   const { return mid_; }
+    const std::vector<Chunk>& EndChunks()   const { return end_; }
+
+    // Min / max difficulty found among mid chunks (for difficulty curve mapping).
+    int MinMidDifficulty() const { return min_mid_diff_; }
+    int MaxMidDifficulty() const { return max_mid_diff_; }
+
+    bool IsReady() const { return !start_.empty() && !mid_.empty() && !end_.empty(); }
+
+private:
+    // Parse a single .tmj chunk file. Returns false on failure.
+    bool ParseChunk(const char* path, Chunk& out);
+
+    // Classify chunk into start/mid/end pools based on role + content.
+    void Classify(Chunk chunk);
+
+    std::vector<Chunk> start_;
+    std::vector<Chunk> mid_;
+    std::vector<Chunk> end_;
+    int min_mid_diff_ = 1;
+    int max_mid_diff_ = 1;
+};
+
+
+// ==========================================================================
+// FILE : LevelGenerator.h
+// PATH : src/server/LevelGenerator.h
+// ==========================================================================
+
+#pragma once
+// SRP: composes a playable level from chunk pieces stored in ChunkStore.
+// Algorithm: 1 start + N mid + 1 end, stitched via entry/exit tile alignment.
+// Adds a 5-tile solid border + 5-tile empty margin around the composed map.
+// No ENet or Raylib dependency.
+
+#include "ChunkStore.h"
+#include "World.h"
+#include <cstdint>
+
+struct GeneratorParams {
+    int level_num    = 1;    // current level number (1-based)
+    int total_levels = 8;    // total levels in the session (for difficulty curve)
+    uint32_t seed    = 0;    // RNG seed (0 = use current time)
+};
+
+class LevelGenerator {
+public:
+    // Generate a level from the chunks in `store` and load it into `world`.
+    // Returns true on success.
+    static bool Generate(const ChunkStore& store, const GeneratorParams& params, World& world);
+
+private:
+    // Choose how many mid chunks based on level progression.
+    static int MidChunkCount(int level_num, int total_levels);
+
+    // Compute the target difficulty [0.0, 1.0] → mapped to the store's range.
+    static float TargetDifficulty(int level_num, int total_levels);
+};
+
+
+// ==========================================================================
 // FILE : LevelManager.h
 // PATH : src/server/LevelManager.h
 // ==========================================================================
 
 #pragma once
 // SRP: loads maps, calculates the optimal spawn point, builds canonical level paths.
+// Supports both file-based loading and chunk-based level generation.
 // No ENet or session-logic dependency.
 #include "World.h"
+#include "ChunkStore.h"
+#include "LevelGenerator.h"
 #include <string>
 #include <cstdint>
 
@@ -570,6 +709,9 @@ class LevelManager {
 public:
     // Load map from path. Returns false if the file cannot be read.
     bool Load(const char* path);
+
+    // Generate a level from chunks. Returns false on failure.
+    bool Generate(int level_num, const ChunkStore& store, uint32_t seed = 0);
 
     // Build the canonical path for a level number (e.g. 2 → "assets/levels/tilemaps/Level02.tmj").
     static std::string BuildPath(int num);
@@ -597,7 +739,7 @@ private:
 
 // Reset all movement fields and place the player at spawn coordinates.
 //   with_kill = true  → kill_respawn_ticks = 60  (death animation, ~1 s wait before control)
-//   with_kill = false → respawn_grace_ticks = 60  (triggers Ready/Go! overlay on the client)
+//   with_kill = false → respawn_grace_ticks = 25  (triggers Ready/Go! overlay on the client, ~0.4 s)
 // Also clears checkpoint_x/checkpoint_y and resets level_ticks (full restart semantics).
 inline PlayerState SpawnReset(PlayerState s, float sx, float sy, bool with_kill) { /* body stripped */ }
 
@@ -605,7 +747,7 @@ inline PlayerState SpawnReset(PlayerState s, float sx, float sy, bool with_kill)
 // Unlike SpawnReset, level_ticks keeps accumulating (time penalty only from downtime)
 // and the checkpoint itself is preserved.
 // with_kill = true  → kill_respawn_ticks = 60 (used by automatic kill-tile death)
-// with_kill = false → respawn_grace_ticks = 60 (used by manual restart-at-checkpoint)
+// with_kill = false → respawn_grace_ticks = 25 (used by manual restart-at-checkpoint)
 inline PlayerState CheckpointReset(PlayerState s, float cx, float cy, bool with_kill) { /* body stripped */ }
     // level_ticks intentionally NOT reset — time keeps running
     // checkpoint coordinates preserved
@@ -622,7 +764,9 @@ inline PlayerState CheckpointReset(PlayerState s, float cx, float cy, bool with_
 
 // Blocking ENet server loop. Caller must call enet_initialize() beforehand.
 // Returns only when stop_flag is set to true.
-void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag);
+// When skip_lobby is true the server generates level 1 immediately (no lobby).
+void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag,
+               bool skip_lobby = false);
 
 
 // ==========================================================================
@@ -635,6 +779,7 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
 // Manages connected players, lobby / game / results phases, and level progression.
 // Socket lifecycle and the ENet service loop live in RunServer (ServerLogic.cpp).
 #include "LevelManager.h"
+#include "ChunkStore.h"
 #include "Player.h"
 #include "Protocol.h"
 #include <enet/enet.h>
@@ -646,7 +791,8 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
 class ServerSession {
 public:
     // Load the initial map. Check IsReady() after construction.
-    ServerSession(const char* initial_map_path, int initial_level);
+    // When skip_lobby is true the lobby is skipped: level 1 is generated immediately.
+    ServerSession(const char* initial_map_path, int initial_level, bool skip_lobby = false);
 
     bool IsReady() const { return is_ready_; }
 
@@ -680,16 +826,20 @@ private:
     void ResetToInitial(ENetHost* host);
     void SendResults   (ENetHost* host, const char* reason);
     void BroadcastGameState(ENetHost* host);
+    void BroadcastLevelData(ENetHost* host);  // send PKT_LEVEL_DATA with generated world grid
+    void SendLevelDataToPeer(ENetPeer* peer);  // send PKT_LEVEL_DATA to a single peer
     void UpdateZone();
     bool AllInZone()        const;
     uint32_t CountdownTicks() const;
     PlayerState ApplySpawnReset(PlayerState s, bool with_kill) const;
 
     LevelManager level_mgr_;
+    ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator
 
     std::string  initial_map_path_;
     int          initial_level_;
     int          current_level_;
+    bool         skip_lobby_          = false;
 
     bool         is_ready_           = false;
     bool         in_lobby_            = false;
@@ -842,6 +992,7 @@ private:
     uint32_t    local_player_id_ = 0;
     std::string username_;
     bool        is_offline_;
+    uint8_t     current_level_ = 0;  // current level number from server (0 = lobby/unknown)
 
     static constexpr uint32_t IHIST = 128;   // input ring-buffer capacity for reconciliation
     InputFrame  input_history_[IHIST] = {};
@@ -907,6 +1058,7 @@ private:
     void HandlePacket(const uint8_t* data, size_t size, NetworkClient& net);
     void HandleDisconnect(uint32_t disconnect_data);
     void LoadLevel(const char* path);
+    void LoadLevelFromGrid(int w, int h, const std::vector<std::string>& rows);
     void UpdateLiveBestTicks();
     void BuildLiveLeaderboard(LiveLeaderEntry* out, int& count) const;
     void DoRender(float draw_x, float draw_y, float dt,
@@ -995,7 +1147,8 @@ public:
     LocalServer& operator=(const LocalServer&) = delete;
 
     // Start the server on the given port. Blocks ~200 ms waiting for the ENet bind.
-    void Start(uint16_t port, const char* map_path);
+    // When skip_lobby is true the lobby is skipped and level 1 is generated immediately.
+    void Start(uint16_t port, const char* map_path, bool skip_lobby = false);
 
     // Signal stop and join the background thread.
     void Stop();
@@ -1141,6 +1294,7 @@ public:
 
     // Screen-space HUD
     void DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players);
+    void DrawLevelIndicator(uint8_t level);  // bottom-center level number
     void DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct);
     void DrawTimer(const PlayerState& s,
                    uint32_t best_ticks, uint32_t time_limit_secs,

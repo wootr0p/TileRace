@@ -3,7 +3,7 @@
 #include <chrono>
 #include <thread>
 
-void LocalServer::Start(uint16_t port, const char* map_path) {
+void LocalServer::Start(uint16_t port, const char* map_path, bool skip_lobby) {
     if (running_) Stop();
 
     port_      = port;
@@ -12,8 +12,8 @@ void LocalServer::Start(uint16_t port, const char* map_path) {
 
     // Copia la stringa prima di spostarla nel thread.
     std::string map_copy(map_path);
-    thread_ = std::thread([this, port, map_copy]() {
-        RunServer(port, map_copy.c_str(), stop_flag_);
+    thread_ = std::thread([this, port, map_copy, skip_lobby]() {
+        RunServer(port, map_copy.c_str(), stop_flag_, skip_lobby);
     });
 
     // Attende che il server abbia il tempo di fare il bind sulla porta.
