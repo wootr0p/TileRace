@@ -3,7 +3,7 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "chunks/Simple.tmj",
+    "activeFile": "chunks/04/Hard05.tmj",
     "expandedProjectPaths": [
     ],
     "file.lastUsedOpenFilter": "Tutti i file (*)",
@@ -183,6 +183,14 @@
                 "y": 456.4304616289326
             }
         },
+        "chunks/04/Hard05.tmj": {
+            "scale": 0.8051609848484849,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 527.8447515436637,
+                "y": 368.24933842987366
+            }
+        },
         "chunks/End.tmj": {
             "scale": 0.6642578124999999,
             "selectedLayer": 0,
@@ -298,25 +306,41 @@
     "openFiles": [
         "TileSet.tsx",
         "tilemaps/_Lobby.tmj",
-        "chunks/Start.tmj",
-        "chunks/End.tmj",
-        "chunks/Simple.tmj",
-        "chunks/Simple2.tmj"
+        "chunks/01/Flat01.tmj",
+        "chunks/01/Flat02.tmj",
+        "chunks/01/Flat03.tmj",
+        "chunks/01/Flat04.tmj",
+        "chunks/01/Flat05.tmj",
+        "chunks/02/Simple01.tmj",
+        "chunks/02/Simple02.tmj",
+        "chunks/02/Simple03.tmj",
+        "chunks/02/Simple04.tmj",
+        "chunks/02/Simple05.tmj",
+        "chunks/03/Medium01.tmj",
+        "chunks/03/Medium02.tmj",
+        "chunks/03/Medium03.tmj",
+        "chunks/03/Medium04.tmj",
+        "chunks/03/Medium05.tmj",
+        "chunks/04/Hard01.tmj",
+        "chunks/04/Hard02.tmj",
+        "chunks/04/Hard03.tmj",
+        "chunks/04/Hard04.tmj",
+        "chunks/04/Hard05.tmj"
     ],
     "project": "Maps.tiled-project",
     "property.type": "int",
     "recentFiles": [
+        "TileSet.tsx",
+        "tilemaps/_Lobby.tmj",
         "chunks/01/Flat01.tmj",
+        "chunks/01/Flat02.tmj",
+        "chunks/01/Flat03.tmj",
+        "chunks/01/Flat04.tmj",
+        "chunks/01/Flat05.tmj",
+        "chunks/02/Simple01.tmj",
+        "chunks/02/Simple02.tmj",
         "chunks/02/Simple03.tmj",
-        "chunks/Simple01.tmj",
-        "chunks/Simple02.tmj",
-        "chunks/Simple03.tmj",
-        "chunks/Simple04.tmj",
-        "chunks/Simple05.tmj",
-        "chunks/Start.tmj",
-        "chunks/End.tmj",
-        "chunks/Simple3.tmj",
-        "chunks/Simple.tmj",
-        "chunks/Simple2.tmj"
+        "chunks/02/Simple04.tmj",
+        "chunks/02/Simple05.tmj"
     ]
 }
