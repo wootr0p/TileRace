@@ -49,7 +49,8 @@ public:
     void DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct);
     void DrawTimer(const PlayerState& s,
                    uint32_t best_ticks, uint32_t time_limit_secs,
-                   uint32_t next_level_cd_ticks);
+                   uint32_t next_level_cd_ticks,
+                   bool coop_mode);
     void DrawLiveLeaderboard(const LiveLeaderEntry* entries, int count);
     void DrawNewRecord(bool show, bool is_lobby);
     void DrawLobbyHints(uint32_t cd_ticks, uint32_t player_count);
@@ -71,19 +72,22 @@ public:
     void SetPalette(const LevelPalette& p);
 
     // Pause menu
-    Rectangle GetPauseItemRect(int item_index) const;  // for mouse hit-testing in GameSession
-    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted);
+    Rectangle GetPauseItemRect(int item_index, int total_items = 3) const;  // for mouse hit-testing in GameSession
+    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
+                       bool is_lobby_host = false, bool coop_mode = false);
 
     // End-of-level results screen
     void DrawResultsScreen(bool in_results, bool local_ready,
                            const ResultEntry* entries, uint8_t count, uint8_t level,
-                           double elapsed_since_start, double total_duration);
+                           double elapsed_since_start, double total_duration,
+                           bool coop_mode, bool coop_all_finished);
 
     // Session-end global leaderboard (shown after the last level).
     void DrawGlobalResultsScreen(bool in_global, bool local_ready,
                                  const GlobalResultEntry* entries, uint8_t count,
                                  uint8_t total_levels,
-                                 double elapsed_since_start, double total_duration);
+                                 double elapsed_since_start, double total_duration,
+                                 bool coop_mode, uint8_t coop_wins);
 
     // Full-screen error / session-end overlays used in mini-loops inside main.cpp
     void DrawConnectionErrorScreen(const char* msg);

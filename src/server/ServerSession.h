@@ -37,8 +37,9 @@ private:
     bool HandleInput     (ENetHost* host, ENetPeer* peer, const PktInput& pkt);
     void HandlePlayerInfo(ENetHost* host, ENetPeer* peer, const PktPlayerInfo& pkt);
     void HandleRestart   (ENetPeer* peer);       // respawn at last checkpoint (or spawn)
-    void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn
+    void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn (forbidden in coop mode)
     bool HandleReady     (ENetHost* host, ENetPeer* peer);  // returns true on level change
+    void HandleSetGameMode(ENetPeer* peer, uint8_t mode);   // lobby host sets cooperative/competitive
 
     // Load next map, reset all players, broadcast new state.
     void DoLevelChange(ENetHost* host);
@@ -57,6 +58,7 @@ private:
     bool AllInZone()        const;
     uint32_t CountdownTicks() const;
     PlayerState ApplySpawnReset(PlayerState s, bool with_kill) const;
+    void ResolvePlayerCollisions();   // coop mode: push overlapping player AABBs apart
 
     LevelManager level_mgr_;
     ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator
@@ -65,6 +67,8 @@ private:
     int          initial_level_;
     int          current_level_;
     bool         skip_lobby_          = false;
+    uint8_t      game_mode_           = 1;   // 0 = competitive, 1 = cooperative (default)
+    uint32_t     coop_cleared_levels_ = 0;   // cooperative: number of levels fully cleared by the team
 
     bool         is_ready_           = false;
     bool         in_lobby_            = false;

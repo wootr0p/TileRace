@@ -6,11 +6,12 @@
 
 #include "ChunkStore.h"
 #include "World.h"
+#include "Protocol.h"
 #include <cstdint>
 
 struct GeneratorParams {
     int level_num    = 1;    // current level number (1-based)
-    int total_levels = 8;    // total levels in the session (for difficulty curve)
+    int total_levels = DIFFICULTY_CURVE_LEVELS;  // difficulty curve reference
     uint32_t seed    = 0;    // RNG seed (0 = use current time)
 };
 

@@ -50,7 +50,7 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
     input_sampler_.Poll();
 
     // 2. Gestione menu di pausa (usa nav + toggle del sampler + GetMousePosition)
-    HandlePauseInput(renderer);
+    HandlePauseInput(renderer, net);
     if (session_over_) return false;
 
     // 3. Quando in pausa: scarta i flag sticky di gameplay
@@ -239,7 +239,7 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
 // ---------------------------------------------------------------------------
 // HandlePauseInput
 // ---------------------------------------------------------------------------
-void GameSession::HandlePauseInput(Renderer& renderer) {
+void GameSession::HandlePauseInput(Renderer& renderer, NetworkClient& net) {
     const bool toggle  = input_sampler_.ConsumePauseToggle();
     const bool nav_up  = input_sampler_.PauseNavUp();
     const bool nav_dn  = input_sampler_.PauseNavDown();
@@ -248,27 +248,38 @@ void GameSession::HandlePauseInput(Renderer& renderer) {
     const Vector2 mouse   = GetMousePosition();
     const bool    clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 
-    auto item_rect = [&](int i) -> Rectangle { return renderer.GetPauseItemRect(i); };
+    // Number of items depends on whether the local player is the lobby host.
+    const bool is_lobby_host = (last_game_state_.is_lobby && local_player_id_ == 1u);
+    const int  item_count    = is_lobby_host ? 4 : 3;
+    auto item_rect = [&](int i) -> Rectangle { return renderer.GetPauseItemRect(i, item_count); };
 
     if (pause_state_ == PauseState::PLAYING && toggle && !in_results_screen_) {
         pause_state_   = PauseState::PAUSED;
         pause_focused_ = 0;
 
     } else if (pause_state_ == PauseState::PAUSED) {
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < item_count; i++)
             if (CheckCollisionPointRec(mouse, item_rect(i))) pause_focused_ = i;
 
         if      (toggle)       pause_state_   = PauseState::PLAYING;
-        else if (nav_up)       pause_focused_ = (pause_focused_ + 2) % 3;
-        else if (nav_dn)       pause_focused_ = (pause_focused_ + 1) % 3;
+        else if (nav_up)       pause_focused_ = (pause_focused_ + item_count - 1) % item_count;
+        else if (nav_dn)       pause_focused_ = (pause_focused_ + 1) % item_count;
         else if (ok || (clicked && CheckCollisionPointRec(mouse, item_rect(pause_focused_)))) {
             if (pause_focused_ == 0) {
+                // Resume
                 pause_state_ = PauseState::PLAYING;
-            } else if (pause_focused_ == 1) {
-                // SFX toggle — effetto immediato, salva.
+            } else if (is_lobby_host && pause_focused_ == 1) {
+                // Toggle game mode (lobby host only)
+                const uint8_t new_mode = (last_game_state_.game_mode == 0) ? 1u : 0u;
+                PktSetGameMode pkt{};
+                pkt.mode = new_mode;
+                net.SendReliable(&pkt, sizeof(pkt));
+            } else if (pause_focused_ == (is_lobby_host ? 2 : 1)) {
+                // SFX toggle
                 sfx_.SetMuted(!sfx_.IsMuted());
                 if (save_) { save_->sfx_muted = sfx_.IsMuted(); SaveSaveData(*save_); }
             } else {
+                // Quit to menu
                 pause_state_ = PauseState::CONFIRM_QUIT; confirm_focused_ = 0;
             }
         }
@@ -317,6 +328,17 @@ void GameSession::TickFixed(NetworkClient& net) {
     {
         const PlayerState& cur = player_.GetState();
         if (cur.kill_respawn_ticks > 0 || cur.respawn_grace_ticks > 0) {
+            frame.buttons = 0;
+            frame.move_x  = 0.f;
+            frame.dash_dx = 0.f;
+            frame.dash_dy = 0.f;
+        }
+    }
+
+    // Blocca input se il giocatore ha raggiunto il traguardo (valido in tutte le modalità).
+    {
+        const PlayerState& cur = player_.GetState();
+        if (cur.finished) {
             frame.buttons = 0;
             frame.move_x  = 0.f;
             frame.dash_dx = 0.f;
@@ -517,11 +539,13 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
     if (pkt_type == PKT_GLOBAL_RESULTS && size >= sizeof(PktGlobalResults)) {
         PktGlobalResults gpkt{};
         std::memcpy(&gpkt, data, sizeof(gpkt));
-        in_global_results_screen_  = true;
-        local_global_ready_        = false;
-        global_results_start_time_ = GetTime();
-        global_results_count_      = gpkt.count;
+        in_global_results_screen_    = true;
+        local_global_ready_          = false;
+        global_results_start_time_   = GetTime();
+        global_results_count_        = gpkt.count;
         global_results_total_levels_ = gpkt.total_levels;
+        global_results_game_mode_    = gpkt.game_mode;
+        global_results_coop_wins_    = gpkt.coop_wins;
         const int gn = std::min(static_cast<int>(gpkt.count), MAX_PLAYERS);
         for (int gi = 0; gi < gn; gi++) global_results_entries_[gi] = gpkt.entries[gi];
         return;
@@ -531,11 +555,12 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
     if (pkt_type == PKT_LEVEL_RESULTS && size >= sizeof(PktLevelResults)) {
         PktLevelResults rpkt{};
         std::memcpy(&rpkt, data, sizeof(rpkt));
-        in_results_screen_  = true;
-        local_ready_        = false;
-        results_start_time_ = GetTime();
-        results_count_      = rpkt.count;
-        results_level_      = rpkt.level;
+        in_results_screen_          = true;
+        local_ready_                = false;
+        results_start_time_         = GetTime();
+        results_count_              = rpkt.count;
+        results_level_              = rpkt.level;
+        results_coop_all_finished_  = (rpkt.coop_all_finished != 0);
         const int rn = std::min(static_cast<int>(rpkt.count), MAX_PLAYERS);
         for (int ri = 0; ri < rn; ri++) results_entries_[ri] = rpkt.entries[ri];
         return;
@@ -905,12 +930,15 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
 
     // Timer (nascosto in lobby)
     if (!last_game_state_.is_lobby) {
+        const bool coop_mode = (last_game_state_.game_mode == 1);
         renderer.DrawTimer(local, best_ticks_,
             last_game_state_.time_limit_secs,
-            last_game_state_.next_level_countdown_ticks);
+            last_game_state_.next_level_countdown_ticks,
+            coop_mode);
     }
 
-    renderer.DrawNewRecord(show_record_, last_game_state_.is_lobby);
+    renderer.DrawNewRecord(show_record_ && last_game_state_.game_mode == 0,
+                            last_game_state_.is_lobby);
 
     if (last_game_state_.is_lobby)
         renderer.DrawLobbyHints(last_game_state_.next_level_countdown_ticks,
@@ -923,15 +951,19 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
         renderer.DrawEmoteWheel(sw * 0.5f, sh * 0.5f, input_sampler_.GetEmoteWheelHighlight());
     }
 
-    renderer.DrawPauseMenu(pause_state_, pause_focused_, confirm_focused_, sfx_.IsMuted());
+    renderer.DrawPauseMenu(pause_state_, pause_focused_, confirm_focused_, sfx_.IsMuted(),
+                            last_game_state_.is_lobby && local_player_id_ == 1u,
+                            last_game_state_.game_mode == 1);
 
     renderer.DrawResultsScreen(in_results_screen_, local_ready_,
         results_entries_, results_count_, results_level_,
-        GetTime() - results_start_time_, RESULTS_DURATION_S);
+        GetTime() - results_start_time_, RESULTS_DURATION_S,
+        last_game_state_.game_mode == 1, results_coop_all_finished_);
 
     renderer.DrawGlobalResultsScreen(in_global_results_screen_, local_global_ready_,
         global_results_entries_, global_results_count_, global_results_total_levels_,
-        GetTime() - global_results_start_time_, GLOBAL_RESULTS_DURATION_S);
+        GetTime() - global_results_start_time_, GLOBAL_RESULTS_DURATION_S,
+        global_results_game_mode_ == 1, global_results_coop_wins_);
 
     renderer.EndFrame();
 }

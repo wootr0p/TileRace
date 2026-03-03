@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-03 22:59
+ * Generated : 2026-03-03 23:44
  * ============================================================================
  *
  * PURPOSE
@@ -165,6 +165,7 @@ struct GameState {
     uint32_t    next_level_countdown_ticks = 0;   // > 0: ticks until automatic level change
     uint32_t    time_limit_secs            = 0;   // remaining seconds of the 2-minute time limit
     uint8_t     is_lobby                   = 0;   // 1 when the active map is _lobby.txt
+    uint8_t     game_mode                  = 1;   // 0 = competitive, 1 = cooperative (default)
 };
 
 
@@ -362,8 +363,8 @@ struct PlayerState {
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.0";
-static constexpr uint16_t     PROTOCOL_VERSION = 4;
+static constexpr const char*  GAME_VERSION     = "0.2.0b";
+static constexpr uint16_t     PROTOCOL_VERSION = 6;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -400,6 +401,7 @@ enum PktType : uint8_t {
     PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
     PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
     PKT_GENERATING        = 17,  // S → C  server is generating the next level; client shows loading overlay
+    PKT_SET_GAME_MODE     = 18,  // C → S  lobby host sets game mode (0=competitive, 1=cooperative)
 };
 
 struct PktInput {
@@ -527,6 +529,13 @@ struct PktEmoteBroadcast {
 struct PktGenerating {
     uint8_t type  = PKT_GENERATING;
     uint8_t level = 0;   // the level number being generated
+};
+
+// Sent by the lobby host to change the session game mode.
+// Server ignores this packet outside the lobby or from non-host players.
+struct PktSetGameMode {
+    uint8_t type = PKT_SET_GAME_MODE;
+    uint8_t mode = 1;   // 0 = competitive, 1 = cooperative
 };
 
 
@@ -872,8 +881,9 @@ private:
     bool HandleInput     (ENetHost* host, ENetPeer* peer, const PktInput& pkt);
     void HandlePlayerInfo(ENetHost* host, ENetPeer* peer, const PktPlayerInfo& pkt);
     void HandleRestart   (ENetPeer* peer);       // respawn at last checkpoint (or spawn)
-    void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn
+    void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn (forbidden in coop mode)
     bool HandleReady     (ENetHost* host, ENetPeer* peer);  // returns true on level change
+    void HandleSetGameMode(ENetPeer* peer, uint8_t mode);   // lobby host sets cooperative/competitive
 
     // Load next map, reset all players, broadcast new state.
     void DoLevelChange(ENetHost* host);
@@ -892,6 +902,7 @@ private:
     bool AllInZone()        const;
     uint32_t CountdownTicks() const;
     PlayerState ApplySpawnReset(PlayerState s, bool with_kill) const;
+    void ResolvePlayerCollisions();   // coop mode: push overlapping player AABBs apart
 
     LevelManager level_mgr_;
     ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator
@@ -900,6 +911,7 @@ private:
     int          initial_level_;
     int          current_level_;
     bool         skip_lobby_          = false;
+    uint8_t      game_mode_           = 1;   // 0 = competitive, 1 = cooperative (default)
 
     bool         is_ready_           = false;
     bool         in_lobby_            = false;
@@ -1137,7 +1149,7 @@ private:
     // Emote system — per-player bubble state
     std::unordered_map<uint32_t, EmoteBubble> emote_bubbles_;
 
-    void HandlePauseInput(Renderer& renderer);
+    void HandlePauseInput(Renderer& renderer, NetworkClient& net);
     void TickFixed(NetworkClient& net);
     void PollNetwork(NetworkClient& net);
     void HandlePacket(const uint8_t* data, size_t size, NetworkClient& net);
@@ -1487,7 +1499,8 @@ public:
     void DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct);
     void DrawTimer(const PlayerState& s,
                    uint32_t best_ticks, uint32_t time_limit_secs,
-                   uint32_t next_level_cd_ticks);
+                   uint32_t next_level_cd_ticks,
+                   bool coop_mode);
     void DrawLiveLeaderboard(const LiveLeaderEntry* entries, int count);
     void DrawNewRecord(bool show, bool is_lobby);
     void DrawLobbyHints(uint32_t cd_ticks, uint32_t player_count);
@@ -1509,8 +1522,9 @@ public:
     void SetPalette(const LevelPalette& p);
 
     // Pause menu
-    Rectangle GetPauseItemRect(int item_index) const;  // for mouse hit-testing in GameSession
-    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted);
+    Rectangle GetPauseItemRect(int item_index, int total_items = 3) const;  // for mouse hit-testing in GameSession
+    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
+                       bool is_lobby_host = false, bool coop_mode = false);
 
     // End-of-level results screen
     void DrawResultsScreen(bool in_results, bool local_ready,

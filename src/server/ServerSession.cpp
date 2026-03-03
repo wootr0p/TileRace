@@ -172,6 +172,12 @@ bool ServerSession::OnReceive(ENetHost* host, ENetPeer* peer,
         }
         return false;
     }
+    if (type == PKT_SET_GAME_MODE && len >= sizeof(PktSetGameMode) && in_lobby_) {
+        PktSetGameMode pkt{};
+        std::memcpy(&pkt, data, sizeof(pkt));
+        HandleSetGameMode(peer, pkt.mode);
+        return false;
+    }
     return false;
 }
 
@@ -202,7 +208,9 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     if (it == players_.end()) return false;
 
     const World& world = level_mgr_.GetWorld();
-    it->second.Simulate(pkt.frame, world);
+    // Finished players are frozen in place; skip simulation so they hold position at exit.
+    if (!it->second.GetState().finished)
+        it->second.Simulate(pkt.frame, world);
 
     PlayerState s = it->second.GetState();
 
@@ -268,6 +276,8 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     it->second.SetState(s);
 
     UpdateZone();
+    // Coop mode: push overlapping player AABBs apart each tick.
+    if (game_mode_ == 1) ResolvePlayerCollisions();
     BroadcastGameState(host);
 
     // --- Verifica scadenza timer zona ---
@@ -459,6 +469,8 @@ void ServerSession::ResetToInitial(ENetHost* host) {
     in_lobby_      = (initial_map_path_.find("_Lobby") != std::string::npos ||
                        initial_map_path_.find("_lobby") != std::string::npos);
     game_locked_   = false;
+    game_mode_     = 1;   // reset to cooperative (default) when lobby reopens
+    coop_cleared_levels_ = 0;
     session_token_ = 0u;
     current_level_ = in_lobby_ ? 0 : initial_level_;
     level_mgr_.Load(initial_map_path_.c_str());
@@ -494,11 +506,24 @@ void ServerSession::SendResults(ENetHost* host, const char* reason) {
             if (a.finished != b.finished) return a.finished > b.finished;
             return a.level_ticks < b.level_ticks;
         });
-    // Registra il vincitore del livello (1° classificato tra chi ha finito).
-    if (!entries.empty() && entries[0].finished) {
-        session_wins_[entries[0].player_id]++;
-        printf("[server] WIN player_id=%u (total wins=%u)\n",
-               entries[0].player_id, session_wins_[entries[0].player_id]);
+
+    if (game_mode_ == 1) {
+        // Cooperative: check whether ALL players finished; track team clears.
+        const bool all_done = !entries.empty() &&
+            std::all_of(entries.begin(), entries.end(),
+                        [](const ResultEntry& e){ return e.finished != 0; });
+        if (all_done) {
+            coop_cleared_levels_++;
+            printf("[server] COOP CLEARED (total=%u)\n", coop_cleared_levels_);
+        }
+        res_pkt.coop_all_finished = all_done ? 1u : 0u;
+    } else {
+        // Competitive: record the winner's tally.
+        if (!entries.empty() && entries[0].finished) {
+            session_wins_[entries[0].player_id]++;
+            printf("[server] WIN player_id=%u (total wins=%u)\n",
+                   entries[0].player_id, session_wins_[entries[0].player_id]);
+        }
     }
 
     res_pkt.count = static_cast<uint8_t>(entries.size());
@@ -528,7 +553,8 @@ void ServerSession::BroadcastGameState(ENetHost* host) {
             gs_pkt.state.players[gs_pkt.state.count++] = pl.GetState();
     }
     gs_pkt.state.next_level_countdown_ticks = CountdownTicks();
-    gs_pkt.state.is_lobby = in_lobby_ ? 1u : 0u;
+    gs_pkt.state.is_lobby    = in_lobby_ ? 1u : 0u;
+    gs_pkt.state.game_mode   = game_mode_;
     if (!in_lobby_ && !in_results_) {
         const uint32_t el = enet_time_get() - level_start_ms_;
         gs_pkt.state.time_limit_secs = el < LEVEL_TIME_LIMIT_MS
@@ -636,6 +662,13 @@ void ServerSession::UpdateZone() {
 // ---------------------------------------------------------------------------
 bool ServerSession::AllInZone() const {
     if (players_.empty()) return false;
+    if (game_mode_ == 1) {
+        // Cooperative: level is complete when ALL players have reached the exit tile.
+        for (const auto& [peer, pl] : players_)
+            if (!pl.GetState().finished) return false;
+        return true;
+    }
+    // Competitive: all players standing on 'E' simultaneously triggers countdown.
     const World& world = level_mgr_.GetWorld();
     for (const auto& [peer, pl] : players_) {
         const PlayerState& s = pl.GetState();
@@ -670,7 +703,77 @@ PlayerState ServerSession::ApplySpawnReset(PlayerState s, bool with_kill) const 
 }
 
 // ---------------------------------------------------------------------------
-// SendGlobalResults — classifica vittorie di sessione
+// HandleSetGameMode — lobby host changes cooperative/competitive mode
+// ---------------------------------------------------------------------------
+void ServerSession::HandleSetGameMode(ENetPeer* peer, uint8_t mode) {
+    auto it = players_.find(peer);
+    if (it == players_.end()) return;
+    // Only the first player (host, player_id == 1) can change the mode.
+    if (it->second.GetState().player_id != 1u) return;
+    game_mode_ = (mode == 1u) ? 1u : 0u;
+    printf("[server] GAME_MODE set to %s\n",
+           game_mode_ == 1 ? "cooperative" : "competitive");
+}
+
+// ---------------------------------------------------------------------------
+// ResolvePlayerCollisions — coop only: push overlapping player AABBs apart
+// ---------------------------------------------------------------------------
+void ServerSession::ResolvePlayerCollisions() {
+    // Collect mutable states.
+    std::vector<std::pair<ENetPeer*, PlayerState>> states;
+    states.reserve(players_.size());
+    for (auto& [peer, pl] : players_)
+        states.push_back({peer, pl.GetState()});
+
+    for (size_t i = 0; i < states.size(); ++i) {
+        for (size_t j = i + 1; j < states.size(); ++j) {
+            PlayerState& a = states[i].second;
+            PlayerState& b = states[j].second;
+
+            // Skip dead / respawning players.
+            if (a.kill_respawn_ticks > 0 || b.kill_respawn_ticks > 0) continue;
+
+            const float ax0 = a.x, ax1 = a.x + TILE_SIZE;
+            const float ay0 = a.y, ay1 = a.y + TILE_SIZE;
+            const float bx0 = b.x, bx1 = b.x + TILE_SIZE;
+            const float by0 = b.y, by1 = b.y + TILE_SIZE;
+
+            if (ax1 <= bx0 || bx1 <= ax0 || ay1 <= by0 || by1 <= ay0) continue;
+
+            // Compute overlap on each axis.
+            const float ov_x = (ax0 < bx0) ? (ax1 - bx0) : (bx1 - ax0);
+            const float ov_y = (ay0 < by0) ? (ay1 - by0) : (by1 - ay0);
+
+            if (ov_y < ov_x) {
+                // Resolve vertically: one player stands on the other.
+                // Also transfer horizontal velocity so the rider follows the carrier.
+                if (ay0 < by0) {
+                    a.y = by0 - static_cast<float>(TILE_SIZE);
+                    if (a.vel_y > 0.f) a.vel_y = 0.f;
+                    a.on_ground = true;
+                    // Rider follows carrier horizontally.
+                    a.x += (b.move_vel_x + b.vel_x) * FIXED_DT;
+                } else {
+                    b.y = ay0 - static_cast<float>(TILE_SIZE);
+                    if (b.vel_y > 0.f) b.vel_y = 0.f;
+                    b.on_ground = true;
+                    b.x += (a.move_vel_x + a.vel_x) * FIXED_DT;
+                }
+            } else {
+                // Resolve horizontally: push both players apart equally.
+                const float half = ov_x * 0.5f;
+                if (ax0 < bx0) { a.x -= half; b.x += half; }
+                else           { a.x += half; b.x -= half; }
+            }
+        }
+    }
+
+    // Write resolved states back.
+    for (auto& [peer, s] : states) {
+        auto it = players_.find(peer);
+        if (it != players_.end()) it->second.SetState(s);
+    }
+}
 // ---------------------------------------------------------------------------
 void ServerSession::SendGlobalResults(ENetHost* host) {
     // Unisci giocatori connessi + dati di chi ha già disconnesso (in session_wins_)
@@ -700,6 +803,8 @@ void ServerSession::SendGlobalResults(ENetHost* host) {
 
     PktGlobalResults pkt{};
     pkt.total_levels = static_cast<uint8_t>(current_level_ - 1);  // current_level_ was incremented to the failed load
+    pkt.game_mode    = game_mode_;
+    pkt.coop_wins    = static_cast<uint8_t>(coop_cleared_levels_);
     pkt.count = static_cast<uint8_t>(
         std::min(entries.size(), static_cast<size_t>(MAX_PLAYERS)));
     for (size_t i = 0; i < pkt.count; i++)

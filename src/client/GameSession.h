@@ -92,11 +92,14 @@ private:
     double            global_results_start_time_  = 0.0;
     uint8_t           global_results_count_       = 0;
     uint8_t           global_results_total_levels_= 0;
+    uint8_t           global_results_game_mode_   = 0;   // 0=competitive, 1=cooperative
+    uint8_t           global_results_coop_wins_   = 0;   // coop: levels cleared by team
     GlobalResultEntry global_results_entries_[MAX_PLAYERS] = {};
 
     bool     prev_finished_ = false;
     uint32_t best_ticks_    = 0;
     bool     show_record_   = false;
+    bool     results_coop_all_finished_ = false;   // set when PKT_LEVEL_RESULTS arrives in coop mode
 
     float   last_safe_x_           = 0.f;
     float   last_safe_y_           = 0.f;
@@ -127,7 +130,7 @@ private:
     // Emote system — per-player bubble state
     std::unordered_map<uint32_t, EmoteBubble> emote_bubbles_;
 
-    void HandlePauseInput(Renderer& renderer);
+    void HandlePauseInput(Renderer& renderer, NetworkClient& net);
     void TickFixed(NetworkClient& net);
     void PollNetwork(NetworkClient& net);
     void HandlePacket(const uint8_t* data, size_t size, NetworkClient& net);
