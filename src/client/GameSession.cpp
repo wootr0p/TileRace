@@ -99,6 +99,23 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
         }
     }
 
+    // 5c. Emote — send if pending
+    if (pause_state_ == PauseState::PLAYING) {
+        const int emote = input_sampler_.ConsumeEmotePending();
+        if (emote >= 0 && emote < EMOTE_COUNT) {
+            PktEmote epkt{};
+            epkt.emote_id = static_cast<uint8_t>(emote);
+            net.SendReliable(&epkt, sizeof(epkt));
+            // Show locally immediately
+            EmoteBubble& eb = emote_bubbles_[local_player_id_];
+            eb.emote_id = static_cast<uint8_t>(emote);
+            eb.timer    = EMOTE_DURATION;
+            eb.active   = true;
+            eb.last_x   = player_.GetState().x;
+            eb.last_y   = player_.GetState().y;
+        }
+    }
+
     // 6. Fixed-step loop (azzerato se in pausa, risultati o classifica globale)
     if (pause_state_ != PauseState::PLAYING || in_results_screen_ || in_global_results_screen_) accumulator_ = 0.f;
     while (accumulator_ >= FIXED_DT) {
@@ -444,6 +461,27 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
         }
         return;
     }
+
+    // PKT_EMOTE_BROADCAST: remote player triggered an emote
+    if (pkt_type == PKT_EMOTE_BROADCAST && size >= sizeof(PktEmoteBroadcast)) {
+        PktEmoteBroadcast epkt{};
+        std::memcpy(&epkt, data, sizeof(epkt));
+        if (epkt.player_id != local_player_id_ && epkt.emote_id < EMOTE_COUNT) {
+            EmoteBubble& eb = emote_bubbles_[epkt.player_id];
+            eb.emote_id = epkt.emote_id;
+            eb.timer    = EMOTE_DURATION;
+            eb.active   = true;
+            // Initialize position from current game state
+            for (uint32_t i = 0; i < last_game_state_.count; ++i) {
+                if (last_game_state_.players[i].player_id == epkt.player_id) {
+                    eb.last_x = last_game_state_.players[i].x;
+                    eb.last_y = last_game_state_.players[i].y;
+                    break;
+                }
+            }
+        }
+        return;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -639,6 +677,38 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
         if (local.kill_respawn_ticks == 0)
             renderer.DrawPlayer(draw_x, draw_y, local);
 
+        // --- Emote bubbles (world-space, above each player) ---
+        for (auto& [pid, eb] : emote_bubbles_) {
+            if (!eb.active) continue;
+            eb.timer -= dt;
+            if (eb.timer <= 0.f) { eb.active = false; continue; }
+            // Alpha: fade in for first 0.2s, fade out for last 0.5s, full in between
+            float alpha = 1.f;
+            const float elapsed = EMOTE_DURATION - eb.timer;
+            if (elapsed < 0.2f)      alpha = elapsed / 0.2f;
+            if (eb.timer < 0.5f)     alpha = std::min(alpha, eb.timer / 0.5f);
+            // Update position only while alive (freeze on death/respawn)
+            if (pid == local_player_id_) {
+                if (local.kill_respawn_ticks == 0 && local.respawn_grace_ticks == 0) {
+                    eb.last_x = draw_x;
+                    eb.last_y = draw_y;
+                }
+            } else {
+                for (uint32_t i = 0; i < last_game_state_.count; ++i) {
+                    const auto& rp = last_game_state_.players[i];
+                    if (rp.player_id == pid) {
+                        if (rp.kill_respawn_ticks == 0 && rp.respawn_grace_ticks == 0) {
+                            eb.last_x = rp.x;
+                            eb.last_y = rp.y;
+                        }
+                        break;
+                    }
+                }
+            }
+            renderer.DrawEmoteBubble(eb.last_x, eb.last_y - 24.f, eb.emote_id, alpha,
+                                     pid == local_player_id_);
+        }
+
     renderer.EndWorldDraw();
 
     // Off-screen player indicators (below HUD, above world)
@@ -677,6 +747,13 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
     if (last_game_state_.is_lobby)
         renderer.DrawLobbyHints(last_game_state_.next_level_countdown_ticks,
                                 last_game_state_.count);
+
+    // Emote wheel (screen-space, centered, above HUD, below pause)
+    if (input_sampler_.IsEmoteWheelOpen() && pause_state_ == PauseState::PLAYING) {
+        const float sw = static_cast<float>(GetScreenWidth());
+        const float sh = static_cast<float>(GetScreenHeight());
+        renderer.DrawEmoteWheel(sw * 0.5f, sh * 0.5f, input_sampler_.GetEmoteWheelHighlight());
+    }
 
     renderer.DrawPauseMenu(pause_state_, pause_focused_, confirm_focused_);
 

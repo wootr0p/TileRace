@@ -33,6 +33,11 @@ public:
     void  GetDashDir(float& dx, float& dy) const;
     bool  IsJumpHeld()                     const;
 
+    // Emote wheel (E key / right-stick click).
+    bool IsEmoteWheelOpen()       const { return emote_wheel_open_; }
+    int  GetEmoteWheelHighlight() const { return emote_highlight_; }  // -1 = none, 0-7 = direction
+    int  ConsumeEmotePending()           { int v = emote_pending_; emote_pending_ = -1; return v; }
+
 private:
     static constexpr int   GP          = 0;
     static constexpr float GP_DEADZONE = 0.25f;
@@ -48,4 +53,13 @@ private:
     bool  nav_ok_   = false;
 
     float prev_stick_y_ = 0.f;  // previous-frame stick Y for edge detection in pause navigation
+
+    // Emote wheel state
+    bool  emote_wheel_open_ = false;  // true while activation key is held
+    int   emote_highlight_  = -1;     // currently highlighted direction (-1 = none)
+    int   emote_pending_    = -1;     // emote to send (-1 = none)
+    bool  emote_kb_was_open_= false;  // previous-frame E key state (edge detection)
+    bool  emote_gp_was_open_= false;  // previous-frame L1 state
+
+    void PollEmote();  // called by Poll()
 };

@@ -247,15 +247,70 @@ void Renderer::DrawPlayer(float rx, float ry, const PlayerState& s, bool is_loca
     }
     DrawRectangle(static_cast<int>(rx), static_cast<int>(ry), TILE_SIZE, TILE_SIZE, col);
 
-    // Nome sopra il rettangolo — solo per i remoti
-    if (!is_local && s.name[0] != '\0') {
+    // Nome sopra il rettangolo — per tutti i player
+    if (s.name[0] != '\0') {
         const float   nm_sz = 24.f;
+        const Color   nm_col = is_local
+            ? Color{CLRS_PLAYER_LOCAL.r, CLRS_PLAYER_LOCAL.g, CLRS_PLAYER_LOCAL.b, 180}
+            : CLRS_PLAYER_REMOTE_NAME;
         const Vector2 nm_ts = MeasureTextEx(font_hud_, s.name, nm_sz, 1);
         DrawTextEx(font_hud_, s.name,
             {rx + TILE_SIZE * 0.5f - nm_ts.x * 0.5f, ry - nm_sz - 4},
-            nm_sz, 1,
-            CLRS_PLAYER_REMOTE_NAME);
+            nm_sz, 1, nm_col);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Emote wheel — world-space, local player only
+// ---------------------------------------------------------------------------
+void Renderer::DrawEmoteWheel(float cx, float cy, int highlighted_dir) {
+    // cx, cy = screen-space center of the wheel
+    constexpr float WHEEL_RADIUS  = 120.f;
+    constexpr float SLOT_RADIUS   = 32.f;
+    constexpr float EMOTE_FONT_SZ = 28.f;
+    constexpr float PI2            = 6.2831853f;
+
+    // Semi-transparent background circle
+    DrawCircle(static_cast<int>(cx), static_cast<int>(cy),
+               WHEEL_RADIUS + SLOT_RADIUS, {0, 0, 0, 120});
+
+    for (int i = 0; i < EMOTE_COUNT; ++i) {
+        // Angle: 0=Up, clockwise. atan2 convention: angle from +Y going CW.
+        const float angle = (static_cast<float>(i) / EMOTE_COUNT) * PI2 - PI2 * 0.25f;
+        const float sx = cx + cosf(angle) * WHEEL_RADIUS;
+        const float sy = cy + sinf(angle) * WHEEL_RADIUS;
+
+        const bool hl = (i == highlighted_dir);
+        const Color bg_col  = hl ? Color{CLRS_PLAYER_LOCAL.r, CLRS_PLAYER_LOCAL.g, CLRS_PLAYER_LOCAL.b, 220}
+                                 : Color{40, 40, 60, 180};
+        const Color txt_col = hl ? WHITE : Color{200, 200, 200, 200};
+
+        DrawCircle(static_cast<int>(sx), static_cast<int>(sy), SLOT_RADIUS, bg_col);
+        const Vector2 ts = MeasureTextEx(font_hud_, EMOTE_TEXTS[i], EMOTE_FONT_SZ, 1);
+        DrawTextEx(font_hud_, EMOTE_TEXTS[i],
+                   {sx - ts.x * 0.5f, sy - ts.y * 0.5f},
+                   EMOTE_FONT_SZ, 1, txt_col);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Emote bubble — world-space, shown above any player
+// ---------------------------------------------------------------------------
+void Renderer::DrawEmoteBubble(float px, float py, uint8_t emote_id, float alpha, bool is_local) {
+    if (emote_id >= EMOTE_COUNT || alpha <= 0.f) return;
+
+    const uint8_t a = static_cast<uint8_t>(alpha * 255.f);
+    const Color base = is_local ? CLRS_PLAYER_LOCAL : CLRS_PLAYER_REMOTE;
+    const Color col  = {base.r, base.g, base.b, a};
+
+    constexpr float FONT_SZ = 40.f;  // large, crisp (font_timer_ loaded at 48)
+    const float bx = px + TILE_SIZE * 0.5f;
+    const float by = py - 36.f;   // above the player (and name tag)
+
+    const Vector2 ts = MeasureTextEx(font_timer_, EMOTE_TEXTS[emote_id], FONT_SZ, 1);
+    DrawTextEx(font_timer_, EMOTE_TEXTS[emote_id],
+               {bx - ts.x * 0.5f, by - ts.y * 0.5f},
+               FONT_SZ, 1, col);
 }
 
 // ---------------------------------------------------------------------------

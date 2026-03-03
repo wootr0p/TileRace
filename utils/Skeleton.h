@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-03 16:32
+ * Generated : 2026-03-03 17:06
  * ============================================================================
  *
  * PURPOSE
@@ -389,6 +389,8 @@ enum PktType : uint8_t {
     PKT_GLOBAL_RESULTS    = 12,  // S → C  session-end global leaderboard (wins per player)
     PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete / Square
     PKT_LEVEL_DATA        = 14,  // S → C  generated level tile grid (variable-size packet)
+    PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
+    PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
 };
 
 struct PktInput {
@@ -493,6 +495,23 @@ struct PktLevelDataHeader {
 
 // Number of generated levels per session before returning to lobby.
 static constexpr int MAX_GENERATED_LEVELS = 8;
+
+// Emote system — 8 directional emotes (mapped clockwise from Up).
+static constexpr int   EMOTE_COUNT      = 8;
+static constexpr float EMOTE_DURATION    = 2.0f;   // seconds the bubble is visible
+static constexpr const char* EMOTE_TEXTS[EMOTE_COUNT] = { /* body stripped */ }
+// Direction labels for the wheel (Up, UpRight, Right, DownRight, Down, DownLeft, Left, UpLeft)
+
+struct PktEmote {
+    uint8_t type     = PKT_EMOTE;
+    uint8_t emote_id = 0;  // 0-7
+};
+
+struct PktEmoteBroadcast {
+    uint8_t  type      = PKT_EMOTE_BROADCAST;
+    uint8_t  emote_id  = 0;  // 0-7
+    uint32_t player_id = 0;
+};
 
 
 // ==========================================================================
@@ -1076,6 +1095,9 @@ private:
     std::string pending_disc_reason_;
     std::string pending_disc_sub_;
 
+    // Emote system — per-player bubble state
+    std::unordered_map<uint32_t, EmoteBubble> emote_bubbles_;
+
     void HandlePauseInput(Renderer& renderer);
     void TickFixed(NetworkClient& net);
     void PollNetwork(NetworkClient& net);
@@ -1130,6 +1152,11 @@ public:
     void  GetDashDir(float& dx, float& dy) const;
     bool  IsJumpHeld()                     const;
 
+    // Emote wheel (E key / right-stick click).
+    bool IsEmoteWheelOpen()       const { return emote_wheel_open_; }
+    int  GetEmoteWheelHighlight() const { return emote_highlight_; }  // -1 = none, 0-7 = direction
+    int  ConsumeEmotePending()           { int v = emote_pending_; emote_pending_ = -1; return v; }
+
 private:
     static constexpr int   GP          = 0;
     static constexpr float GP_DEADZONE = 0.25f;
@@ -1145,6 +1172,16 @@ private:
     bool  nav_ok_   = false;
 
     float prev_stick_y_ = 0.f;  // previous-frame stick Y for edge detection in pause navigation
+
+    // Emote wheel state
+    bool  emote_wheel_open_ = false;  // true while activation key is held
+    int   emote_highlight_  = -1;     // currently highlighted direction (-1 = none)
+    int   emote_pending_    = -1;     // emote to send (-1 = none)
+    bool  emote_kb_was_open_= false;  // previous-frame E key state (edge detection)
+    bool  emote_kb_fired_  = false;  // true after keyboard emote fired, reset on E release
+    bool  emote_gp_was_open_= false;  // previous-frame R3 state
+
+    void PollEmote();  // called by Poll()
 };
 
 
@@ -1285,6 +1322,7 @@ private:
 #include <cstdint>
 #include "VisualEffects.h"
 #include "GameState.h"
+#include "Protocol.h"   // EMOTE_TEXTS, EMOTE_COUNT
 
 class  World;
 struct PlayerState;
@@ -1315,6 +1353,10 @@ public:
     void DrawTrail(const TrailState& t, bool is_local);
     void DrawDeathParticles(const DeathParticles& dp);
     void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true);
+
+    // Emote system (world-space, call between BeginWorldDraw / EndWorldDraw)
+    void DrawEmoteWheel(float cx, float cy, int highlighted_dir);  // local-only wheel overlay
+    void DrawEmoteBubble(float px, float py, uint8_t emote_id, float alpha, bool is_local);
 
     // Screen-space HUD
     void DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players);
@@ -1475,6 +1517,13 @@ struct LiveLeaderEntry {
 };
 
 enum class PauseState { PLAYING, PAUSED, CONFIRM_QUIT };
+
+// Emote bubble — shown above a player after they trigger an emote.
+struct EmoteBubble {
+    uint8_t emote_id = 0;      // 0-7 index into EMOTE_TEXTS
+    float   timer    = 0.f;    // counts down from EMOTE_DURATION to 0
+    bool    active   = false;
+};
 
 
 // ==========================================================================

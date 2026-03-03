@@ -102,6 +102,9 @@ private:
     std::string pending_disc_reason_;
     std::string pending_disc_sub_;
 
+    // Emote system — per-player bubble state
+    std::unordered_map<uint32_t, EmoteBubble> emote_bubbles_;
+
     void HandlePauseInput(Renderer& renderer);
     void TickFixed(NetworkClient& net);
     void PollNetwork(NetworkClient& net);

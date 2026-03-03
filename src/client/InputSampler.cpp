@@ -50,6 +50,9 @@ void InputSampler::Poll() {
 
     nav_ok_ = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) ||
               (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
+
+    // Emote wheel
+    PollEmote();
 }
 
 // ---------------------------------------------------------------------------
@@ -59,8 +62,8 @@ void InputSampler::Poll() {
 float InputSampler::GetMoveX() const {
     const bool gp = IsGamepadAvailable(GP);
     float move_x = 0.f;
-    if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A)) move_x -= 1.f;
-    if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) move_x += 1.f;
+    if (IsKeyDown(KEY_A)) move_x -= 1.f;
+    if (IsKeyDown(KEY_D)) move_x += 1.f;
     if (gp) {
         const float ax = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_X);
         if (fabsf(ax) > GP_DEADZONE) {
@@ -77,10 +80,10 @@ float InputSampler::GetMoveX() const {
 void InputSampler::GetDashDir(float& dx, float& dy) const {
     const bool gp = IsGamepadAvailable(GP);
     dx = 0.f; dy = 0.f;
-    if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) dx += 1.f;
-    if (IsKeyDown(KEY_LEFT)  || IsKeyDown(KEY_A)) dx -= 1.f;
-    if (IsKeyDown(KEY_DOWN)  || IsKeyDown(KEY_S)) dy += 1.f;
-    if (IsKeyDown(KEY_UP)    || IsKeyDown(KEY_W)) dy -= 1.f;
+    if (IsKeyDown(KEY_D)) dx += 1.f;
+    if (IsKeyDown(KEY_A)) dx -= 1.f;
+    if (IsKeyDown(KEY_S)) dy += 1.f;
+    if (IsKeyDown(KEY_W)) dy -= 1.f;
     if (gp) {
         const float ax = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_X);
         const float ay = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_Y);
@@ -99,4 +102,68 @@ bool InputSampler::IsJumpHeld() const {
     return IsKeyDown(KEY_SPACE) ||
            (IsGamepadAvailable(GP) &&
             IsGamepadButtonDown(GP, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
+}
+
+// ---------------------------------------------------------------------------
+// Emote wheel polling
+// ---------------------------------------------------------------------------
+
+// Map a normalised (dx, dy) to one of 8 compass directions (0=Up .. 7=UpLeft), -1 if deadzone.
+static int DirToIndex(float dx, float dy, float deadzone) {
+    if (dx * dx + dy * dy < deadzone * deadzone) return -1;
+    // atan2 gives angle from positive-X axis; we want 0=Up, clockwise.
+    // Rotate 90° so Up maps to angle 0.
+    float angle = atan2f(dx, -dy);  // Up=(0,-1) → atan2(0, 1)=0
+    if (angle < 0.f) angle += 6.2831853f;  // [0, 2π)
+    // Each sector is 2π/8 = 0.7854 rad wide, centered on sector boundary.
+    int idx = static_cast<int>((angle + 0.3927f) / 0.7854f) % 8;
+    return idx;
+}
+
+void InputSampler::PollEmote() {
+    const bool gp = IsGamepadAvailable(GP);
+
+    // --- Keyboard: hold E, arrow keys select, release E to fire ---
+    const bool kb_open = IsKeyDown(KEY_E);
+    if (kb_open) {
+        emote_wheel_open_ = true;
+        // Live-read arrow direction (highlight follows held keys)
+        float dx = 0.f, dy = 0.f;
+        if (IsKeyDown(KEY_RIGHT)) dx += 1.f;
+        if (IsKeyDown(KEY_LEFT))  dx -= 1.f;
+        if (IsKeyDown(KEY_DOWN))  dy += 1.f;
+        if (IsKeyDown(KEY_UP))    dy -= 1.f;
+        int dir = DirToIndex(dx, dy, 0.3f);
+        emote_highlight_ = dir;  // -1 if no arrow held
+    }
+    if (!kb_open && emote_kb_was_open_) {
+        // E released — fire only if a direction is actively highlighted
+        if (emote_highlight_ >= 0) {
+            emote_pending_ = emote_highlight_;
+        }
+        emote_wheel_open_ = false;
+        emote_highlight_  = -1;
+    }
+    emote_kb_was_open_ = kb_open;
+
+    // --- Gamepad: hold L1, right stick selects, release L1 to fire ---
+    if (gp) {
+        const bool gp_open = IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_TRIGGER_1);
+        if (gp_open) {
+            emote_wheel_open_ = true;
+            const float rx = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_RIGHT_X);
+            const float ry = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_RIGHT_Y);
+            // Highlight follows stick in real-time; resets to -1 in deadzone
+            emote_highlight_ = DirToIndex(rx, ry, 0.4f);
+        }
+        if (!gp_open && emote_gp_was_open_) {
+            // L1 released — fire only if stick was pointing a direction
+            if (emote_highlight_ >= 0) {
+                emote_pending_ = emote_highlight_;
+            }
+            emote_wheel_open_ = false;
+            emote_highlight_  = -1;
+        }
+        emote_gp_was_open_ = gp_open;
+    }
 }

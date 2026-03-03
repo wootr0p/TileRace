@@ -41,6 +41,8 @@ enum PktType : uint8_t {
     PKT_GLOBAL_RESULTS    = 12,  // S → C  session-end global leaderboard (wins per player)
     PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete / Square
     PKT_LEVEL_DATA        = 14,  // S → C  generated level tile grid (variable-size packet)
+    PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
+    PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
 };
 
 struct PktInput {
@@ -145,3 +147,22 @@ struct PktLevelDataHeader {
 
 // Number of generated levels per session before returning to lobby.
 static constexpr int MAX_GENERATED_LEVELS = 8;
+
+// Emote system — 8 directional emotes (mapped clockwise from Up).
+static constexpr int   EMOTE_COUNT      = 8;
+static constexpr float EMOTE_DURATION    = 2.0f;   // seconds the bubble is visible
+static constexpr const char* EMOTE_TEXTS[EMOTE_COUNT] = {
+    "?", "!", "u.u", ":D", "xD", ";)", "T.T", "=)"
+};
+// Direction labels for the wheel (Up, UpRight, Right, DownRight, Down, DownLeft, Left, UpLeft)
+
+struct PktEmote {
+    uint8_t type     = PKT_EMOTE;
+    uint8_t emote_id = 0;  // 0-7
+};
+
+struct PktEmoteBroadcast {
+    uint8_t  type      = PKT_EMOTE_BROADCAST;
+    uint8_t  emote_id  = 0;  // 0-7
+    uint32_t player_id = 0;
+};

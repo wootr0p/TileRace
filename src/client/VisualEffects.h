@@ -40,3 +40,12 @@ struct LiveLeaderEntry {
 };
 
 enum class PauseState { PLAYING, PAUSED, CONFIRM_QUIT };
+
+// Emote bubble — shown above a player after they trigger an emote.
+struct EmoteBubble {
+    uint8_t emote_id = 0;      // 0-7 index into EMOTE_TEXTS
+    float   timer    = 0.f;    // counts down from EMOTE_DURATION to 0
+    bool    active   = false;
+    float   last_x   = 0.f;    // last known world position (frozen on death)
+    float   last_y   = 0.f;
+};

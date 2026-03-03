@@ -6,6 +6,7 @@
 #include <cstdint>
 #include "VisualEffects.h"
 #include "GameState.h"
+#include "Protocol.h"   // EMOTE_TEXTS, EMOTE_COUNT
 
 class  World;
 struct PlayerState;
@@ -36,6 +37,10 @@ public:
     void DrawTrail(const TrailState& t, bool is_local);
     void DrawDeathParticles(const DeathParticles& dp);
     void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true);
+
+    // Emote system (world-space, call between BeginWorldDraw / EndWorldDraw)
+    void DrawEmoteWheel(float cx, float cy, int highlighted_dir);  // local-only wheel overlay
+    void DrawEmoteBubble(float px, float py, uint8_t emote_id, float alpha, bool is_local);
 
     // Screen-space HUD
     void DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players);

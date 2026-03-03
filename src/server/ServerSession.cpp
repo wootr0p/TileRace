@@ -156,6 +156,22 @@ bool ServerSession::OnReceive(ENetHost* host, ENetPeer* peer,
     if (type == PKT_READY && (in_results_ || in_global_results_)) {
         return HandleReady(host, peer);
     }
+    if (type == PKT_EMOTE && len >= sizeof(PktEmote)) {
+        PktEmote epkt{};
+        std::memcpy(&epkt, data, sizeof(PktEmote));
+        // Relay to all clients as PKT_EMOTE_BROADCAST
+        auto it = players_.find(peer);
+        if (it != players_.end()) {
+            PktEmoteBroadcast bcast{};
+            bcast.emote_id  = epkt.emote_id;
+            bcast.player_id = it->second.GetState().player_id;
+            ENetPacket* pkt = enet_packet_create(&bcast, sizeof(bcast),
+                                                  ENET_PACKET_FLAG_RELIABLE);
+            enet_host_broadcast(host, CHANNEL_RELIABLE, pkt);
+            enet_host_flush(host);
+        }
+        return false;
+    }
     return false;
 }
 
