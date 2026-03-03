@@ -1,34 +1,30 @@
 #pragma once
 #include <cstdint>
 
-// ---------------------------------------------------------------------------
-// InputFrame — snapshot dell'input per un singolo tick fisso.
-// Struttura deterministica: server e client ne condividono la definizione.
-// Tutti i bit sono "campionati" lato client e consumati in Player::Simulate.
-// ---------------------------------------------------------------------------
-
-// Bit-flag dei pulsanti.
+// Button bitmask. Rising-edge flags (JUMP_PRESS, DASH) are set in InputSampler::Poll()
+// and cleared after one fixed tick so they fire exactly once per physical press.
 enum InputBits : uint8_t {
-    BTN_LEFT       = 1 << 0,  // tenuto premuto --> movimento sinistra
-    BTN_RIGHT      = 1 << 1,  // tenuto premuto --> movimento destra
-    BTN_JUMP       = 1 << 2,  // tenuto premuto --> usato per variable-jump cut
-    BTN_JUMP_PRESS = 1 << 3,  // edge rising (sticky) --> setta jump buffer
-    BTN_DASH       = 1 << 4,  // edge rising (sticky) --> avvia dash
-    BTN_UP         = 1 << 5,  // tenuto premuto --> direzione dash / steer verso l'alto
-    BTN_DOWN       = 1 << 6,  // tenuto premuto --> direzione dash / steer verso il basso
+    BTN_LEFT       = 1 << 0,  // move left (held)
+    BTN_RIGHT      = 1 << 1,  // move right (held)
+    BTN_JUMP       = 1 << 2,  // jump held; used for variable-height cut
+    BTN_JUMP_PRESS = 1 << 3,  // rising edge — sets jump buffer
+    BTN_DASH       = 1 << 4,  // rising edge — starts dash
+    BTN_UP         = 1 << 5,  // held — dash direction / upward steer
+    BTN_DOWN       = 1 << 6,  // held — dash direction / downward steer
 };
 
+// Deterministic input snapshot for one 60 Hz fixed tick.
+// Identical layout on client and server: same inputs + same PlayerState = same result.
 struct InputFrame {
-    uint32_t tick    = 0;     // numero del tick fisso (60Hz, monotono)
-    uint8_t  buttons = 0;     // OR di InputBits
+    uint32_t tick    = 0;     // monotonic fixed-tick counter (60 Hz)
+    uint8_t  buttons = 0;     // OR of InputBits
 
-    // Direzione grezza per dash e sterzata (analogica se gamepad, discreta ±1 se tastiera).
-    // Viene normalizzata internamente in Player::Simulate / RequestDash / SteerDash.
+    // Raw direction for dash targeting and in-flight steering.
+    // Normalised internally in Player::Simulate / RequestDash / SteerDash.
     float dash_dx = 0.f;
     float dash_dy = 0.f;
 
-    // Asse X analogico per il movimento orizzontale: intervallo [-1, 1].
-    // Tastiera/DPAD = ±1.0, stick analogico = valore grezzo (dopo deadzone).
+    // Horizontal movement axis [-1, 1]. Keyboard/DPAD = ±1.0; analogue stick = raw after deadzone.
     float move_x  = 0.f;
 
     bool Has(InputBits b) const { return (buttons & b) != 0; }

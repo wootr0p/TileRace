@@ -2,28 +2,25 @@
 #include <string>
 #include <vector>
 
-// World contiene la tilemap caricata da file .txt.
-// Zero dipendenze esterne: solo STL.
+// Tilemap loaded from a plain-text .txt file. No external dependencies.
 //
-// Caratteri riconosciuti:
-//   '0' = muro        (solido)
-//   'E' = endpoint    (non solido — vincere toccandolo; il player ci passa attraverso)
-//   'K' = kill        (non solido — toccare = ricomincia il livello dal via)
-//   'X' = spawn       (non solido — posizione iniziale giocatori)
-//   ' ' = aria        (non solido)
+// Recognised tile characters:
+//   '0' = wall   (solid)
+//   'E' = exit   (non-solid; win condition on touch)
+//   'K' = kill   (non-solid; touching respawns the player)
+//   'X' = spawn  (non-solid; player start position)
+//   ' ' = air
 class World {
 public:
-    // Carica la mappa da file. Ritorna true se il file è stato aperto con successo.
+    // Returns true if the file was opened successfully.
     bool LoadFromFile(const char* path);
 
-    // Ritorna true se il tile (tx, ty) è solido ('0' o 'E').
-    // Fuori dai limiti --> false (non si rimane incastrati ai bordi della mappa).
+    // Returns true if tile (tx, ty) is solid ('0'). Out-of-bounds coords → false.
     bool IsSolid(int tx, int ty) const;
 
-    // Ritorna il carattere grezzo del tile, o ' ' se fuori dai limiti.
+    // Returns the raw tile char at (tx, ty), or ' ' if out of bounds.
     char GetTile(int tx, int ty) const;
 
-    // Dimensioni della mappa in tile.
     int GetWidth()  const { return width_; }
     int GetHeight() const { return height_; }
 

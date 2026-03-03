@@ -1,21 +1,15 @@
 #pragma once
 #include <cstdint>
 
-// ---------------------------------------------------------------------------
-// SaveData — dati persistenti del giocatore.
-// Serializzati come JSON, poi offuscati con XOR prima della scrittura su disco.
-// Le funzioni Load/Save gestiscono tutto; il chiamante lavora solo con la struct.
-// ---------------------------------------------------------------------------
-
+// Persistent player data. Serialised as JSON then XOR-obfuscated before writing to disk.
+// Callers work only with this struct; Load/Save handle all I/O.
 struct SaveData {
-    char     username[16] = {};     // ultimo nickname usato
-    char     last_ip[64]  = {};     // ultimo IP usato in ONLINE
-    // futuro: uint32_t best_ticks[MAX_LEVELS] = {};
+    char username[16] = {};
+    char last_ip[64]  = {};
 };
 
-// Carica da "save.dat" nella CWD. Ritorna true se il file era valido.
-// In caso di errore (file mancante, checksum errato) la struct rimane a zero.
+// Load from "save.dat" in the CWD. Returns true if the file was valid.
+// On error (missing file, bad checksum) the struct is left zero-initialised.
 bool LoadSaveData(SaveData& out);
 
-// Salva su "save.dat" nella CWD.
 void SaveSaveData(const SaveData& data);

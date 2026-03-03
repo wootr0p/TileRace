@@ -86,6 +86,7 @@ void Player::RequestDash(float dx, float dy) {
         state_.dash_ready         = false;  // carica consumata finché non si tocca terra
         state_.vel_x              = 0.f;
         state_.vel_y              = 0.f;
+        state_.coyote_ticks       = 0;    // BUG1: il dash azzera il coyote time per non permettere salti lontano dalla piattaforma
         state_.last_wall_jump_dir = 0;  // resetta: può wall-jumpare su entrambi i lati dopo il dash
     }
 }
@@ -222,6 +223,10 @@ void Player::MoveY(float dt, const World& world) {
             // temporaneamente al segno del movimento altrimenti la collisione viene ignorata.
             state_.vel_y = dy;
             ResolveCollisionsY(world);
+            // BUG3: ResolveCollisionsY può ricaricare dash_ready quando si tocca terra
+            // durante un dash diagonale verso il basso. Forziamo dash_ready=false per
+            // tutta la durata del dash (verra' ricaricato al prossimo atterraggio vero).
+            state_.dash_ready = false;
         }
         state_.vel_y = 0.f;  // resetta durante il dash
         // Decrementa il contatore e avvia il cooldown a fine dash
@@ -233,8 +238,14 @@ void Player::MoveY(float dt, const World& world) {
             state_.dash_jump_ticks = static_cast<uint8_t>(DASH_JUMP_WINDOW_TICKS);
             // Se il dash era verso il basso, trasferisci la velocità verticale anziché
             // resettarla a 0: evita la pausa "galleggiante" post-dash in caduta.
-            if (state_.dash_dir_y > 0.f)
-                state_.vel_y = state_.dash_dir_y * DASH_SPEED;
+            if (state_.dash_dir_y > 0.f) {
+                state_.vel_y     = state_.dash_dir_y * DASH_SPEED;
+                // BUG2: ResolveCollisionsY nell'ultimo tick del dash potrebbe aver impostato
+                // on_ground=true (player era sulla piattaforma). Se lasciamo on_ground=true
+                // il prossimo tick usa il ramo "ground probe" (vel_y=1) che scarta la vel_y
+                // appena assegnata. Forziamo on_ground=false per far partire la caduta libera.
+                state_.on_ground = false;
+            }
         }
         return;
     }

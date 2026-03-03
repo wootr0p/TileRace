@@ -10,10 +10,16 @@
 #   fase avanzata → AudioManager.h / AudioManager.cpp
 add_executable(TileRace
     main.cpp
+    Renderer.cpp
     MainMenu.cpp
     LocalServer.cpp
     SaveData.cpp
     WinIcon.cpp
+    VisualEffects.cpp
+    UIWidgets.cpp
+    NetworkClient.cpp
+    InputSampler.cpp
+    GameSession.cpp
 )
 
 # ENet non esporta include dir come PUBLIC, quindi la aggiungiamo manualmente.

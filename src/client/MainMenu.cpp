@@ -3,95 +3,73 @@
 // Tutto testo, SpaceMono-Regular, nessun riquadro.
 
 #include "MainMenu.h"
+#include "Colors.h"
+#include "UIWidgets.h"
 #include "SaveData.h"
 #include "Protocol.h"
 #include <cstring>
 #include <cstdio>
-
-// ---------------------------------------------------------------------------
-// Palette
-// ---------------------------------------------------------------------------
-static constexpr Color BG_COL     = {  5,   5,  15, 255};
-static constexpr Color ACCENT_COL = {  0, 220, 255, 255};
-static constexpr Color TXT_MAIN   = {200, 200, 220, 255};
-static constexpr Color TXT_DIM    = { 80,  80, 100, 255};
+#include <cmath>
 
 static constexpr float SZ = 24.f;   // dimensione unica del font
-static constexpr float SP = 10.f;   // spaziatura verticale tra righe
 
 // ---------------------------------------------------------------------------
-// Helpers
+// ShowSplashScreen
 // ---------------------------------------------------------------------------
-static bool Hovered(Rectangle r) {
-    return CheckCollisionPointRec(GetMousePosition(), r);
-}
-static bool Clicked(Rectangle r) {
-    return Hovered(r) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-}
+void ShowSplashScreen(Font& font) {
+    Font font_title = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 96, nullptr, 0);
 
-// Disegna un pulsante testo con prefisso '> ' se selezionato.
-static Rectangle DrawTextBtn(Font& f, const char* label, float cx, float y, bool selected = false) {
-    const Vector2 ts = MeasureTextEx(f, label, SZ, 1);
-    Rectangle r = {cx - ts.x * 0.5f - 20, y, ts.x + 40, SZ + SP};
-    const Color col = selected ? ACCENT_COL : TXT_MAIN;
-    const char* prefix = selected ? "> " : "  ";
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%s%s", prefix, label);
-    const Vector2 bts = MeasureTextEx(f, buf, SZ, 1);
-    DrawTextEx(f, buf, {cx - bts.x * 0.5f, y}, SZ, 1, col);
-    return r;
-}
+    // Salta gli input nel primo frame per evitare falsi positivi
+    bool skip_input = true;
+    double blink_timer = 0.0;
 
-// Disegna un campo testo con label e linea di separazione.
-static void DrawTextField(Font& f, const char* label,
-                          float cx, float y, const char* buf, bool focused) {
-    // Label
-    const Vector2 lts = MeasureTextEx(f, label, SZ, 1);
-    DrawTextEx(f, label, {cx - lts.x * 0.5f, y}, SZ, 1, TXT_DIM);
-    y += SZ + 4;
+    while (!WindowShouldClose()) {
+        const float W  = (float)GetScreenWidth();
+        const float H  = (float)GetScreenHeight();
+        const float cx = W * 0.5f;
 
-    // Valore
-    const char* display = buf[0] ? buf : "_";
-    const Color vcol    = focused ? ACCENT_COL : TXT_MAIN;
-    const Vector2 vts   = MeasureTextEx(f, display, SZ, 1);
-    DrawTextEx(f, display, {cx - vts.x * 0.5f, y}, SZ, 1, vcol);
-
-    // Cursore lampeggiante se attivo
-    if (focused && ((int)(GetTime() * 2) % 2 == 0) && buf[0]) {
-        DrawTextEx(f, "_", {cx - vts.x * 0.5f + vts.x, y}, SZ, 1, ACCENT_COL);
-    }
-
-    // Linea sotto il valore
-    const float line_w = 260.f;
-    const Color line_c = focused ? ACCENT_COL : TXT_DIM;
-    DrawLineEx({cx - line_w * 0.5f, y + SZ + 2}, {cx + line_w * 0.5f, y + SZ + 2},
-               focused ? 1.5f : 1.f, line_c);
-}
-
-// Gestisce l'input da tastiera su un campo testo.
-static bool PollFieldInput(char* buf, int maxlen) {
-    bool changed = false;
-    if (IsKeyPressed(KEY_BACKSPACE)) {
-        const int len = (int)std::strlen(buf);
-        if (len > 0) { buf[len - 1] = '\0'; changed = true; }
-    }
-    int ch;
-    while ((ch = GetCharPressed()) != 0) {
-        const int len = (int)std::strlen(buf);
-        if (len < maxlen - 1) {
-            buf[len]     = (char)ch;
-            buf[len + 1] = '\0';
-            changed = true;
+        // Qualsiasi tasto/mouse/gamepad conferma
+        const bool gp = IsGamepadAvailable(0);
+        bool any_input = false;
+        if (!skip_input) {
+            if (GetKeyPressed() != 0)          any_input = true;
+            if (IsMouseButtonPressed(0) ||
+                IsMouseButtonPressed(1) ||
+                IsMouseButtonPressed(2))       any_input = true;
+            if (gp) {
+                for (int b = 0; b <= GAMEPAD_BUTTON_RIGHT_THUMB; b++)
+                    if (IsGamepadButtonPressed(0, (GamepadButton)b)) { any_input = true; break; }
+            }
         }
-    }
-    return changed;
-}
 
-// Testo centrato.
-static void DrawCentered(Font& f, const char* text, float cx, float y,
-                         float sz, Color col) {
-    const Vector2 ts = MeasureTextEx(f, text, sz, 1);
-    DrawTextEx(f, text, {cx - ts.x * 0.5f, y}, sz, 1, col);
+        blink_timer += GetFrameTime();
+        const bool blink_visible = fmod(blink_timer, 1.0) < 0.65;  // 650ms on, 350ms off
+
+        BeginDrawing();
+        skip_input = false;
+        ClearBackground(CLRS_BG_MENU);
+
+        // Titolo grande centrato a circa 1/3 dallalto
+        UIWidgets::DrawCentered(font_title, "Tile Race", cx, H * 0.32f, 96.f, CLRS_ACCENT);
+
+        // "Press any button to start" con blink
+        if (blink_visible)
+            UIWidgets::DrawCentered(font, "Press any button to start",
+                                    cx, H * 0.62f, SZ, CLRS_TEXT_MAIN);
+
+        // Versione angolo in basso a destra
+        {
+            const char* ver = TextFormat("v%s", GAME_VERSION);
+            const Vector2 vs = MeasureTextEx(font, ver, SZ * 0.6f, 1);
+            DrawTextEx(font, ver, {W - vs.x - 10, H - vs.y - 8}, SZ * 0.6f, 1, CLRS_TEXT_DIM);
+        }
+
+        EndDrawing();
+
+        if (any_input) break;
+    }
+
+    UnloadFont(font_title);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,8 +130,8 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
         if (nav_prev) btn_focus = 0;
 
         // ---- Input testo nel campo attivo ----
-        if (screen == Screen::MAIN) PollFieldInput(res.username,  (int)sizeof(res.username));
-        else                        PollFieldInput(res.server_ip, (int)sizeof(res.server_ip));
+        if (screen == Screen::MAIN) UIWidgets::PollFieldInput(res.username,  (int)sizeof(res.username));
+        else                        UIWidgets::PollFieldInput(res.server_ip, (int)sizeof(res.server_ip));
 
         // ---- Azioni ----
         MenuChoice pending_choice = MenuChoice::QUIT;
@@ -185,62 +163,62 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
         // ---- Render ----
         BeginDrawing();
         skip_input = false;  // da ora PollInputEvents() ha azzerato i pressed del frame precedente
-        ClearBackground(BG_COL);
+        ClearBackground(CLRS_BG_MENU);
 
         if (screen == Screen::MAIN) {
             // Titolo
-            DrawCentered(font_title, "Tile Race", cx, H * 0.18f, 64.f, ACCENT_COL);
+            UIWidgets::DrawCentered(font_title, "Tile Race", cx, H * 0.18f, 64.f, CLRS_ACCENT);
 
             // Campo nome (sempre attivo per la digitazione)
             const float field_y = H * 0.40f;
-            DrawTextField(font, "name", cx, field_y, res.username, true);
+            UIWidgets::DrawTextField(font, "name", cx, field_y, res.username, true);
 
             // Pulsanti
             const float btn_y = H * 0.62f;
-            Rectangle r_off = DrawTextBtn(font, "OFFLINE", cx - 120, btn_y, btn_focus == 0);
-            Rectangle r_on  = DrawTextBtn(font, "ONLINE",  cx + 120, btn_y, btn_focus == 1);
+            Rectangle r_off = UIWidgets::DrawTextBtn(font, "OFFLINE", cx - 120, btn_y, btn_focus == 0);
+            Rectangle r_on  = UIWidgets::DrawTextBtn(font, "ONLINE",  cx + 120, btn_y, btn_focus == 1);
 
             // Aggiorna btn_focus se il mouse si sposta sopra un bottone
-            if (Hovered(r_off)) btn_focus = 0;
-            if (Hovered(r_on))  btn_focus = 1;
+            if (UIWidgets::Hovered(r_off)) btn_focus = 0;
+            if (UIWidgets::Hovered(r_on))  btn_focus = 1;
 
-            if (Clicked(r_off)) { pending_choice = MenuChoice::OFFLINE; has_action = true; }
-            if (Clicked(r_on))  { screen = Screen::ONLINE; btn_focus = 0; }
+            if (UIWidgets::Clicked(r_off)) { pending_choice = MenuChoice::OFFLINE; has_action = true; }
+            if (UIWidgets::Clicked(r_on))  { screen = Screen::ONLINE; btn_focus = 0; }
 
             // Hint
-            DrawCentered(font, "left/right: select   enter/cross: confirm   esc: quit",
-                         cx, H - SZ - 16, SZ, TXT_DIM);
+            UIWidgets::DrawCentered(font, "left/right: select   enter/cross: confirm   esc: quit",
+                         cx, H - SZ - 16, SZ, CLRS_TEXT_DIM);
 
         } else {  // Screen::ONLINE
             // Titolo
-            DrawCentered(font_title, "ONLINE", cx, H * 0.18f, 64.f, ACCENT_COL);
+            UIWidgets::DrawCentered(font_title, "ONLINE", cx, H * 0.18f, 64.f, CLRS_ACCENT);
 
             // Campo IP (sempre attivo per la digitazione)
             const float ip_y = H * 0.45f;
-            DrawTextField(font, "server ip", cx, ip_y, res.server_ip, true);
+            UIWidgets::DrawTextField(font, "server ip", cx, ip_y, res.server_ip, true);
 
             // Pulsanti: 0=BACK (sinistra), 1=CONNECT (destra)
             const float btn_y = H * 0.66f;
-            Rectangle r_back = DrawTextBtn(font, "BACK",    cx - 110, btn_y, btn_focus == 0);
-            Rectangle r_conn = DrawTextBtn(font, "CONNECT", cx + 110, btn_y, btn_focus == 1);
+            Rectangle r_back = UIWidgets::DrawTextBtn(font, "BACK",    cx - 110, btn_y, btn_focus == 0);
+            Rectangle r_conn = UIWidgets::DrawTextBtn(font, "CONNECT", cx + 110, btn_y, btn_focus == 1);
 
             // Aggiorna btn_focus se il mouse si sposta sopra un bottone
-            if (Hovered(r_back)) btn_focus = 0;
-            if (Hovered(r_conn)) btn_focus = 1;
+            if (UIWidgets::Hovered(r_back)) btn_focus = 0;
+            if (UIWidgets::Hovered(r_conn)) btn_focus = 1;
 
-            if (Clicked(r_conn)) { pending_choice = MenuChoice::ONLINE; has_action = true; }
-            if (Clicked(r_back)) { screen = Screen::MAIN; btn_focus = 0; }
+            if (UIWidgets::Clicked(r_conn)) { pending_choice = MenuChoice::ONLINE; has_action = true; }
+            if (UIWidgets::Clicked(r_back)) { screen = Screen::MAIN; btn_focus = 0; }
 
             // Hint
-            DrawCentered(font, "left/right: select   enter/cross: confirm   esc: back",
-                         cx, H - SZ - 16, SZ, TXT_DIM);
+            UIWidgets::DrawCentered(font, "left/right: select   enter/cross: confirm   esc: back",
+                         cx, H - SZ - 16, SZ, CLRS_TEXT_DIM);
         }
 
         // Versione (angolo in basso a destra, visibile in entrambe le schermate)
         {
             const char* ver = TextFormat("v%s", GAME_VERSION);
             const Vector2 vs = MeasureTextEx(font, ver, SZ * 0.6f, 1);
-            DrawTextEx(font, ver, {W - vs.x - 10, H - vs.y - 8}, SZ * 0.6f, 1, TXT_DIM);
+            DrawTextEx(font, ver, {W - vs.x - 10, H - vs.y - 8}, SZ * 0.6f, 1, CLRS_TEXT_DIM);
         }
 
         EndDrawing();

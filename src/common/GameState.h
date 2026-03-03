@@ -2,17 +2,15 @@
 #include "PlayerState.h"
 #include <cstdint>
 
-// Numero massimo di giocatori in partita.
-// Usato anche come limite ENet MAX_CLIENTS (non ha senso accettare più connessioni).
+// Max simultaneous players; mirrors MAX_CLIENTS in the ENet host setup.
 static constexpr int MAX_PLAYERS = 8;
 
-// Snapshot dello stato di gioco inviato dal server a ogni tick.
-// Contiene gli stati di tutti i player connessi; ogni PlayerState
-// porta al suo interno last_processed_tick per la reconciliation lato client.
+// Full-world authoritative snapshot broadcast by the server every tick.
+// Each contained PlayerState also carries last_processed_tick for client-side reconciliation.
 struct GameState {
-    uint32_t    count                        = 0;   // player attualmente in partita
-    PlayerState players[MAX_PLAYERS]         = {};  // stati autoritativi
-    uint32_t    next_level_countdown_ticks   = 0;  // > 0: conto alla rovescia cambio livello
-    uint32_t    time_limit_secs              = 0;  // secondi rimanenti del limite di 2 minuti
-    uint8_t     is_lobby                     = 0;  // 1 = siamo nella lobby (_lobby.txt)
+    uint32_t    count                      = 0;   // number of connected players
+    PlayerState players[MAX_PLAYERS]       = {};
+    uint32_t    next_level_countdown_ticks = 0;   // > 0: ticks until automatic level change
+    uint32_t    time_limit_secs            = 0;   // remaining seconds of the 2-minute time limit
+    uint8_t     is_lobby                   = 0;   // 1 when the active map is _lobby.txt
 };

@@ -5,9 +5,5 @@
 - Oneway platform
 
 - Generazione dei livelli casuali con chunk
-
-- Colori generati a tema casuale
-- Freccia che indica dove è il player
+- Colori generati a tema casuale in ogni livello
 - Togliere l'input dal player quando arriva, può solo ripartire.
-- Fare la Classifica Globale!
-- Aggiungere schermata iniziale Press start.

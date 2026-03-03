@@ -6,13 +6,18 @@
 enum class MenuChoice { OFFLINE, ONLINE, QUIT };
 
 struct MenuResult {
-    MenuChoice choice          = MenuChoice::OFFLINE;
-    char       server_ip[64]   = "127.0.0.1";
-    char       username[16]    = "Player";
-    uint16_t   port            = 7777;
+    MenuChoice choice        = MenuChoice::OFFLINE;
+    char       server_ip[64] = "127.0.0.1";
+    char       username[16]  = "Player";
+    uint16_t   port          = 7777;
 };
 
-// Mostra il menu principale (blocca finché l'utente non sceglie).
-// La finestra deve già essere aperta (InitWindow già chiamato).
-// Legge i valori iniziali da `save` e aggiorna+salva automaticamente prima di tornare.
+// Blocking splash screen — shows title + "Press any button to start".
+// Returns when any key, mouse button, or gamepad button is pressed.
+// The window must already be open (InitWindow already called).
+void ShowSplashScreen(Font& font);
+
+// Blocking menu loop — returns only when the user confirms a choice.
+// The window must already be open (InitWindow already called).
+// Reads initial field values from `save` and writes them back before returning.
 MenuResult ShowMainMenu(Font& font, SaveData& save);

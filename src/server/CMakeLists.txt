@@ -5,7 +5,11 @@
 #   passo 20 --> ServerLogic.cpp --> server_logic lib (condiviso con client per offline) ← COMPLETATO
 
 # --- server_logic: logica del server riusabile (standalone + LocalServer) ---
-add_library(server_logic STATIC ServerLogic.cpp)
+add_library(server_logic STATIC
+    ServerLogic.cpp
+    LevelManager.cpp
+    ServerSession.cpp
+)
 target_include_directories(server_logic PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}      # ServerLogic.h accessibile a chi linka
     ${enet_SOURCE_DIR}/include
