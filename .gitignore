@@ -70,3 +70,8 @@ Thumbs.db
 
 # AI
 .venv/
+
+# Deploy
+deploy/win/*
+deploy/linux/*
+deploy/mac/*
