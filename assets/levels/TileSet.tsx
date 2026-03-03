@@ -31,4 +31,28 @@
    <property name="type" value="checkpoint"/>
   </properties>
  </tile>
+ <tile id="5">
+  <properties>
+   <property name="solid" type="bool" value="false"/>
+   <property name="type" value="chunk_entry"/>
+  </properties>
+ </tile>
+ <tile id="6">
+  <properties>
+   <property name="solid" type="bool" value="false"/>
+   <property name="type" value="chunk_exit"/>
+  </properties>
+ </tile>
+ <tile id="8">
+  <properties>
+   <property name="solid" type="bool" value="false"/>
+   <property name="type" value="chunk_entry"/>
+  </properties>
+ </tile>
+ <tile id="9">
+  <properties>
+   <property name="solid" type="bool" value="false"/>
+   <property name="type" value="chunk_exit"/>
+  </properties>
+ </tile>
 </tileset>

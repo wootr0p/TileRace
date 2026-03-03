@@ -3,7 +3,7 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "tilemaps/Level02.tmj",
+    "activeFile": "chunks/Simple2.tmj",
     "expandedProjectPaths": [
     ],
     "file.lastUsedOpenFilter": "Tutti i file (*)",
@@ -31,6 +31,38 @@
                 "y": 510.6060606060605
             }
         },
+        "chunks/End.tmj": {
+            "scale": 0.6642578124999999,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 212.26698029991178,
+                "y": 191.94354601587764
+            }
+        },
+        "chunks/Simple.tmj": {
+            "scale": 0.5,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 528,
+                "y": 367
+            }
+        },
+        "chunks/Simple2.tmj": {
+            "scale": 0.8051609848484849,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 478.1652455160247,
+                "y": 482.51220229344307
+            }
+        },
+        "chunks/Start.tmj": {
+            "scale": 0.6642578124999999,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 368.8326962658042,
+                "y": 360.55277859453105
+            }
+        },
         "tilemaps/Level01.tmj": {
             "scale": 0.33,
             "selectedLayer": 0,
@@ -43,32 +75,40 @@
             "scale": 0.33,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 1209.090909090909,
-                "y": 689.3939393939394
+                "x": 800,
+                "y": 510.6060606060606
             }
         },
         "tilemaps/_Lobby.tmj": {
-            "scale": 0.5826171875,
+            "scale": 0.75,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 799.8390881662756,
-                "y": 512.3432785786122
+                "x": 800,
+                "y": 512.6666666666666
             }
         }
     },
     "last.externalTilesetPath": "D:/Personal/Raylib/Progetti/TileRace/assets/levels",
     "last.imagePath": "D:/Personal/Raylib/Progetti/TileRace/assets/levels",
     "map.fixedSize": false,
+    "map.lastUsedFormat": "json",
     "openFiles": [
         "TileSet.tsx",
         "tilemaps/_Lobby.tmj",
-        "tilemaps/Level01.tmj",
-        "tilemaps/Level02.tmj"
+        "chunks/Start.tmj",
+        "chunks/End.tmj",
+        "chunks/Simple.tmj",
+        "chunks/Simple2.tmj"
     ],
     "project": "Maps.tiled-project",
+    "property.type": "int",
     "recentFiles": [
         "TileSet.tsx",
         "tilemaps/_Lobby.tmj",
+        "chunks/Start.tmj",
+        "chunks/End.tmj",
+        "chunks/Simple.tmj",
+        "chunks/Simple2.tmj",
         "tilemaps/Level01.tmj",
         "tilemaps/Level02.tmj",
         "Level01.tmj",
