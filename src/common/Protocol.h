@@ -16,7 +16,7 @@ static constexpr uint8_t  CHANNEL_RELIABLE = 0;
 static constexpr uint8_t  CHANNEL_COUNT    = 1;
 
 // First map loaded on server start; players wait here between games.
-static constexpr const char* LOBBY_MAP_PATH = "assets/levels/_lobby.txt";
+static constexpr const char* LOBBY_MAP_PATH = "assets/levels/tilemaps/_Lobby.tmj";
 
 // ENet disconnect reason codes (32-bit). Bits[7:0] = reason; bits[31:16] = optional payload.
 enum DisconnectReason : uint32_t {
@@ -32,13 +32,14 @@ enum PktType : uint8_t {
     PKT_GAME_STATE        = 3,   // S → C  authoritative GameState broadcast
     PKT_WELCOME           = 4,   // S → C  assigned player_id + session_token
     PKT_PLAYER_INFO       = 5,   // C → S  name + protocol_version (sent right after PKT_WELCOME)
-    PKT_RESTART           = 6,   // C → S  reset to spawn (Backspace / Triangle)
+    PKT_RESTART           = 6,   // C → S  respawn at last checkpoint (or spawn if none); Backspace / Circle
     PKT_LOAD_LEVEL        = 7,   // S → C  load next level or return to menu (is_last=1)
     PKT_VERSION_MISMATCH  = 8,   // S → C  incompatible version; server disconnects immediately after
     PKT_SERVER_BUSY       = 9,   // S → C  session in progress, retry later
     PKT_LEVEL_RESULTS     = 10,  // S → C  end-of-level leaderboard
     PKT_READY             = 11,  // C → S  player ready for the next level
     PKT_GLOBAL_RESULTS    = 12,  // S → C  session-end global leaderboard (wins per player)
+    PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete / Square
 };
 
 struct PktInput {
@@ -69,10 +70,15 @@ struct PktRestart {
     uint8_t type = PKT_RESTART;
 };
 
+// Always resets to the level spawn point, discarding any saved checkpoint.
+struct PktRestartSpawn {
+    uint8_t type = PKT_RESTART_SPAWN;
+};
+
 struct PktLoadLevel {
     uint8_t type     = PKT_LOAD_LEVEL;
     uint8_t is_last  = 0;       // 1 = no more levels; client returns to main menu
-    char    path[64] = {};      // relative path, e.g. "assets/levels/level_02.txt"
+    char    path[64] = {};      // relative path, e.g. "assets/levels/tilemaps/Level02.tmj"
 };
 
 struct PktVersionMismatch {

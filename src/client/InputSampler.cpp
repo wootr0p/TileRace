@@ -17,8 +17,12 @@ void InputSampler::Poll() {
         dash_pending_ = true;
 
     if (IsKeyPressed(KEY_BACKSPACE) ||
-        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_UP)))
-        restart_pending_ = true;
+        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)))  // Circle
+        restart_checkpoint_ = true;
+
+    if (IsKeyPressed(KEY_DELETE) ||
+        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_UP)))     // Triangle
+        restart_spawn_ = true;
 
     // --- Toggle pausa ---
     if (IsKeyPressed(KEY_ESCAPE) ||

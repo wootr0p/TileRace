@@ -34,7 +34,8 @@ public:
 private:
     bool HandleInput     (ENetHost* host, ENetPeer* peer, const PktInput& pkt);
     void HandlePlayerInfo(ENetHost* host, ENetPeer* peer, const PktPlayerInfo& pkt);
-    void HandleRestart   (ENetPeer* peer);
+    void HandleRestart   (ENetPeer* peer);       // respawn at last checkpoint (or spawn)
+    void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn
     bool HandleReady     (ENetHost* host, ENetPeer* peer);  // returns true on level change
 
     // Load next map, reset all players, broadcast new state.

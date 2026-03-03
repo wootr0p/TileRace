@@ -1,7 +1,8 @@
 // ServerSession.cpp — implementazione della macchina a stati della sessione.
 
 #include "ServerSession.h"
-#include "PlayerReset.h"  // SpawnReset
+#include "PlayerReset.h"  // SpawnReset, CheckpointReset
+#include "SpawnFinder.h"   // FindCenterCheckpoint
 #include "Physics.h"      // TILE_SIZE, FIXED_DT
 #include <algorithm>
 #include <cstdio>
@@ -14,9 +15,11 @@
 ServerSession::ServerSession(const char* initial_map_path, int initial_level)
     : initial_map_path_(initial_map_path ? initial_map_path : "")
     , initial_level_(initial_level)
-    , current_level_(std::strstr(initial_map_path, "_lobby") != nullptr
-                         ? 0 : initial_level)
-    , in_lobby_(std::strstr(initial_map_path, "_lobby") != nullptr)
+    , current_level_([&]{ return (std::strstr(initial_map_path, "_Lobby") ||
+                                  std::strstr(initial_map_path, "_lobby"))
+                                  ? 0 : initial_level_; }())
+    , in_lobby_(std::strstr(initial_map_path, "_Lobby") ||
+                std::strstr(initial_map_path, "_lobby"))
 {
     is_ready_      = level_mgr_.Load(initial_map_path);
     level_start_ms_ = enet_time_get();
@@ -87,7 +90,8 @@ bool ServerSession::OnDisconnect(ENetHost* host, ENetPeer* peer) {
         in_results_    = false;
         ready_peers_.clear();
         best_ticks_.clear();
-        in_lobby_      = (initial_map_path_.find("_lobby") != std::string::npos);
+        in_lobby_      = (initial_map_path_.find("_Lobby") != std::string::npos ||
+                           initial_map_path_.find("_lobby") != std::string::npos);
         game_locked_   = false;
         session_token_ = 0u;
         current_level_ = in_lobby_ ? 0 : initial_level_;
@@ -122,6 +126,10 @@ bool ServerSession::OnReceive(ENetHost* host, ENetPeer* peer,
     }
     if (type == PKT_RESTART && len >= sizeof(PktRestart)) {
         HandleRestart(peer);
+        return false;
+    }
+    if (type == PKT_RESTART_SPAWN && len >= sizeof(PktRestartSpawn)) {
+        HandleRestartSpawn(peer);
         return false;
     }
     if (type == PKT_READY && (in_results_ || in_global_results_)) {
@@ -178,6 +186,31 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
         }
     }
 
+    // --- Checkpoint tile 'C' ---
+    if (!s.finished) {
+        const int txc0 = static_cast<int>(s.x)                    / TILE_SIZE;
+        const int tyc0 = static_cast<int>(s.y)                    / TILE_SIZE;
+        const int txc1 = static_cast<int>(s.x + TILE_SIZE - 1.f)  / TILE_SIZE;
+        const int tyc1 = static_cast<int>(s.y + TILE_SIZE - 1.f)  / TILE_SIZE;
+        // Find first overlapping 'C' tile to use as flood-fill seed.
+        int seed_tx = -1, seed_ty = -1;
+        if      (world.GetTile(txc0, tyc0) == 'C') { seed_tx = txc0; seed_ty = tyc0; }
+        else if (world.GetTile(txc1, tyc0) == 'C') { seed_tx = txc1; seed_ty = tyc0; }
+        else if (world.GetTile(txc0, tyc1) == 'C') { seed_tx = txc0; seed_ty = tyc1; }
+        else if (world.GetTile(txc1, tyc1) == 'C') { seed_tx = txc1; seed_ty = tyc1; }
+        if (seed_tx >= 0) {
+            // Use the same center+lowest-floor logic as the spawn finder,
+            // applied to the full connected group of 'C' tiles.
+            const SpawnPos cp = FindCenterCheckpoint(world, seed_tx, seed_ty);
+            if (cp.x != s.checkpoint_x || cp.y != s.checkpoint_y) {
+                s.checkpoint_x = cp.x;
+                s.checkpoint_y = cp.y;
+                printf("[server] CHECKPOINT player_id=%u  (%.0f, %.0f)\n",
+                       s.player_id, cp.x, cp.y);
+            }
+        }
+    }
+
     // --- Kill tile 'K' ---
     {
         const int tx0k = static_cast<int>(s.x)                    / TILE_SIZE;
@@ -186,7 +219,11 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
         const int ty1k = static_cast<int>(s.y + TILE_SIZE - 1.f)  / TILE_SIZE;
         if (world.GetTile(tx0k, ty0k) == 'K' || world.GetTile(tx1k, ty0k) == 'K' ||
             world.GetTile(tx0k, ty1k) == 'K' || world.GetTile(tx1k, ty1k) == 'K') {
-            s = ApplySpawnReset(s, true);
+            // Respawn at last checkpoint if available, otherwise at spawn.
+            if (s.checkpoint_x != 0.f || s.checkpoint_y != 0.f)
+                s = CheckpointReset(s, s.checkpoint_x, s.checkpoint_y, true);
+            else
+                s = ApplySpawnReset(s, true);
             printf("[server] KILL player_id=%u --> respawn in 1s\n", s.player_id);
         }
     }
@@ -246,16 +283,33 @@ void ServerSession::HandlePlayerInfo(ENetHost* /*host*/, ENetPeer* peer,
 }
 
 // ---------------------------------------------------------------------------
-// HandleRestart
+// HandleRestart — ripartenza dal checkpoint (o spawn se nessun checkpoint raggiunto)
 // ---------------------------------------------------------------------------
 void ServerSession::HandleRestart(ENetPeer* peer) {
     auto it = players_.find(peer);
     if (it == players_.end()) return;
     PlayerState s = it->second.GetState();
     if (s.kill_respawn_ticks > 0) return;  // morto, ignora
-    s = ApplySpawnReset(s, false);         // with_kill=false → grace ticks
+    if (s.checkpoint_x != 0.f || s.checkpoint_y != 0.f)
+        s = CheckpointReset(s, s.checkpoint_x, s.checkpoint_y, false);
+    else
+        s = ApplySpawnReset(s, false);
     it->second.SetState(s);
-    printf("[server] RESTART player_id=%u\n", s.player_id);
+    printf("[server] RESTART(checkpoint) player_id=%u  (%.0f, %.0f)\n",
+           s.player_id, s.checkpoint_x, s.checkpoint_y);
+}
+
+// ---------------------------------------------------------------------------
+// HandleRestartSpawn — ripartenza forzata dallo spawn (ignora checkpoint)
+// ---------------------------------------------------------------------------
+void ServerSession::HandleRestartSpawn(ENetPeer* peer) {
+    auto it = players_.find(peer);
+    if (it == players_.end()) return;
+    PlayerState s = it->second.GetState();
+    if (s.kill_respawn_ticks > 0) return;  // morto, ignora
+    s = ApplySpawnReset(s, false);  // clears checkpoint too
+    it->second.SetState(s);
+    printf("[server] RESTART(spawn) player_id=%u\n", s.player_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -313,7 +367,9 @@ void ServerSession::DoLevelChange(ENetHost* host) {
             s.level_ticks = 0;
             s.finished    = false;
             s.kill_respawn_ticks  = 0;
-            s.respawn_grace_ticks = 60;
+            s.respawn_grace_ticks = 25;
+            s.checkpoint_x = 0.f;  // clear checkpoint on level change
+            s.checkpoint_y = 0.f;
             pl.SetState(s);
         }
         ll_pkt.is_last = 0;
@@ -347,7 +403,8 @@ void ServerSession::ResetToInitial(ENetHost* host) {
     session_names_.clear();
     in_global_results_ = false;
 
-    in_lobby_      = (initial_map_path_.find("_lobby") != std::string::npos);
+    in_lobby_      = (initial_map_path_.find("_Lobby") != std::string::npos ||
+                       initial_map_path_.find("_lobby") != std::string::npos);
     game_locked_   = false;
     session_token_ = 0u;
     current_level_ = in_lobby_ ? 0 : initial_level_;

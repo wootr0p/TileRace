@@ -15,10 +15,13 @@ public:
     void Poll();
 
     // Sticky flags — return true once then reset to false.
-    bool ConsumeJumpPressed()    { bool v = jump_pressed_;    jump_pressed_    = false; return v; }
-    bool ConsumeDashPending()    { bool v = dash_pending_;    dash_pending_    = false; return v; }
-    bool ConsumePauseToggle()    { bool v = pause_toggle_;    pause_toggle_    = false; return v; }
-    bool ConsumeRestartRequest() { bool v = restart_pending_; restart_pending_ = false; return v; }
+    bool ConsumeJumpPressed()        { bool v = jump_pressed_;           jump_pressed_           = false; return v; }
+    bool ConsumeDashPending()        { bool v = dash_pending_;           dash_pending_           = false; return v; }
+    bool ConsumePauseToggle()        { bool v = pause_toggle_;           pause_toggle_           = false; return v; }
+    // Restart from last checkpoint (or spawn if none): Backspace / Circle
+    bool ConsumeRestartRequest()     { bool v = restart_checkpoint_;     restart_checkpoint_     = false; return v; }
+    // Restart always from level spawn, clearing checkpoint: Delete / Triangle
+    bool ConsumeRestartSpawn()       { bool v = restart_spawn_;          restart_spawn_          = false; return v; }
 
     // Pause menu navigation — refreshed each render frame; do not consume.
     bool PauseNavUp()   const { return nav_up_;   }
@@ -34,10 +37,11 @@ private:
     static constexpr int   GP          = 0;
     static constexpr float GP_DEADZONE = 0.25f;
 
-    bool  jump_pressed_    = false;
-    bool  dash_pending_    = false;
-    bool  restart_pending_ = false;
-    bool  pause_toggle_    = false;
+    bool  jump_pressed_       = false;
+    bool  dash_pending_       = false;
+    bool  restart_checkpoint_ = false;  // Backspace / Circle
+    bool  restart_spawn_      = false;  // Delete   / Triangle
+    bool  pause_toggle_       = false;
 
     bool  nav_up_   = false;
     bool  nav_down_ = false;

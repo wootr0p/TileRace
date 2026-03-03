@@ -61,7 +61,7 @@ int main() {
     LocalServer local_srv;
     const bool is_offline = (menu.choice == MenuChoice::OFFLINE);
     const char* initial_map = is_offline
-        ? "assets/levels/level_01.txt"
+        ? "assets/levels/tilemaps/Level01.tmj"
         : LOBBY_MAP_PATH;
     if (is_offline)
         local_srv.Start(SERVER_PORT_LOCAL, initial_map);

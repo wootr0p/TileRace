@@ -204,6 +204,7 @@ void Renderer::DrawTilemap(const World& world) {
             else if (c == 'E') col = CLRS_TILE_EXIT;
             else if (c == 'K') col = CLRS_TILE_KILL;
             else if (c == 'X') col = CLRS_TILE_SPAWN;
+            else if (c == 'C') col = CLRS_TILE_CHECKPOINT;
             else continue;
             DrawRectangle(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE, col);
         }
@@ -414,12 +415,12 @@ void Renderer::DrawReadyGo(uint8_t grace_ticks, float dt) {
     const float cy = GetScreenHeight() * 0.5f;
 
     if (rg_phase_ == ReadyGoPhase::READY) {
-        // grace_ticks scende da 60 (= 1s a 60Hz) a 1.
-        // t = 1.0 all'inizio, ~0.017 all'ultimo tick.
+        // grace_ticks scende da 25 (= ~0.4s a 60Hz) a 1.
+        // t = 1.0 all'inizio, ~0.04 all'ultimo tick.
         // Fade-in:  t 1.0→0.7  → alpha 0→1  (primo 30%)
         // Hold:     t 0.7→0.2  → alpha 1
         // Fade-out: t 0.2→0.0  → alpha 1→0  (ultimo 20%)
-        const float t = static_cast<float>(grace_ticks) / 60.f;
+        const float t = static_cast<float>(grace_ticks) / 25.f;
         float alpha;
         if      (t > 0.7f) alpha = (1.0f - t) / 0.3f;
         else if (t < 0.2f) alpha = t / 0.2f;

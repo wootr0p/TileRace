@@ -181,16 +181,16 @@ main()
 ### Level progression (server-side)
 
 ```
-Lobby (_lobby.txt)
+Lobby (_Lobby.tmj)
   → all players in zone 'E' for 3 s → DoLevelChange()
-      → level_01, level_02, … level_N
+      → Level01, Level02, … LevelN
           → all players finish OR 2-min time limit → SendResults() (15 s or all ready)
               → DoLevelChange() → next level
                   → last level complete → SendGlobalResults() (25 s or all ready)
                       → FinishSession() → PKT_LOAD_LEVEL(is_last=1) → ResetToInitial() → back to lobby
 ```
 
-Online mode starts at the lobby. Offline mode starts directly at `level_01` (lobby skipped).
+Online mode starts at the lobby. Offline mode starts directly at `Level01.tmj` (lobby skipped).
 
 The server tracks per-level 1st-place finishers in `session_wins_` (player_id → win count).
 At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all clients.
@@ -206,7 +206,8 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all
 | `PKT_LOAD_LEVEL` | S → C | Load next map (or `is_last=1` → return to menu) |
 | `PKT_LEVEL_RESULTS` | S → C | End-of-level sorted leaderboard |
 | `PKT_GLOBAL_RESULTS` | S → C | Session-end win leaderboard (after last level) |
-| `PKT_RESTART` | C → S | Respawn at spawn point |
+| `PKT_RESTART` | C → S | Respawn at last checkpoint (or spawn if none reached); Backspace / Circle |
+| `PKT_RESTART_SPAWN` | C → S | Respawn always at level spawn, clearing checkpoint; Delete / Triangle |
 | `PKT_READY` | C → S | Skip results screen early |
 | `PKT_VERSION_MISMATCH` | S → C | Incompatible `PROTOCOL_VERSION` — disconnect follows |
 
@@ -250,7 +251,7 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all
 
 `LocalServer` starts `RunServer()` in a `std::thread`. The client connects to `127.0.0.1:58721` exactly as it would online. This allows single-player practice without a separate server process.
 
-In offline mode the starting map is `level_01.txt`; the lobby is bypassed entirely since the ready mechanic requires multiple players.
+In offline mode the starting map is `Level01.tmj`; the lobby is bypassed entirely since the ready mechanic requires multiple players.
 
 ---
 
@@ -263,7 +264,7 @@ PROTOCOL_VERSION   = 3       // increment on any breaking change
 MAX_PLAYERS        = 8
 CHANNEL_RELIABLE   = 0
 CHANNEL_COUNT      = 1
-LOBBY_MAP_PATH     = "assets/levels/_lobby.txt"
+LOBBY_MAP_PATH     = "assets/levels/tilemaps/_Lobby.tmj"
 ```
 
 Disconnect reason codes are sent as the `data` field of `enet_peer_disconnect()`:
@@ -302,20 +303,35 @@ WALL_PROBE_REACH     = 8        // px beyond edge to detect adjacent walls
 
 ```
 assets/
-  fonts/           SpaceMono-Bold.ttf (used for all in-game text)
+  fonts/                    SpaceMono-Bold.ttf (used for all in-game text)
   levels/
-    _lobby.txt     Waiting room — triggers level progression when all are in zone 'E'
-    level_01.txt
-    level_02.txt
-    level_03.txt
+    TileSet.tsx             Tiled tileset definition (properties: type, solid)
+    TileSet.png             Tileset spritesheet
+    tilemaps/
+      _Lobby.tmj            Waiting room — triggers level progression when all are in zone 'E'
+      Level01.tmj
+      (Level02.tmj, …)      Additional levels created with Tiled
+    _old/                   Legacy ASCII maps (no longer loaded at runtime)
 ```
 
-Map format: plain text, 32 px per tile.
-- `0` = solid wall
-- `E` = exit tile (non-solid; touching = finish)
-- `K` = kill tile (non-solid; touching = death + respawn)
-- `X` = spawn point
-- ` ` = air
+Map format: **Tiled JSON** (`.tmj`), 32 px per tile, uncompressed orthogonal.
+
+Tileset (`TileSet.tsx`) tile properties:
+
+| Tile ID | `type`     | `solid` | Legacy char | Behaviour |
+|---------|------------|---------|-------------|---------- |
+| 0       | `spawn`    | false   | `X`         | Player start position |
+| 1       | `platform` | true    | `0`         | Solid wall / floor |
+| 2       | `kill`     | true    | `K`         | Death + respawn on touch |
+| 3       | `end`      | false   | `E`         | Exit / finish tile |
+
+| `checkpoint` | false   | `C`         | Saves a respawn position; player dies → respawns here |
+
+On death (kill tile) the player respawns at their last checkpoint (`PlayerState::checkpoint_x/y`); if no checkpoint has been reached they respawn at the level spawn. `SpawnReset` clears the checkpoint; `CheckpointReset` preserves it.
+
+**Restart keys:**
+- Backspace / Circle: restart at last checkpoint (or spawn if none)
+- Delete / Triangle: restart at level spawn (clears checkpoint)
 
 ---
 
@@ -324,6 +340,8 @@ Map format: plain text, 32 px per tile.
 | Feature | Status |
 |---|---|
 | Tilemap loading and rendering | ✅ |
+| Tiled `.tmj` map format + TSX property parsing | ✅ |
+| Checkpoint tiles ('C') + death-respawn at checkpoint | ✅ |
 | Player physics (move, accel, gravity, collision) | ✅ |
 | Jump buffer, coyote time, variable height, wall jump | ✅ |
 | Dash (360°, air limit, cooldown, dash-jump) | ✅ |
@@ -354,5 +372,5 @@ Map format: plain text, 32 px per tile.
 | SOLID refactoring (client + server) | ✅ |
 | Audio effects | ❌ not started |
 | Multiple spawn assignment by player_id | ❌ (all use center spawn) |
-| Levels beyond level_03 | ❌ |
+| Levels beyond Level01 | ❌ (Level02.tmj, … not yet created) |
 | Linux / macOS build verification | ❌ |

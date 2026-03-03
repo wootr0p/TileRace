@@ -45,4 +45,8 @@ struct PlayerState {
     // Kill tile respawn state
     uint8_t  kill_respawn_ticks  = 0;   // > 0: player is dead (touched 'K'); counts to 0 then respawns
     uint8_t  respawn_grace_ticks = 0;   // > 0: just respawned; input blocked; triggers Ready/Go! overlay on client
-};
+
+    // Checkpoint — updated server-side when the player touches a 'C' tile.
+    // (0,0) means no checkpoint has been reached yet (fall back to level spawn).
+    float    checkpoint_x = 0.f;
+    float    checkpoint_y = 0.f;};

@@ -10,7 +10,7 @@ public:
     // Load map from path. Returns false if the file cannot be read.
     bool Load(const char* path);
 
-    // Build the canonical path for a level number (e.g. 2 → "assets/levels/level_02.txt").
+    // Build the canonical path for a level number (e.g. 2 → "assets/levels/tilemaps/Level02.tmj").
     static std::string BuildPath(int num);
 
     float        SpawnX()   const { return spawn_x_; }

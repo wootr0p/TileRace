@@ -7,16 +7,23 @@
 #include "Protocol.h"
 #include <cstdio>
 #include <cstring>
+#include <cctype>
 #include <enet/enet.h>
 
 void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag) {
     printf("[server] TileRace v%s  (protocol %u)\n", GAME_VERSION, PROTOCOL_VERSION);
 
-    // Estrai il numero di livello iniziale dal nome del file (es. "level_02.txt" → 2).
+    // Estrai il numero di livello iniziale dal nome del file
+    // (es. "Level02.tmj" → 2, oppure il vecchio "level_02.txt" → 2).
     int initial_level = 1;
     {
-        const char* p = std::strstr(map_path, "level_");
-        if (p) std::sscanf(p + 6, "%d", &initial_level);
+        const char* p = std::strstr(map_path, "Level");
+        if (!p) p = std::strstr(map_path, "level_");
+        if (p) {
+            // Salta i caratteri non-numerici iniziali ("Level" o "level_")
+            while (*p && !std::isdigit(static_cast<unsigned char>(*p))) ++p;
+            if (*p) std::sscanf(p, "%d", &initial_level);
+        }
     }
 
     ServerSession session(map_path, initial_level);

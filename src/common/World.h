@@ -2,30 +2,43 @@
 #include <string>
 #include <vector>
 
-// Tilemap loaded from a plain-text .txt file. No external dependencies.
+// Tilemap loaded from either:
+//   • a plain-text .txt file  (legacy format, kept for unit tests)
+//   • a Tiled JSON map   .tmj file  (current format)
 //
-// Recognised tile characters:
-//   '0' = wall   (solid)
-//   'E' = exit   (non-solid; win condition on touch)
-//   'K' = kill   (non-solid; touching respawns the player)
-//   'X' = spawn  (non-solid; player start position)
+// Recognised tile chars (stored internally regardless of source format):
+//   '0' = wall / platform  (solid)
+//   'E' = exit             (non-solid; win condition on touch)
+//   'K' = kill             (non-solid by default; touching respawns the player)
+//   'X' = spawn            (non-solid; player start position)
 //   ' ' = air
+//
+// For .tmj files the solid flag comes from the TileSet.tsx "solid" property,
+// so each tile type can independently be solid or non-solid.
 class World {
 public:
-    // Returns true if the file was opened successfully.
+    // Returns true if the file was opened and parsed successfully.
+    // Accepts both .txt (legacy ASCII) and .tmj (Tiled JSON) paths.
     bool LoadFromFile(const char* path);
 
-    // Returns true if tile (tx, ty) is solid ('0'). Out-of-bounds coords → false.
+    // Returns true if tile (tx, ty) should block player movement.
+    // For .txt: solid iff char == '0'.
+    // For .tmj: solid iff the TSX "solid" property is true for that tile type.
+    // Out-of-bounds coords always return false.
     bool IsSolid(int tx, int ty) const;
 
-    // Returns the raw tile char at (tx, ty), or ' ' if out of bounds.
+    // Returns the canonical tile char at (tx, ty), or ' ' if out of bounds.
     char GetTile(int tx, int ty) const;
 
     int GetWidth()  const { return width_; }
     int GetHeight() const { return height_; }
 
 private:
-    std::vector<std::string> rows_;
+    std::vector<std::string>      rows_;        // char grid ('0','E','K','X',' ')
+    std::vector<std::vector<bool>> solid_grid_; // parallel solid-flag grid
     int width_  = 0;
     int height_ = 0;
+
+    bool LoadTxt(const char* path);
+    bool LoadTmj(const char* path);
 };

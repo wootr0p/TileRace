@@ -1,8 +1,6 @@
-- Muovere le mappe su editor Tiled
-
-- Checkpoint
 - Pedane mobili
 - Oneway platform
+- Trampolini
 
 - Generazione dei livelli casuali con chunk
 - Colori generati a tema casuale in ogni livello

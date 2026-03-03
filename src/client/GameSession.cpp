@@ -54,6 +54,7 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
         input_sampler_.ConsumeJumpPressed();
         input_sampler_.ConsumeDashPending();
         input_sampler_.ConsumeRestartRequest();
+        input_sampler_.ConsumeRestartSpawn();
     }
 
     // 4. Results screen: SPAZIO → ready up (consuma il jump_pressed)
@@ -76,12 +77,23 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
         }
     }
 
-    // 5. Restart (solo quando in gioco, player vivo, e NON nella lobby)
+    // 5a. Restart al checkpoint (Backspace / Circle) — solo in gioco, player vivo, non lobby
     if (pause_state_ == PauseState::PLAYING && !last_game_state_.is_lobby
         && input_sampler_.ConsumeRestartRequest()) {
         const PlayerState& cur = player_.GetState();
         if (cur.kill_respawn_ticks == 0 && cur.respawn_grace_ticks == 0) {
             PktRestart rpkt{};
+            net.SendReliable(&rpkt, sizeof(rpkt));
+            show_record_ = false;
+        }
+    }
+
+    // 5b. Restart allo spawn (Delete / Triangle) — solo in gioco, player vivo, non lobby
+    if (pause_state_ == PauseState::PLAYING && !last_game_state_.is_lobby
+        && input_sampler_.ConsumeRestartSpawn()) {
+        const PlayerState& cur = player_.GetState();
+        if (cur.kill_respawn_ticks == 0 && cur.respawn_grace_ticks == 0) {
+            PktRestartSpawn rpkt{};
             net.SendReliable(&rpkt, sizeof(rpkt));
             show_record_ = false;
         }

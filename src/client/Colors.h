@@ -28,10 +28,11 @@ static constexpr Color CLRS_PLAYER_REMOTE_DIM   = {140,  80,  40, 160};
 static constexpr Color CLRS_PLAYER_REMOTE_NAME  = {255, 210, 150, 200};
 
 // Tiles
-static constexpr Color CLRS_TILE_WALL      = { 60, 100, 180, 255};  // '0' solid wall
-static constexpr Color CLRS_TILE_EXIT      = { 14, 140, 124, 255};  // 'E' exit / win tile
-static constexpr Color CLRS_TILE_KILL      = {220,  50,  50, 255};  // 'K' lethal tile
-static constexpr Color CLRS_TILE_SPAWN     = {106, 111,  50, 255};  // 'X' spawn point
+static constexpr Color CLRS_TILE_WALL       = { 60, 100, 180, 255};  // '0' solid wall
+static constexpr Color CLRS_TILE_EXIT       = { 14, 140, 124, 255};  // 'E' exit / win tile
+static constexpr Color CLRS_TILE_KILL       = {220,  50,  50, 255};  // 'K' lethal tile
+static constexpr Color CLRS_TILE_SPAWN      = {106, 111,  50, 255};  // 'X' spawn point
+static constexpr Color CLRS_TILE_CHECKPOINT = { 50, 230,  80, 255};  // 'C' checkpoint — bright green
 
 // HUD timers
 static constexpr Color CLRS_TIMER_FINISHED = {  0, 230, 100, 255};  // goal reached

@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-03 05:42
+ * Generated : 2026-03-03 08:00
  * ============================================================================
  *
  * PURPOSE
@@ -326,8 +326,11 @@ struct PlayerState {
     // Kill tile respawn state
     uint8_t  kill_respawn_ticks  = 0;   // > 0: player is dead (touched 'K'); counts to 0 then respawns
     uint8_t  respawn_grace_ticks = 0;   // > 0: just respawned; input blocked; triggers Ready/Go! overlay on client
-};
 
+    // Checkpoint — updated server-side when the player touches a 'C' tile.
+    // (0,0) means no checkpoint has been reached yet (fall back to level spawn).
+    float    checkpoint_x = 0.f;
+    float    checkpoint_y = 0.f;};
 
 // ==========================================================================
 // FILE : Protocol.h
@@ -342,7 +345,7 @@ struct PlayerState {
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.1.4b";
+static constexpr const char*  GAME_VERSION     = "0.1.5b";
 static constexpr uint16_t     PROTOCOL_VERSION = 3;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
@@ -352,7 +355,7 @@ static constexpr uint8_t  CHANNEL_RELIABLE = 0;
 static constexpr uint8_t  CHANNEL_COUNT    = 1;
 
 // First map loaded on server start; players wait here between games.
-static constexpr const char* LOBBY_MAP_PATH = "assets/levels/_lobby.txt";
+static constexpr const char* LOBBY_MAP_PATH = "assets/levels/tilemaps/_Lobby.tmj";
 
 // ENet disconnect reason codes (32-bit). Bits[7:0] = reason; bits[31:16] = optional payload.
 enum DisconnectReason : uint32_t {
@@ -368,13 +371,14 @@ enum PktType : uint8_t {
     PKT_GAME_STATE        = 3,   // S → C  authoritative GameState broadcast
     PKT_WELCOME           = 4,   // S → C  assigned player_id + session_token
     PKT_PLAYER_INFO       = 5,   // C → S  name + protocol_version (sent right after PKT_WELCOME)
-    PKT_RESTART           = 6,   // C → S  reset to spawn (Backspace / Triangle)
+    PKT_RESTART           = 6,   // C → S  respawn at last checkpoint (or spawn if none); Backspace / Circle
     PKT_LOAD_LEVEL        = 7,   // S → C  load next level or return to menu (is_last=1)
     PKT_VERSION_MISMATCH  = 8,   // S → C  incompatible version; server disconnects immediately after
     PKT_SERVER_BUSY       = 9,   // S → C  session in progress, retry later
     PKT_LEVEL_RESULTS     = 10,  // S → C  end-of-level leaderboard
     PKT_READY             = 11,  // C → S  player ready for the next level
     PKT_GLOBAL_RESULTS    = 12,  // S → C  session-end global leaderboard (wins per player)
+    PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete / Square
 };
 
 struct PktInput {
@@ -405,10 +409,15 @@ struct PktRestart {
     uint8_t type = PKT_RESTART;
 };
 
+// Always resets to the level spawn point, discarding any saved checkpoint.
+struct PktRestartSpawn {
+    uint8_t type = PKT_RESTART_SPAWN;
+};
+
 struct PktLoadLevel {
     uint8_t type     = PKT_LOAD_LEVEL;
     uint8_t is_last  = 0;       // 1 = no more levels; client returns to main menu
-    char    path[64] = {};      // relative path, e.g. "assets/levels/level_02.txt"
+    char    path[64] = {};      // relative path, e.g. "assets/levels/tilemaps/Level02.tmj"
 };
 
 struct PktVersionMismatch {
@@ -472,6 +481,8 @@ struct PktGlobalResults {
 #include "Physics.h"
 #include <cstdlib>   // std::abs (int)
 #include <climits>   // INT_MAX
+#include <vector>
+#include <utility>   // std::pair
 
 struct SpawnPos { float x = 0.f, y = 0.f; };
 
@@ -480,6 +491,16 @@ struct SpawnPos { float x = 0.f, y = 0.f; };
 //   y = lowest 'X' tile that has solid floor directly beneath it
 inline SpawnPos FindCenterSpawn(const World& world) { /* body stripped */ }
     // Among 'X' tiles at best_ty, pick the one closest to the horizontal mean.
+
+// Returns the best spawn position for the checkpoint group that contains (ref_tx, ref_ty).
+// Flood-fills all 'C' tiles 4-connected to the seed tile, then applies the same
+// center + lowest-with-solid-floor logic as FindCenterSpawn.
+inline SpawnPos FindCenterCheckpoint(const World& world, int ref_tx, int ref_ty) { /* body stripped */ }
+    // Flood-fill via explicit stack (no <stack> needed).
+    // Horizontal mean of all tiles in the group.
+    // Lowest tile that has solid floor directly beneath it.
+    // Fallback: if no tile has solid floor beneath, pick the lowest tile.
+    // Among tiles at best_ty, pick the one closest to the horizontal mean.
 
 
 // ==========================================================================
@@ -491,32 +512,45 @@ inline SpawnPos FindCenterSpawn(const World& world) { /* body stripped */ }
 #include <string>
 #include <vector>
 
-// Tilemap loaded from a plain-text .txt file. No external dependencies.
+// Tilemap loaded from either:
+//   • a plain-text .txt file  (legacy format, kept for unit tests)
+//   • a Tiled JSON map   .tmj file  (current format)
 //
-// Recognised tile characters:
-//   '0' = wall   (solid)
-//   'E' = exit   (non-solid; win condition on touch)
-//   'K' = kill   (non-solid; touching respawns the player)
-//   'X' = spawn  (non-solid; player start position)
+// Recognised tile chars (stored internally regardless of source format):
+//   '0' = wall / platform  (solid)
+//   'E' = exit             (non-solid; win condition on touch)
+//   'K' = kill             (non-solid by default; touching respawns the player)
+//   'X' = spawn            (non-solid; player start position)
 //   ' ' = air
+//
+// For .tmj files the solid flag comes from the TileSet.tsx "solid" property,
+// so each tile type can independently be solid or non-solid.
 class World {
 public:
-    // Returns true if the file was opened successfully.
+    // Returns true if the file was opened and parsed successfully.
+    // Accepts both .txt (legacy ASCII) and .tmj (Tiled JSON) paths.
     bool LoadFromFile(const char* path);
 
-    // Returns true if tile (tx, ty) is solid ('0'). Out-of-bounds coords → false.
+    // Returns true if tile (tx, ty) should block player movement.
+    // For .txt: solid iff char == '0'.
+    // For .tmj: solid iff the TSX "solid" property is true for that tile type.
+    // Out-of-bounds coords always return false.
     bool IsSolid(int tx, int ty) const;
 
-    // Returns the raw tile char at (tx, ty), or ' ' if out of bounds.
+    // Returns the canonical tile char at (tx, ty), or ' ' if out of bounds.
     char GetTile(int tx, int ty) const;
 
     int GetWidth()  const { return width_; }
     int GetHeight() const { return height_; }
 
 private:
-    std::vector<std::string> rows_;
+    std::vector<std::string>      rows_;        // char grid ('0','E','K','X',' ')
+    std::vector<std::vector<bool>> solid_grid_; // parallel solid-flag grid
     int width_  = 0;
     int height_ = 0;
+
+    bool LoadTxt(const char* path);
+    bool LoadTmj(const char* path);
 };
 
 
@@ -537,7 +571,7 @@ public:
     // Load map from path. Returns false if the file cannot be read.
     bool Load(const char* path);
 
-    // Build the canonical path for a level number (e.g. 2 → "assets/levels/level_02.txt").
+    // Build the canonical path for a level number (e.g. 2 → "assets/levels/tilemaps/Level02.tmj").
     static std::string BuildPath(int num);
 
     float        SpawnX()   const { return spawn_x_; }
@@ -564,7 +598,17 @@ private:
 // Reset all movement fields and place the player at spawn coordinates.
 //   with_kill = true  → kill_respawn_ticks = 60  (death animation, ~1 s wait before control)
 //   with_kill = false → respawn_grace_ticks = 60  (triggers Ready/Go! overlay on the client)
+// Also clears checkpoint_x/checkpoint_y and resets level_ticks (full restart semantics).
 inline PlayerState SpawnReset(PlayerState s, float sx, float sy, bool with_kill) { /* body stripped */ }
+
+// Respawn the player at a checkpoint position.
+// Unlike SpawnReset, level_ticks keeps accumulating (time penalty only from downtime)
+// and the checkpoint itself is preserved.
+// with_kill = true  → kill_respawn_ticks = 60 (used by automatic kill-tile death)
+// with_kill = false → respawn_grace_ticks = 60 (used by manual restart-at-checkpoint)
+inline PlayerState CheckpointReset(PlayerState s, float cx, float cy, bool with_kill) { /* body stripped */ }
+    // level_ticks intentionally NOT reset — time keeps running
+    // checkpoint coordinates preserved
 
 
 // ==========================================================================
@@ -622,7 +666,8 @@ public:
 private:
     bool HandleInput     (ENetHost* host, ENetPeer* peer, const PktInput& pkt);
     void HandlePlayerInfo(ENetHost* host, ENetPeer* peer, const PktPlayerInfo& pkt);
-    void HandleRestart   (ENetPeer* peer);
+    void HandleRestart   (ENetPeer* peer);       // respawn at last checkpoint (or spawn)
+    void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn
     bool HandleReady     (ENetHost* host, ENetPeer* peer);  // returns true on level change
 
     // Load next map, reset all players, broadcast new state.
@@ -708,10 +753,11 @@ static constexpr Color CLRS_PLAYER_REMOTE_DIM   = {140,  80,  40, 160};
 static constexpr Color CLRS_PLAYER_REMOTE_NAME  = {255, 210, 150, 200};
 
 // Tiles
-static constexpr Color CLRS_TILE_WALL      = { 60, 100, 180, 255};  // '0' solid wall
-static constexpr Color CLRS_TILE_EXIT      = { 14, 140, 124, 255};  // 'E' exit / win tile
-static constexpr Color CLRS_TILE_KILL      = {220,  50,  50, 255};  // 'K' lethal tile
-static constexpr Color CLRS_TILE_SPAWN     = {106, 111,  50, 255};  // 'X' spawn point
+static constexpr Color CLRS_TILE_WALL       = { 60, 100, 180, 255};  // '0' solid wall
+static constexpr Color CLRS_TILE_EXIT       = { 14, 140, 124, 255};  // 'E' exit / win tile
+static constexpr Color CLRS_TILE_KILL       = {220,  50,  50, 255};  // 'K' lethal tile
+static constexpr Color CLRS_TILE_SPAWN      = {106, 111,  50, 255};  // 'X' spawn point
+static constexpr Color CLRS_TILE_CHECKPOINT = { 50, 230,  80, 255};  // 'C' checkpoint — bright green
 
 // HUD timers
 static constexpr Color CLRS_TIMER_FINISHED = {  0, 230, 100, 255};  // goal reached
@@ -890,10 +936,13 @@ public:
     void Poll();
 
     // Sticky flags — return true once then reset to false.
-    bool ConsumeJumpPressed()    { bool v = jump_pressed_;    jump_pressed_    = false; return v; }
-    bool ConsumeDashPending()    { bool v = dash_pending_;    dash_pending_    = false; return v; }
-    bool ConsumePauseToggle()    { bool v = pause_toggle_;    pause_toggle_    = false; return v; }
-    bool ConsumeRestartRequest() { bool v = restart_pending_; restart_pending_ = false; return v; }
+    bool ConsumeJumpPressed()        { bool v = jump_pressed_;           jump_pressed_           = false; return v; }
+    bool ConsumeDashPending()        { bool v = dash_pending_;           dash_pending_           = false; return v; }
+    bool ConsumePauseToggle()        { bool v = pause_toggle_;           pause_toggle_           = false; return v; }
+    // Restart from last checkpoint (or spawn if none): Backspace / Circle
+    bool ConsumeRestartRequest()     { bool v = restart_checkpoint_;     restart_checkpoint_     = false; return v; }
+    // Restart always from level spawn, clearing checkpoint: Delete / Triangle
+    bool ConsumeRestartSpawn()       { bool v = restart_spawn_;          restart_spawn_          = false; return v; }
 
     // Pause menu navigation — refreshed each render frame; do not consume.
     bool PauseNavUp()   const { return nav_up_;   }
@@ -909,10 +958,11 @@ private:
     static constexpr int   GP          = 0;
     static constexpr float GP_DEADZONE = 0.25f;
 
-    bool  jump_pressed_    = false;
-    bool  dash_pending_    = false;
-    bool  restart_pending_ = false;
-    bool  pause_toggle_    = false;
+    bool  jump_pressed_       = false;
+    bool  dash_pending_       = false;
+    bool  restart_checkpoint_ = false;  // Backspace / Circle
+    bool  restart_spawn_      = false;  // Delete   / Triangle
+    bool  pause_toggle_       = false;
 
     bool  nav_up_   = false;
     bool  nav_down_ = false;

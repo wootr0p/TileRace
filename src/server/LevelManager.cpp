@@ -17,6 +17,6 @@ bool LevelManager::Load(const char* path) {
 
 std::string LevelManager::BuildPath(int num) {
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "assets/levels/level_%02d.txt", num);
+    std::snprintf(buf, sizeof(buf), "assets/levels/tilemaps/Level%02d.tmj", num);
     return buf;
 }
