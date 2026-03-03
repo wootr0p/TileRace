@@ -11,6 +11,7 @@ add_library(server_logic STATIC
     ServerSession.cpp
     ChunkStore.cpp
     LevelGenerator.cpp
+    LevelValidator.cpp
 )
 target_include_directories(server_logic PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}      # ServerLogic.h accessibile a chi linka

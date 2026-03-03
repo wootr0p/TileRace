@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-03 16:10
+ * Generated : 2026-03-03 16:32
  * ============================================================================
  *
  * PURPOSE
@@ -96,6 +96,8 @@
  *   │   ├── LevelGenerator.h
  *   │   ├── LevelManager.cpp
  *   │   ├── LevelManager.h
+ *   │   ├── LevelValidator.cpp
+ *   │   ├── LevelValidator.h
  *   │   ├── main.cpp
  *   │   ├── PlayerReset.h
  *   │   ├── ServerLogic.cpp
@@ -104,7 +106,7 @@
  *   │   └── ServerSession.h
  *   └── app_icon.rc.in
  *
- * HEADERS INCLUDED BELOW  (25 files)
+ * HEADERS INCLUDED BELOW  (26 files)
  *   [01]  src\common\GameState.h
  *   [02]  src\common\InputFrame.h
  *   [03]  src\common\Physics.h
@@ -116,20 +118,21 @@
  *   [09]  src\server\ChunkStore.h
  *   [10]  src\server\LevelGenerator.h
  *   [11]  src\server\LevelManager.h
- *   [12]  src\server\PlayerReset.h
- *   [13]  src\server\ServerLogic.h
- *   [14]  src\server\ServerSession.h
- *   [15]  src\client\Colors.h
- *   [16]  src\client\GameSession.h
- *   [17]  src\client\InputSampler.h
- *   [18]  src\client\LocalServer.h
- *   [19]  src\client\MainMenu.h
- *   [20]  src\client\NetworkClient.h
- *   [21]  src\client\Renderer.h
- *   [22]  src\client\SaveData.h
- *   [23]  src\client\UIWidgets.h
- *   [24]  src\client\VisualEffects.h
- *   [25]  src\client\WinIcon.h
+ *   [12]  src\server\LevelValidator.h
+ *   [13]  src\server\PlayerReset.h
+ *   [14]  src\server\ServerLogic.h
+ *   [15]  src\server\ServerSession.h
+ *   [16]  src\client\Colors.h
+ *   [17]  src\client\GameSession.h
+ *   [18]  src\client\InputSampler.h
+ *   [19]  src\client\LocalServer.h
+ *   [20]  src\client\MainMenu.h
+ *   [21]  src\client\NetworkClient.h
+ *   [22]  src\client\Renderer.h
+ *   [23]  src\client\SaveData.h
+ *   [24]  src\client\UIWidgets.h
+ *   [25]  src\client\VisualEffects.h
+ *   [26]  src\client\WinIcon.h
  * ============================================================================
  */
 
@@ -724,6 +727,27 @@ private:
     World world_;
     float spawn_x_ = 0.f;
     float spawn_y_ = 0.f;
+};
+
+
+// ==========================================================================
+// FILE : LevelValidator.h
+// PATH : src/server/LevelValidator.h
+// ==========================================================================
+
+#pragma once
+// SRP: validates generated levels by simulating an AI agent through them.
+// Uses the real Player::Simulate physics to BFS over reachable tile positions.
+// Returns true if a path from spawn ('X') to end ('E') exists.
+// No ENet or Raylib dependency.
+
+#include "World.h"
+
+class LevelValidator {
+public:
+    // Returns true if the level has a viable path from spawn to any 'E' tile
+    // using the full game physics (jump, dash, wall-jump, dash-jump).
+    static bool Validate(const World& world);
 };
 
 

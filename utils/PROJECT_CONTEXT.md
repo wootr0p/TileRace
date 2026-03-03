@@ -59,7 +59,7 @@ src/client/     Rendering, input, game loop. Links common + server_logic + rayli
 CMake targets:
 ```
 common_logic     (static lib)  ← Player.cpp, World.cpp
-server_logic     (static lib)  ← ServerLogic.cpp, LevelManager.cpp, ServerSession.cpp, ChunkStore.cpp, LevelGenerator.cpp
+server_logic     (static lib)  ← ServerLogic.cpp, LevelManager.cpp, ServerSession.cpp, ChunkStore.cpp, LevelGenerator.cpp, LevelValidator.cpp
 TileRace_Server  (exe)         ← server/main.cpp
 TileRace         (exe)         ← client/main.cpp + all client .cpp files
 ```
@@ -83,6 +83,7 @@ The codebase was refactored to follow SOLID and DRY principles:
 | `LevelManager` | Load maps, compute spawn, generate levels from chunks |
 | `ChunkStore` | Loads all chunk TMJ files at startup; classifies into start/mid/end pools |
 | `LevelGenerator` | Composes playable levels from chunks with difficulty-curve-based selection |
+| `LevelValidator` | AI agent: BFS over ground tiles using real Player::Simulate to verify completability |
 | `SpawnFinder.h` | Header-only; shared between GameSession and LevelManager |
 | `PlayerReset.h` | Header-only; shared reset helper for kill/restart/level-change events |
 
@@ -202,6 +203,10 @@ immediately. Levels are procedurally generated from chunk pieces stored in
 The server loads all chunks into memory at startup via `ChunkStore`, then generates
 each level on-the-fly using `LevelGenerator`.
 Each generated level is wrapped in a 5-tile solid border for safety.
+After generation, `LevelValidator` runs a BFS agent that tries ~17 macro-actions
+(walk, jump, dash, wall-jump, dash-jump combos) from every reachable ground tile
+using the real `Player::Simulate` physics. If the agent cannot reach any 'E' tile,
+the level is discarded and regenerated with a different seed (up to 10 retries).
 Generated levels are transmitted to clients via `PKT_LEVEL_DATA` (variable-size packet
 containing the full tile grid, including the `level` number for HUD display).
 `MAX_GENERATED_LEVELS = 8` controls how many levels are played before the session ends.
@@ -386,6 +391,7 @@ On death (kill tile) the player respawns at their last checkpoint (`PlayerState:
 | End-of-level results screen | ✅ |
 | Session-end global leaderboard (win counts per player) | ✅ |
 | Chunk-based procedural level generation | ✅ |
+| AI-driven level validation (physics BFS) | ✅ |
 | Lobby → level progression loop | ✅ |
 | 2-minute time limit per level | ✅ |
 | Restart from spawn (PKT_RESTART) | ✅ |

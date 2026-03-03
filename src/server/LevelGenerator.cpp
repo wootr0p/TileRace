@@ -235,6 +235,11 @@ bool LevelGenerator::Generate(const ChunkStore& store, const GeneratorParams& pa
         }
     }
 
+    // --- Kill strip at the very bottom (inside the border) ---
+    for (int y = final_h - border - 1; y >= final_h - border - 2 && y >= border; --y)
+        for (int x = border; x < final_w - border; ++x)
+            rows[y][x] = 'K';
+
     printf("[LevelGenerator] final map: %d x %d tiles\n", final_w, final_h);
 
     // --- Load into World ---
