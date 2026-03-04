@@ -363,54 +363,18 @@ void Renderer::DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct) {
 
 void Renderer::DrawTimer(const PlayerState& s,
                          uint32_t best_ticks, uint32_t time_limit_secs,
-                         uint32_t next_level_cd_ticks,
-                         bool coop_mode) {
-    if (coop_mode) {
-        // Cooperative: countdown is the main center timer.
-        const uint32_t mins = time_limit_secs / 60;
-        const uint32_t secs_r = time_limit_secs % 60;
-        const char* t_str = TextFormat("%02u:%02u", mins, secs_r);
-        const Color t_col = (time_limit_secs <= 30 && time_limit_secs > 0)
-            ? CLRS_TIME_LIMIT_WARN : WHITE;
-        const Vector2 t_sz = MeasureTextEx(font_timer_, t_str, 48, 1);
-        DrawTextEx(font_timer_, t_str,
-            {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 48, 1, t_col);
-        // "Cooperative Mode" label — top right
-        const char* coop_str = "Cooperative Mode";
-        const Vector2 cs = MeasureTextEx(font_hud_, coop_str, 24, 1);
-        DrawTextEx(font_hud_, coop_str,
-            {GetScreenWidth() - cs.x - 10, 10}, 24, 1, CLRS_TEXT_SOFT_WHITE);
-    } else {
-        // Competitive: personal lap timer
-        {
-            const uint32_t total_cs = s.level_ticks * 100 / 60;
-            const char* t_str = TextFormat("%02u:%02u.%02u",
-                total_cs / 6000, (total_cs % 6000) / 100, total_cs % 100);
-            const Color   t_col = s.finished ? CLRS_TIMER_FINISHED : WHITE;
-            const Vector2 t_sz  = MeasureTextEx(font_timer_, t_str, 48, 1);
-            DrawTextEx(font_timer_, t_str,
-                {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 48, 1, t_col);
-        }
-        // Best time (below lap timer)
-        if (best_ticks > 0) {
-            const uint32_t b_cs = best_ticks * 100 / 60;
-            const char* b_str = TextFormat("Best: %02u:%02u.%02u",
-                b_cs / 6000, (b_cs % 6000) / 100, b_cs % 100);
-            const Vector2 b_sz = MeasureTextEx(font_hud_, b_str, 24, 1);
-            DrawTextEx(font_hud_, b_str,
-                {GetScreenWidth() * 0.5f - b_sz.x * 0.5f, 62}, 24, 1, CLRS_TIMER_BEST);
-        }
-        // Time limit remaining (top right)
-        if (time_limit_secs > 0) {
-            const char* tl_str = TextFormat("%02u:%02u", time_limit_secs / 60, time_limit_secs % 60);
-            const Vector2 tl_sz = MeasureTextEx(font_hud_, tl_str, 24, 1);
-            const Color tl_col = time_limit_secs <= 30
-                ? CLRS_TIME_LIMIT_WARN : CLRS_TEXT_SOFT_WHITE;
-            DrawTextEx(font_hud_, tl_str,
-                {GetScreenWidth() - tl_sz.x - 10, 10}, 24, 1, tl_col);
-        }
-    }
-    // "Next level in: X.XX s" (bottom right, both modes)
+                         uint32_t next_level_cd_ticks) {
+    // Countdown is the main center timer.
+    const uint32_t mins = time_limit_secs / 60;
+    const uint32_t secs_r = time_limit_secs % 60;
+    const char* t_str = TextFormat("%02u:%02u", mins, secs_r);
+    const Color t_col = (time_limit_secs <= 30 && time_limit_secs > 0)
+        ? CLRS_TIME_LIMIT_WARN : WHITE;
+    const Vector2 t_sz = MeasureTextEx(font_timer_, t_str, 48, 1);
+    DrawTextEx(font_timer_, t_str,
+        {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 48, 1, t_col);
+
+    // "Next level in: X.XX s" (bottom right)
     if (next_level_cd_ticks > 0) {
         const uint32_t rem_cs = next_level_cd_ticks * 100 / 60;
         const char* cd_str = TextFormat("Next level in: %u.%02u s", rem_cs / 100, rem_cs % 100);
@@ -597,12 +561,11 @@ Rectangle Renderer::GetPauseItemRect(int idx, int total_items) const {
     const float pcx    = GetScreenWidth()  * 0.5f;
     const float pcy    = GetScreenHeight() * 0.5f;
     const float item_y = pcy - (total_items - 1) * 22.f + idx * 44.f;
-    const Vector2 sz   = MeasureTextEx(font_hud_, "  Mode: Cooperative", 24, 1);
+    const Vector2 sz   = MeasureTextEx(font_hud_, "  Quit to Menu", 24, 1);
     return Rectangle{pcx - sz.x * 0.5f - 8, item_y - 4, sz.x + 16, 24.f + 8};
 }
 
-void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
-                              bool is_lobby_host, bool coop_mode) {
+void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted) {
     if (state == PauseState::PLAYING) return;
 
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), CLRS_BG_OVERLAY);
@@ -615,29 +578,15 @@ void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused,
         DrawTextEx(font_timer_, title, {pcx - ts.x * 0.5f, pcy - 150.f}, 48, 1, CLRS_ACCENT);
 
         const char* sfx_label = sfx_muted ? "SFX: OFF" : "SFX: ON";
-        if (is_lobby_host) {
-            // 4-item menu (only lobby host): Resume | Game Mode | SFX | Quit
-            const char* mode_label = coop_mode ? "Mode: Cooperative" : "Mode: Competitive";
-            const char* items[4] = {"Resume", mode_label, sfx_label, "Quit to Menu"};
-            for (int i = 0; i < 4; i++) {
-                const bool  sel = (focused == i);
-                const Color col = sel ? CLRS_ACCENT : CLRS_TEXT_MAIN;
-                const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
-                const Vector2 sz = MeasureTextEx(font_hud_, buf, 24, 1);
-                const float iy  = pcy - (4 - 1) * 22.f + i * 44.f;
-                DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, iy}, 24, 1, col);
-            }
-        } else {
-            // 3-item menu: Resume | SFX | Quit
-            const char* items[3] = {"Resume", sfx_label, "Quit to Menu"};
-            for (int i = 0; i < 3; i++) {
-                const bool  sel = (focused == i);
-                const Color col = sel ? CLRS_ACCENT : CLRS_TEXT_MAIN;
-                const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
-                const Vector2 sz = MeasureTextEx(font_hud_, buf, 24, 1);
-                const float iy  = pcy - (3 - 1) * 22.f + i * 44.f;
-                DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, iy}, 24, 1, col);
-            }
+        // 3-item menu: Resume | SFX | Quit
+        const char* items[3] = {"Resume", sfx_label, "Quit to Menu"};
+        for (int i = 0; i < 3; i++) {
+            const bool  sel = (focused == i);
+            const Color col = sel ? CLRS_ACCENT : CLRS_TEXT_MAIN;
+            const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
+            const Vector2 sz = MeasureTextEx(font_hud_, buf, 24, 1);
+            const float iy  = pcy - (3 - 1) * 22.f + i * 44.f;
+            DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, iy}, 24, 1, col);
         }
         const char* hint = "up/down: navigate   enter: confirm   esc: resume";
         const Vector2 hs = MeasureTextEx(font_small_, hint, 18, 1);
@@ -668,7 +617,7 @@ void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused,
 void Renderer::DrawResultsScreen(bool in_results, bool local_ready,
                                   const ResultEntry* entries, uint8_t count, uint8_t level,
                                   double elapsed_since_start, double total_duration,
-                                  bool coop_mode, bool coop_all_finished) {
+                                  bool coop_all_finished) {
     if (!in_results) return;
 
     const float rw  = static_cast<float>(GetScreenWidth());
@@ -676,15 +625,8 @@ void Renderer::DrawResultsScreen(bool in_results, bool local_ready,
     const float rcx = rw * 0.5f;
     DrawRectangle(0, 0, (int)rw, (int)rh, CLRS_BG_RESULTS);
 
-    const char* r_title;
-    Color       r_tcol;
-    if (coop_mode) {
-        r_title = coop_all_finished ? "LEVEL CLEARED" : "LEVEL FAILED";
-        r_tcol  = coop_all_finished ? CLRS_RESULTS_TITLE : CLRS_ERROR;
-    } else {
-        r_title = TextFormat("LEVEL %u COMPLETE", (unsigned)level);
-        r_tcol  = CLRS_RESULTS_TITLE;
-    }
+    const char* r_title = coop_all_finished ? "LEVEL CLEARED" : "LEVEL FAILED";
+    const Color r_tcol  = coop_all_finished ? CLRS_RESULTS_TITLE : CLRS_ERROR;
     const Vector2 r_tsz = MeasureTextEx(font_timer_, r_title, 48, 1);
     DrawTextEx(font_timer_, r_title, {rcx - r_tsz.x * 0.5f, 40.f}, 48, 1, r_tcol);
 
@@ -728,7 +670,7 @@ void Renderer::DrawGlobalResultsScreen(bool in_global, bool local_ready,
                                         const GlobalResultEntry* entries, uint8_t count,
                                         uint8_t total_levels,
                                         double elapsed_since_start, double total_duration,
-                                        bool coop_mode, uint8_t coop_wins) {
+                                        uint8_t coop_wins) {
     if (!in_global) return;
 
     const float rw  = static_cast<float>(GetScreenWidth());
@@ -736,80 +678,26 @@ void Renderer::DrawGlobalResultsScreen(bool in_global, bool local_ready,
     const float rcx = rw * 0.5f;
     DrawRectangle(0, 0, (int)rw, (int)rh, CLRS_BG_RESULTS);
 
-    if (coop_mode) {
-        // --- Cooperative end screen ---
-        const bool  victory  = (coop_wins * 2 > total_levels);
-        const char* verdict  = victory ? "VICTORY!" : "DEFEAT!";
-        const Color vcol     = victory ? CLRS_SESSION_OK : CLRS_ERROR;
-        const Vector2 v_tsz  = MeasureTextEx(font_timer_, verdict, 72, 1);
-        DrawTextEx(font_timer_, verdict, {rcx - v_tsz.x * 0.5f, 30.f}, 72, 1, vcol);
+    const bool  victory  = (coop_wins * 2 > total_levels);
+    const char* verdict  = victory ? "VICTORY!" : "DEFEAT!";
+    const Color vcol     = victory ? CLRS_SESSION_OK : CLRS_ERROR;
+    const Vector2 v_tsz  = MeasureTextEx(font_timer_, verdict, 72, 1);
+    DrawTextEx(font_timer_, verdict, {rcx - v_tsz.x * 0.5f, 30.f}, 72, 1, vcol);
 
-        const char* g_sub = TextFormat("Levels cleared: %u / %u", (unsigned)coop_wins, (unsigned)total_levels);
-        const Vector2 g_ssz = MeasureTextEx(font_hud_, g_sub, 26, 1);
-        DrawTextEx(font_hud_, g_sub, {rcx - g_ssz.x * 0.5f, 116.f}, 26, 1, CLRS_TEXT_DIM);
+    const char* g_sub = TextFormat("Levels cleared: %u / %u", (unsigned)coop_wins, (unsigned)total_levels);
+    const Vector2 g_ssz = MeasureTextEx(font_hud_, g_sub, 26, 1);
+    DrawTextEx(font_hud_, g_sub, {rcx - g_ssz.x * 0.5f, 116.f}, 26, 1, CLRS_TEXT_DIM);
 
-        // Player name list (no ranking/wins in coop)
-        const float row_start_y = 168.f;
-        DrawLineEx({rcx - 200.f, row_start_y - 4.f}, {rcx + 200.f, row_start_y - 4.f}, 1.f, CLRS_TEXT_DIM);
-        for (int gi = 0; gi < (int)count; gi++) {
-            const GlobalResultEntry& ge = entries[gi];
-            const float gy = row_start_y + gi * 40.f;
-            const char* name_str = ge.name[0] ? ge.name : "?";
-            const Vector2 n_sz = MeasureTextEx(font_hud_, name_str, 26, 1);
-            DrawTextEx(font_hud_, name_str, {rcx - n_sz.x * 0.5f, gy}, 26, 1, CLRS_TEXT_MAIN);
-        }
-    } else {
-        // --- Competitive end screen ---
-
-        // Titolo
-        const char* g_title = "SESSION COMPLETE";
-        const Vector2 g_tsz = MeasureTextEx(font_timer_, g_title, 48, 1);
-        DrawTextEx(font_timer_, g_title, {rcx - g_tsz.x * 0.5f, 30.f}, 48, 1, CLRS_RESULTS_TITLE);
-
-        // Sottotitolo
-        const char* g_sub = TextFormat("after %u level%s", (unsigned)total_levels,
-                                        total_levels == 1 ? "" : "s");
-        const Vector2 g_ssz = MeasureTextEx(font_hud_, g_sub, 22, 1);
-        DrawTextEx(font_hud_, g_sub, {rcx - g_ssz.x * 0.5f, 88.f}, 22, 1, CLRS_TEXT_DIM);
-
-        // Colonne
-        const float col_rank = rcx - 260.f;
-        const float col_name = rcx - 200.f;
-        const float col_wins = rcx + 200.f;
-
-        // Intestazione colonne
-        const float hdr_y = 128.f;
-        DrawTextEx(font_hud_, "#",     {col_rank, hdr_y}, 20, 1, CLRS_TEXT_DIM);
-        DrawTextEx(font_hud_, "NAME",  {col_name, hdr_y}, 20, 1, CLRS_TEXT_DIM);
-        const char* wins_hdr = "WINS";
-        const Vector2 wh_sz = MeasureTextEx(font_hud_, wins_hdr, 20, 1);
-        DrawTextEx(font_hud_, wins_hdr, {col_wins - wh_sz.x, hdr_y}, 20, 1, CLRS_TEXT_DIM);
-        DrawLineEx({rcx - 270.f, hdr_y + 26.f}, {rcx + 270.f, hdr_y + 26.f}, 1.f, CLRS_TEXT_DIM);
-
-        // Righe giocatori
-        static const Color g_rank_col[3] = {CLRS_RESULTS_GOLD, CLRS_RESULTS_SILVER, CLRS_RESULTS_BRONZE};
-        const float row_start_y = hdr_y + 36.f;
-        for (int gi = 0; gi < (int)count; gi++) {
-            const GlobalResultEntry& ge = entries[gi];
-            const Color gc = (gi < 3) ? g_rank_col[gi] : CLRS_TEXT_MAIN;
-            const float gy = row_start_y + gi * 46.f;
-
-            DrawTextEx(font_hud_, TextFormat("#%d", gi + 1), {col_rank, gy}, 26, 1, gc);
-            DrawTextEx(font_hud_, ge.name[0] ? ge.name : "?", {col_name, gy}, 26, 1, gc);
-
-            const char* wins_str = TextFormat("%u", (unsigned)ge.wins);
-            const Vector2 ws_sz  = MeasureTextEx(font_hud_, wins_str, 26, 1);
-            DrawTextEx(font_hud_, wins_str, {col_wins - ws_sz.x, gy}, 26, 1, gc);
-
-            // Stella per ogni vittoria (massimo 8 stelle)
-            const int max_stars = 8;
-            const float star_x0 = col_wins + 16.f;
-            const int show_full = std::min((int)ge.wins, max_stars);
-            for (int s = 0; s < show_full; s++) {
-                DrawTextEx(font_hud_, "*", {star_x0 + s * 18.f, gy}, 22, 1, gc);
-            }
-        }
-    } // end competitive branch
+    // Player name list
+    const float row_start_y = 168.f;
+    DrawLineEx({rcx - 200.f, row_start_y - 4.f}, {rcx + 200.f, row_start_y - 4.f}, 1.f, CLRS_TEXT_DIM);
+    for (int gi = 0; gi < (int)count; gi++) {
+        const GlobalResultEntry& ge = entries[gi];
+        const float gy = row_start_y + gi * 40.f;
+        const char* name_str = ge.name[0] ? ge.name : "?";
+        const Vector2 n_sz = MeasureTextEx(font_hud_, name_str, 26, 1);
+        DrawTextEx(font_hud_, name_str, {rcx - n_sz.x * 0.5f, gy}, 26, 1, CLRS_TEXT_MAIN);
+    }
 
     // Countdown
     const int g_remain = static_cast<int>(total_duration - elapsed_since_start);

@@ -92,8 +92,7 @@ private:
     double            global_results_start_time_  = 0.0;
     uint8_t           global_results_count_       = 0;
     uint8_t           global_results_total_levels_= 0;
-    uint8_t           global_results_game_mode_   = 0;   // 0=competitive, 1=cooperative
-    uint8_t           global_results_coop_wins_   = 0;   // coop: levels cleared by team
+    uint8_t           global_results_coop_wins_   = 0;   // levels cleared by team
     GlobalResultEntry global_results_entries_[MAX_PLAYERS] = {};
 
     bool     prev_finished_ = false;

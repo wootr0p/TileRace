@@ -172,12 +172,6 @@ bool ServerSession::OnReceive(ENetHost* host, ENetPeer* peer,
         }
         return false;
     }
-    if (type == PKT_SET_GAME_MODE && len >= sizeof(PktSetGameMode) && in_lobby_) {
-        PktSetGameMode pkt{};
-        std::memcpy(&pkt, data, sizeof(pkt));
-        HandleSetGameMode(peer, pkt.mode);
-        return false;
-    }
     return false;
 }
 
@@ -276,8 +270,8 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     it->second.SetState(s);
 
     UpdateZone();
-    // Coop mode: push overlapping player AABBs apart each tick.
-    if (game_mode_ == 1) ResolvePlayerCollisions();
+    // Push overlapping player AABBs apart each tick.
+    ResolvePlayerCollisions();
     BroadcastGameState(host);
 
     // --- Verifica scadenza timer zona ---
@@ -469,7 +463,6 @@ void ServerSession::ResetToInitial(ENetHost* host) {
     in_lobby_      = (initial_map_path_.find("_Lobby") != std::string::npos ||
                        initial_map_path_.find("_lobby") != std::string::npos);
     game_locked_   = false;
-    game_mode_     = 1;   // reset to cooperative (default) when lobby reopens
     coop_cleared_levels_ = 0;
     session_token_ = 0u;
     current_level_ = in_lobby_ ? 0 : initial_level_;
@@ -507,24 +500,15 @@ void ServerSession::SendResults(ENetHost* host, const char* reason) {
             return a.level_ticks < b.level_ticks;
         });
 
-    if (game_mode_ == 1) {
-        // Cooperative: check whether ALL players finished; track team clears.
-        const bool all_done = !entries.empty() &&
-            std::all_of(entries.begin(), entries.end(),
-                        [](const ResultEntry& e){ return e.finished != 0; });
-        if (all_done) {
-            coop_cleared_levels_++;
-            printf("[server] COOP CLEARED (total=%u)\n", coop_cleared_levels_);
-        }
-        res_pkt.coop_all_finished = all_done ? 1u : 0u;
-    } else {
-        // Competitive: record the winner's tally.
-        if (!entries.empty() && entries[0].finished) {
-            session_wins_[entries[0].player_id]++;
-            printf("[server] WIN player_id=%u (total wins=%u)\n",
-                   entries[0].player_id, session_wins_[entries[0].player_id]);
-        }
+    // Check whether ALL players finished; track team clears.
+    const bool all_done = !entries.empty() &&
+        std::all_of(entries.begin(), entries.end(),
+                    [](const ResultEntry& e){ return e.finished != 0; });
+    if (all_done) {
+        coop_cleared_levels_++;
+        printf("[server] COOP CLEARED (total=%u)\n", coop_cleared_levels_);
     }
+    res_pkt.coop_all_finished = all_done ? 1u : 0u;
 
     res_pkt.count = static_cast<uint8_t>(entries.size());
     for (size_t i = 0; i < entries.size() && i < static_cast<size_t>(MAX_PLAYERS); i++)
@@ -554,7 +538,6 @@ void ServerSession::BroadcastGameState(ENetHost* host) {
     }
     gs_pkt.state.next_level_countdown_ticks = CountdownTicks();
     gs_pkt.state.is_lobby    = in_lobby_ ? 1u : 0u;
-    gs_pkt.state.game_mode   = game_mode_;
     if (!in_lobby_ && !in_results_) {
         const uint32_t el = enet_time_get() - level_start_ms_;
         gs_pkt.state.time_limit_secs = el < LEVEL_TIME_LIMIT_MS
@@ -662,26 +645,9 @@ void ServerSession::UpdateZone() {
 // ---------------------------------------------------------------------------
 bool ServerSession::AllInZone() const {
     if (players_.empty()) return false;
-    if (game_mode_ == 1) {
-        // Cooperative: level is complete when ALL players have reached the exit tile.
-        for (const auto& [peer, pl] : players_)
-            if (!pl.GetState().finished) return false;
-        return true;
-    }
-    // Competitive: all players standing on 'E' simultaneously triggers countdown.
-    const World& world = level_mgr_.GetWorld();
-    for (const auto& [peer, pl] : players_) {
-        const PlayerState& s = pl.GetState();
-        const int tx0 = static_cast<int>(s.x)                    / TILE_SIZE;
-        const int ty0 = static_cast<int>(s.y)                    / TILE_SIZE;
-        const int tx1 = static_cast<int>(s.x + TILE_SIZE - 1.f)  / TILE_SIZE;
-        const int ty1 = static_cast<int>(s.y + TILE_SIZE - 1.f)  / TILE_SIZE;
-        const bool on_e = world.GetTile(tx0, ty0) == 'E' ||
-                          world.GetTile(tx1, ty0) == 'E' ||
-                          world.GetTile(tx0, ty1) == 'E' ||
-                          world.GetTile(tx1, ty1) == 'E';
-        if (!on_e) return false;
-    }
+    // Level is complete when ALL players have reached the exit tile.
+    for (const auto& [peer, pl] : players_)
+        if (!pl.GetState().finished) return false;
     return true;
 }
 
@@ -703,20 +669,7 @@ PlayerState ServerSession::ApplySpawnReset(PlayerState s, bool with_kill) const 
 }
 
 // ---------------------------------------------------------------------------
-// HandleSetGameMode — lobby host changes cooperative/competitive mode
-// ---------------------------------------------------------------------------
-void ServerSession::HandleSetGameMode(ENetPeer* peer, uint8_t mode) {
-    auto it = players_.find(peer);
-    if (it == players_.end()) return;
-    // Only the first player (host, player_id == 1) can change the mode.
-    if (it->second.GetState().player_id != 1u) return;
-    game_mode_ = (mode == 1u) ? 1u : 0u;
-    printf("[server] GAME_MODE set to %s\n",
-           game_mode_ == 1 ? "cooperative" : "competitive");
-}
-
-// ---------------------------------------------------------------------------
-// ResolvePlayerCollisions — coop only: push overlapping player AABBs apart
+// ResolvePlayerCollisions — push overlapping player AABBs apart
 // ---------------------------------------------------------------------------
 void ServerSession::ResolvePlayerCollisions() {
     // Collect mutable states.
@@ -803,7 +756,6 @@ void ServerSession::SendGlobalResults(ENetHost* host) {
 
     PktGlobalResults pkt{};
     pkt.total_levels = static_cast<uint8_t>(current_level_ - 1);  // current_level_ was incremented to the failed load
-    pkt.game_mode    = game_mode_;
     pkt.coop_wins    = static_cast<uint8_t>(coop_cleared_levels_);
     pkt.count = static_cast<uint8_t>(
         std::min(entries.size(), static_cast<size_t>(MAX_PLAYERS)));

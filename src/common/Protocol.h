@@ -7,7 +7,7 @@
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
 static constexpr const char*  GAME_VERSION     = "0.2.5b";
-static constexpr uint16_t     PROTOCOL_VERSION = 6;
+static constexpr uint16_t     PROTOCOL_VERSION = 7;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -44,7 +44,6 @@ enum PktType : uint8_t {
     PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
     PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
     PKT_GENERATING        = 17,  // S → C  server is generating the next level; client shows loading overlay
-    PKT_SET_GAME_MODE     = 18,  // C → S  lobby host sets game mode (0=competitive, 1=cooperative)
 };
 
 struct PktInput {
@@ -109,7 +108,7 @@ struct PktLevelResults {
     uint8_t     type              = PKT_LEVEL_RESULTS;
     uint8_t     count             = 0;
     uint8_t     level             = 0;
-    uint8_t     coop_all_finished = 0;  // 1 = all players finished in cooperative mode
+    uint8_t     coop_all_finished = 0;  // 1 = all players finished (cooperative mode)
     ResultEntry entries[MAX_PLAYERS];
 };
 
@@ -130,9 +129,8 @@ struct PktGlobalResults {
     uint8_t           type         = PKT_GLOBAL_RESULTS;
     uint8_t           count        = 0;    // number of valid entries
     uint8_t           total_levels = 0;    // how many levels were played this session
-    uint8_t           game_mode    = 0;    // 0=competitive, 1=cooperative
-    uint8_t           coop_wins    = 0;    // coop: how many levels the team cleared
-    uint8_t           _pad[3]      = {};
+    uint8_t           coop_wins    = 0;    // how many levels the team cleared
+    uint8_t           _pad[4]      = {};
     GlobalResultEntry entries[MAX_PLAYERS];
 };
 
@@ -177,11 +175,4 @@ struct PktEmoteBroadcast {
 struct PktGenerating {
     uint8_t type  = PKT_GENERATING;
     uint8_t level = 0;   // the level number being generated
-};
-
-// Sent by the lobby host to change the session game mode.
-// Server ignores this packet outside the lobby or from non-host players.
-struct PktSetGameMode {
-    uint8_t type = PKT_SET_GAME_MODE;
-    uint8_t mode = 1;   // 0 = competitive, 1 = cooperative
 };
