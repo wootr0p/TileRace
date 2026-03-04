@@ -433,8 +433,8 @@ static bool BuildAndPlaceBranching(
     std::vector<int> branch_order(n_branches);
     for (int b = 0; b < n_branches; ++b) branch_order[b] = b;
     std::sort(branch_order.begin(), branch_order.end(),
-        [&](int a, int b_idx) {
-            return fork_exits[a].first < fork_exits[b_idx].first;
+        [&](int a, int b) {
+            return fork_exits[a].first < fork_exits[b].first;
         });
 
     // Compute horizontal offsets ensuring BRANCH_GAP tiles between branches
