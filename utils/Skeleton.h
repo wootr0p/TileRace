@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-04 19:52
+ * Generated : 2026-03-04 20:50
  * ============================================================================
  *
  * PURPOSE
@@ -178,7 +178,7 @@ struct GameState {
 
 // Button bitmask. Rising-edge flags (JUMP_PRESS, DASH) are set in InputSampler::Poll()
 // and cleared after one fixed tick so they fire exactly once per physical press.
-enum InputBits : uint8_t {
+enum InputBits : uint16_t {
     BTN_LEFT       = 1 << 0,  // move left (held)
     BTN_RIGHT      = 1 << 1,  // move right (held)
     BTN_JUMP       = 1 << 2,  // jump held; used for variable-height cut
@@ -186,13 +186,15 @@ enum InputBits : uint8_t {
     BTN_DASH       = 1 << 4,  // rising edge — starts dash
     BTN_UP         = 1 << 5,  // held — dash direction / upward steer
     BTN_DOWN       = 1 << 6,  // held — dash direction / downward steer
+    BTN_DRAW       = 1 << 7,  // held — player is drawing a trail on the map
+    BTN_SPRINT     = 1 << 8,  // held — sprint (faster horizontal movement)
 };
 
 // Deterministic input snapshot for one 60 Hz fixed tick.
 // Identical layout on client and server: same inputs + same PlayerState = same result.
 struct InputFrame {
     uint32_t tick    = 0;     // monotonic fixed-tick counter (60 Hz)
-    uint8_t  buttons = 0;     // OR of InputBits
+    uint16_t buttons = 0;     // OR of InputBits
 
     // Raw direction for dash targeting and in-flight steering.
     // Normalised internally in Player::Simulate / RequestDash / SteerDash.
@@ -202,7 +204,7 @@ struct InputFrame {
     // Horizontal movement axis [-1, 1]. Keyboard/DPAD = ±1.0; analogue stick = raw after deadzone.
     float move_x  = 0.f;
 
-    bool Has(InputBits b) const { return (buttons & b) != 0; }
+    bool Has(uint16_t b) const { return (buttons & b) != 0; }
 };
 
 
@@ -253,6 +255,9 @@ inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 15% stronger than JUM
 
 // Dash push — force multiplier applied to DASH_SPEED when a dashing player hits another
 inline constexpr float DASH_PUSH_MULTIPLIER   = 2.0f;  // pushed player receives 2× dash velocity
+
+// Sprint — held modifier that boosts horizontal movement speed
+inline constexpr float SPRINT_MULTIPLIER      = 1.5f;  // 50% faster while sprinting
 
 
 // ==========================================================================
@@ -353,7 +358,14 @@ struct PlayerState {
     // Checkpoint — updated server-side when the player touches a 'C' tile.
     // (0,0) means no checkpoint has been reached yet (fall back to level spawn).
     float    checkpoint_x = 0.f;
-    float    checkpoint_y = 0.f;};
+    float    checkpoint_y = 0.f;
+
+    // Drawing trail — true while the player holds the draw button
+    bool     drawing      = false;
+
+    // Sprint — true while the player holds the sprint button
+    bool     sprinting    = false;
+};
 
 // ==========================================================================
 // FILE : Protocol.h
@@ -369,7 +381,7 @@ struct PlayerState {
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
 static constexpr const char*  GAME_VERSION     = "0.2.6b";
-static constexpr uint16_t     PROTOCOL_VERSION = 7;
+static constexpr uint16_t     PROTOCOL_VERSION = 8;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -671,8 +683,9 @@ struct Chunk {
     int         weight     = 1;
 
     // Content flags — set during loading
-    bool has_spawn = false; // contains 'X'
-    bool has_end   = false; // contains 'E'
+    bool has_spawn      = false; // contains 'X'
+    bool has_end        = false; // contains 'E'
+    bool has_checkpoint = false; // contains 'C'
 
     // Fork detection helpers
     bool IsForkStart() const { return exits.size() > 1; }
@@ -704,6 +717,11 @@ public:
     // True if fork chunks are available (both fork-start and fork-end).
     bool HasForkChunks() const { return !fork_start_.empty(); }
 
+    // Mid-chunk sub-pools based on checkpoint content.
+    const std::vector<Chunk>& MidCheckpointChunks() const { return mid_checkpoint_; }
+    const std::vector<Chunk>& MidNormalChunks()      const { return mid_normal_; }
+    bool HasMidCheckpointChunks() const { return !mid_checkpoint_.empty(); }
+
 private:
     // Parse a single .tmj chunk file. Returns false on failure.
     bool ParseChunk(const char* path, Chunk& out);
@@ -717,8 +735,10 @@ private:
     std::vector<Chunk> start_;
     std::vector<Chunk> mid_;
     std::vector<Chunk> end_;
-    std::vector<Chunk> fork_start_;   // chunks with multiple exits (fork entry points)
-    std::vector<Chunk> fork_end_;     // chunks with multiple entries (fork merge points)
+    std::vector<Chunk> fork_start_;      // chunks with multiple exits (fork entry points)
+    std::vector<Chunk> fork_end_;        // chunks with multiple entries (fork merge points)
+    std::vector<Chunk> mid_checkpoint_;  // mid chunks that contain 'C' tiles
+    std::vector<Chunk> mid_normal_;      // mid chunks without 'C' tiles
     int min_mid_diff_ = 1;
     int max_mid_diff_ = 1;
 };
@@ -792,7 +812,8 @@ public:
     bool Load(const char* path);
 
     // Generate a level from chunks. Returns false on failure.
-    bool Generate(int level_num, const ChunkStore& store, uint32_t seed = 0);
+    // When validate=false, the physics-based level validator is skipped (online mode).
+    bool Generate(int level_num, const ChunkStore& store, uint32_t seed = 0, bool validate = true);
 
     // Build the canonical path for a level number (e.g. 2 → "assets/levels/tilemaps/Level02.tmj").
     static std::string BuildPath(int num);
@@ -966,6 +987,10 @@ private:
     std::unordered_map<uint32_t, uint32_t>  session_wins_;   // player_id → 1st-place count
     std::unordered_map<uint32_t, std::string> session_names_; // player_id → display name
 
+    // Shared checkpoint tracking — each activated spawn-position is recorded so that
+    // re-visiting an already-activated checkpoint doesn't reset everyone's progress.
+    std::vector<std::pair<float,float>> activated_checkpoints_;
+
     static constexpr uint32_t LEVEL_TIME_LIMIT_MS        = 120'000u;
     static constexpr uint32_t NEXT_LEVEL_MS              =   3'000u;
     static constexpr uint32_t RESULTS_DURATION_MS        =  15'000u;
@@ -1070,6 +1095,7 @@ static constexpr Color CLRS_DEBUG_TEXT     = {200, 200, 200, 200};
 #include "LevelPalette.h"
 #include <raylib.h>
 #include <unordered_map>
+#include <vector>
 #include <string>
 #include <cstdint>
 
@@ -1184,6 +1210,20 @@ private:
     // Emote system — per-player bubble state
     std::unordered_map<uint32_t, EmoteBubble> emote_bubbles_;
 
+    // Drawing trails — persistent map marks left by players holding the draw button.
+    // Keyed by player_id; each entry is a list of strokes (each stroke = vector of points).
+    static constexpr float DRAW_MIN_DIST    = 8.f;   // min px between consecutive points
+    static constexpr int   DRAW_MAX_POINTS  = 4000;  // max points per player per level
+    static constexpr int   TESS_DIVISIONS   = 6;     // Catmull-Rom subdivisions per segment
+    struct DrawStroke {
+        std::vector<Vector2> pts;           // raw control points
+        std::vector<Vector2> tessellated;   // cached spline polyline
+        int tess_source_count = 0;          // # of pts already tessellated
+    };
+    std::unordered_map<uint32_t, std::vector<DrawStroke>> draw_trails_;
+    std::unordered_map<uint32_t, bool> draw_prev_drawing_;  // previous tick's drawing flag
+
+    void UpdateStrokeTessellation(DrawStroke& st);
     void HandlePauseInput(Renderer& renderer, NetworkClient& net);
     void TickFixed(NetworkClient& net);
     void PollNetwork(NetworkClient& net);
@@ -1237,6 +1277,8 @@ public:
     float GetMoveX()                       const;
     void  GetDashDir(float& dx, float& dy) const;
     bool  IsJumpHeld()                     const;
+    bool  IsDrawHeld()                      const;
+    bool  IsSprintHeld()                     const;
 
     // Emote wheel (E key / right-stick click).
     bool IsEmoteWheelOpen()       const { return emote_wheel_open_; }
@@ -1523,6 +1565,11 @@ public:
     void DrawTrail(const TrailState& t, bool is_local);
     void DrawDeathParticles(const DeathParticles& dp);
     void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true);
+
+    // Drawing trails — persistent spline marks left on the map by the draw button.
+    // Each stroke is a vector of points; drawn as Catmull-Rom splines.
+    struct DrawStroke { const Vector2* pts; int count; };
+    void DrawMapTrails(const DrawStroke* strokes, int stroke_count, Color color);
 
     // Emote system (world-space, call between BeginWorldDraw / EndWorldDraw)
     void DrawEmoteWheel(float cx, float cy, int highlighted_dir);  // local-only wheel overlay

@@ -104,6 +104,24 @@ bool InputSampler::IsJumpHeld() const {
             IsGamepadButtonDown(GP, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
 }
 
+bool InputSampler::IsDrawHeld() const {
+    if (IsKeyDown(KEY_P)) return true;
+    if (IsGamepadAvailable(GP)) {
+        const float lt = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_TRIGGER);
+        if (lt > 0.3f) return true;
+    }
+    return false;
+}
+
+bool InputSampler::IsSprintHeld() const {
+    if (IsKeyDown(KEY_RIGHT_CONTROL)) return true;
+    if (IsGamepadAvailable(GP)) {
+        const float rt = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_RIGHT_TRIGGER);
+        if (rt > 0.3f) return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Emote wheel polling
 // ---------------------------------------------------------------------------

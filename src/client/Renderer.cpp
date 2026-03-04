@@ -265,6 +265,26 @@ void Renderer::DrawPlayer(float rx, float ry, const PlayerState& s, bool is_loca
 }
 
 // ---------------------------------------------------------------------------
+// DrawMapTrails — render pre-tessellated polylines for persistent player marks.
+// Spline tessellation is cached in GameSession; here we just draw line segments.
+// ---------------------------------------------------------------------------
+void Renderer::DrawMapTrails(const DrawStroke* strokes, int stroke_count, Color color) {
+    for (int si = 0; si < stroke_count; ++si) {
+        const int n = strokes[si].count;
+        if (n < 2) {
+            // Single point: draw a small dot.
+            if (n == 1) DrawCircleV(strokes[si].pts[0], 2.f, color);
+            continue;
+        }
+        // Draw cached polyline as thick line segments.
+        const Vector2* p = strokes[si].pts;
+        for (int i = 0; i < n - 1; ++i) {
+            DrawLineEx(p[i], p[i + 1], 3.f, color);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Emote wheel — world-space, local player only
 // ---------------------------------------------------------------------------
 void Renderer::DrawEmoteWheel(float cx, float cy, int highlighted_dir) {

@@ -31,7 +31,7 @@ ServerSession::ServerSession(const char* initial_map_path, int initial_level, bo
     // game_locked_ is set later in OnConnect (after the local client connects).
     if (skip_lobby_ && chunk_store_.IsReady()) {
         current_level_ = 1;
-        is_ready_      = level_mgr_.Generate(current_level_, chunk_store_);
+        is_ready_      = level_mgr_.Generate(current_level_, chunk_store_, 0, skip_lobby_);
         if (is_ready_)
             printf("[server] skip_lobby: generated level 1 immediately\n");
     } else {
@@ -225,7 +225,7 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
         }
     }
 
-    // --- Checkpoint tile 'C' ---
+    // --- Checkpoint tile 'C' (shared: activates for all players) ---
     if (!s.finished) {
         const int txc0 = static_cast<int>(s.x)                    / TILE_SIZE;
         const int tyc0 = static_cast<int>(s.y)                    / TILE_SIZE;
@@ -238,13 +238,26 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
         else if (world.GetTile(txc0, tyc1) == 'C') { seed_tx = txc0; seed_ty = tyc1; }
         else if (world.GetTile(txc1, tyc1) == 'C') { seed_tx = txc1; seed_ty = tyc1; }
         if (seed_tx >= 0) {
-            // Use the same center+lowest-floor logic as the spawn finder,
-            // applied to the full connected group of 'C' tiles.
             const SpawnPos cp = FindCenterCheckpoint(world, seed_tx, seed_ty);
-            if (cp.x != s.checkpoint_x || cp.y != s.checkpoint_y) {
+            // Check if this checkpoint was already activated.
+            bool already = false;
+            for (auto& [ax, ay] : activated_checkpoints_) {
+                if (ax == cp.x && ay == cp.y) { already = true; break; }
+            }
+            if (!already) {
+                activated_checkpoints_.push_back({cp.x, cp.y});
+                // Propagate to the triggering player (via s, which is SetState'd below).
                 s.checkpoint_x = cp.x;
                 s.checkpoint_y = cp.y;
-                printf("[server] CHECKPOINT player_id=%u  (%.0f, %.0f)\n",
+                // Propagate to ALL other players.
+                for (auto& [p, player] : players_) {
+                    if (p == peer) continue;
+                    PlayerState ps = player.GetState();
+                    ps.checkpoint_x = cp.x;
+                    ps.checkpoint_y = cp.y;
+                    player.SetState(ps);
+                }
+                printf("[server] SHARED CHECKPOINT player_id=%u activated (%.0f, %.0f) → all players\n",
                        s.player_id, cp.x, cp.y);
             }
         }
@@ -385,6 +398,7 @@ void ServerSession::DoLevelChange(ENetHost* host) {
     in_results_ = false;
     ready_peers_.clear();
     best_ticks_.clear();
+    activated_checkpoints_.clear();
 
     // Lobby → primo livello reale: blocca nuove connessioni per questa sessione.
     if (in_lobby_) {
@@ -410,7 +424,7 @@ void ServerSession::DoLevelChange(ENetHost* host) {
         // Notify clients that generation is starting so they show a loading overlay
         // and don't time out while the ENet loop is stalled.
         BroadcastGenerating(host);
-        loaded = level_mgr_.Generate(current_level_, chunk_store_);
+        loaded = level_mgr_.Generate(current_level_, chunk_store_, 0, skip_lobby_);
     }
     if (!loaded) {
         // Fallback: try file-based loading (legacy path).

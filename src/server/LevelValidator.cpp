@@ -76,10 +76,10 @@ static InputFrame MakeInput(const ActionDef& act, int tick, const PlayerState& p
         f.buttons |= BTN_JUMP_PRESS | BTN_JUMP;
         if (ps.on_wall_left) {
             f.move_x = 1.f;
-            f.buttons = static_cast<uint8_t>((f.buttons | BTN_RIGHT | BTN_JUMP_PRESS | BTN_JUMP) & ~BTN_LEFT);
+            f.buttons = static_cast<uint16_t>((f.buttons | BTN_RIGHT | BTN_JUMP_PRESS | BTN_JUMP) & ~BTN_LEFT);
         } else {
             f.move_x = -1.f;
-            f.buttons = static_cast<uint8_t>((f.buttons | BTN_LEFT | BTN_JUMP_PRESS | BTN_JUMP) & ~BTN_RIGHT);
+            f.buttons = static_cast<uint16_t>((f.buttons | BTN_LEFT | BTN_JUMP_PRESS | BTN_JUMP) & ~BTN_RIGHT);
         }
         return f;
     }

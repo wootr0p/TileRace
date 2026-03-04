@@ -6,7 +6,7 @@
 inline constexpr int   TILE_SIZE   = 32;       // pixels per tile side
 
 // Horizontal movement
-inline constexpr float MOVE_SPEED  = 400.f;    // px/s  — max horizontal speed
+inline constexpr float MOVE_SPEED  = 300.f;    // px/s  — max horizontal speed
 inline constexpr float MOVE_ACCEL  = 8000.f;   // px/s² — acceleration toward target speed
 inline constexpr float MOVE_DECEL  = 6000.f;   // px/s² — deceleration on stop or direction reversal
 
@@ -40,3 +40,6 @@ inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 15% stronger than JUM
 
 // Dash push — force multiplier applied to DASH_SPEED when a dashing player hits another
 inline constexpr float DASH_PUSH_MULTIPLIER   = 2.0f;  // pushed player receives 2× dash velocity
+
+// Sprint — held modifier that boosts horizontal movement speed
+inline constexpr float SPRINT_MULTIPLIER      = 2.0f;  // 2× faster while sprinting

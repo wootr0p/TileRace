@@ -15,6 +15,7 @@
 #include "LevelPalette.h"
 #include <raylib.h>
 #include <unordered_map>
+#include <vector>
 #include <string>
 #include <cstdint>
 
@@ -129,6 +130,20 @@ private:
     // Emote system — per-player bubble state
     std::unordered_map<uint32_t, EmoteBubble> emote_bubbles_;
 
+    // Drawing trails — persistent map marks left by players holding the draw button.
+    // Keyed by player_id; each entry is a list of strokes (each stroke = vector of points).
+    static constexpr float DRAW_MIN_DIST    = 8.f;   // min px between consecutive points
+    static constexpr int   DRAW_MAX_POINTS  = 4000;  // max points per player per level
+    static constexpr int   TESS_DIVISIONS   = 6;     // Catmull-Rom subdivisions per segment
+    struct DrawStroke {
+        std::vector<Vector2> pts;           // raw control points
+        std::vector<Vector2> tessellated;   // cached spline polyline
+        int tess_source_count = 0;          // # of pts already tessellated
+    };
+    std::unordered_map<uint32_t, std::vector<DrawStroke>> draw_trails_;
+    std::unordered_map<uint32_t, bool> draw_prev_drawing_;  // previous tick's drawing flag
+
+    void UpdateStrokeTessellation(DrawStroke& st);
     void HandlePauseInput(Renderer& renderer, NetworkClient& net);
     void TickFixed(NetworkClient& net);
     void PollNetwork(NetworkClient& net);

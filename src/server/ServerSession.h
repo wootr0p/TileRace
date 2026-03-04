@@ -88,6 +88,10 @@ private:
     std::unordered_map<uint32_t, uint32_t>  session_wins_;   // player_id → 1st-place count
     std::unordered_map<uint32_t, std::string> session_names_; // player_id → display name
 
+    // Shared checkpoint tracking — each activated spawn-position is recorded so that
+    // re-visiting an already-activated checkpoint doesn't reset everyone's progress.
+    std::vector<std::pair<float,float>> activated_checkpoints_;
+
     static constexpr uint32_t LEVEL_TIME_LIMIT_MS        = 120'000u;
     static constexpr uint32_t NEXT_LEVEL_MS              =   3'000u;
     static constexpr uint32_t RESULTS_DURATION_MS        =  15'000u;

@@ -33,8 +33,9 @@ struct Chunk {
     int         weight     = 1;
 
     // Content flags — set during loading
-    bool has_spawn = false; // contains 'X'
-    bool has_end   = false; // contains 'E'
+    bool has_spawn      = false; // contains 'X'
+    bool has_end        = false; // contains 'E'
+    bool has_checkpoint = false; // contains 'C'
 
     // Fork detection helpers
     bool IsForkStart() const { return exits.size() > 1; }
@@ -66,6 +67,11 @@ public:
     // True if fork chunks are available (both fork-start and fork-end).
     bool HasForkChunks() const { return !fork_start_.empty(); }
 
+    // Mid-chunk sub-pools based on checkpoint content.
+    const std::vector<Chunk>& MidCheckpointChunks() const { return mid_checkpoint_; }
+    const std::vector<Chunk>& MidNormalChunks()      const { return mid_normal_; }
+    bool HasMidCheckpointChunks() const { return !mid_checkpoint_.empty(); }
+
 private:
     // Parse a single .tmj chunk file. Returns false on failure.
     bool ParseChunk(const char* path, Chunk& out);
@@ -79,8 +85,10 @@ private:
     std::vector<Chunk> start_;
     std::vector<Chunk> mid_;
     std::vector<Chunk> end_;
-    std::vector<Chunk> fork_start_;   // chunks with multiple exits (fork entry points)
-    std::vector<Chunk> fork_end_;     // chunks with multiple entries (fork merge points)
+    std::vector<Chunk> fork_start_;      // chunks with multiple exits (fork entry points)
+    std::vector<Chunk> fork_end_;        // chunks with multiple entries (fork merge points)
+    std::vector<Chunk> mid_checkpoint_;  // mid chunks that contain 'C' tiles
+    std::vector<Chunk> mid_normal_;      // mid chunks without 'C' tiles
     int min_mid_diff_ = 1;
     int max_mid_diff_ = 1;
 };

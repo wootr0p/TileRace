@@ -46,11 +46,19 @@ void Player::Simulate(const InputFrame& frame, const World& world) {
         SteerDash(frame.dash_dx, frame.dash_dy);
 
     // 5. Movimento orizzontale (move_x è analogico: [-1,1])
-    float dx = frame.move_x * MOVE_SPEED * FIXED_DT;
+    const bool sprinting = frame.Has(BTN_SPRINT) && state_.dash_active_ticks == 0;
+    const float speed = sprinting ? MOVE_SPEED * SPRINT_MULTIPLIER : MOVE_SPEED;
+    float dx = frame.move_x * speed * FIXED_DT;
     MoveX(dx, world);
 
     // 6. Gravità, salto, collisioni Y
     MoveY(FIXED_DT, world);
+
+    // 7. Drawing flag (held)
+    state_.drawing = frame.Has(BTN_DRAW);
+
+    // 8. Sprint flag (held, authoritative for remote rendering)
+    state_.sprinting = sprinting;
 }
 
 // ---------------------------------------------------------------------------

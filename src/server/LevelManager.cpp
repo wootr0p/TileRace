@@ -18,7 +18,7 @@ bool LevelManager::Load(const char* path) {
     return true;
 }
 
-bool LevelManager::Generate(int level_num, const ChunkStore& store, uint32_t seed) {
+bool LevelManager::Generate(int level_num, const ChunkStore& store, uint32_t seed, bool validate) {
     static constexpr int MAX_RETRIES = 10;
 
     GeneratorParams params;
@@ -42,14 +42,15 @@ bool LevelManager::Generate(int level_num, const ChunkStore& store, uint32_t see
         any_generated = true;
         last_good = tmp;
 
-        if (LevelValidator::Validate(tmp)) {
+        if (!validate || LevelValidator::Validate(tmp)) {
             world_ = tmp;
             const SpawnPos sp = FindCenterSpawn(world_);
             spawn_x_ = sp.x;
             spawn_y_ = sp.y;
-            printf("[LevelManager] generated level %d  (attempt %d/%d)  spawn=(%.0f, %.0f)  size=%dx%d\n",
+            printf("[LevelManager] generated level %d  (attempt %d/%d)  spawn=(%.0f, %.0f)  size=%dx%d%s\n",
                    level_num, attempt + 1, MAX_RETRIES, spawn_x_, spawn_y_,
-                   world_.GetWidth(), world_.GetHeight());
+                   world_.GetWidth(), world_.GetHeight(),
+                   validate ? "" : "  [validation skipped]");
             return true;
         }
         printf("[LevelManager] level %d FAILED validation (attempt %d/%d)\n",

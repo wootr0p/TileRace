@@ -10,6 +10,19 @@
 #include "Protocol.h"   // LOBBY_MAP_PATH, PKT_* constants
 #include "SpawnFinder.h" // FindCenterSpawn (shared con server)
 #include <algorithm>
+#include <cmath>
+
+// ---------------------------------------------------------------------------
+// Catmull-Rom helpers for spline tessellation caching
+// ---------------------------------------------------------------------------
+static Vector2 CatmullRomPoint(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t) {
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    return {
+        0.5f * (2.f*p1.x + (-p0.x + p2.x)*t + (2.f*p0.x - 5.f*p1.x + 4.f*p2.x - p3.x)*t2 + (-p0.x + 3.f*p1.x - 3.f*p2.x + p3.x)*t3),
+        0.5f * (2.f*p1.y + (-p0.y + p2.y)*t + (2.f*p0.y - 5.f*p1.y + 4.f*p2.y - p3.y)*t2 + (-p0.y + 3.f*p1.y - 3.f*p2.y + p3.y)*t3)
+    };
+}
 #include <cstring>
 #include <raylib.h>
 
@@ -315,6 +328,8 @@ void GameSession::TickFixed(NetworkClient& net) {
     if (input_sampler_.IsJumpHeld())          frame.buttons |= BTN_JUMP;
     if (input_sampler_.ConsumeJumpPressed()) { frame.buttons |= BTN_JUMP_PRESS; }
     if (input_sampler_.ConsumeDashPending()) { frame.buttons |= BTN_DASH; }
+    if (input_sampler_.IsDrawHeld())           frame.buttons |= BTN_DRAW;
+    if (input_sampler_.IsSprintHeld())          frame.buttons |= BTN_SPRINT;
 
     // Blocca input durante morte/grace
     {
@@ -369,6 +384,36 @@ void GameSession::TickFixed(NetworkClient& net) {
     if (pre_dash == 0 && player_.GetState().dash_active_ticks > 0)
         sfx_.PlayDash();
     // Nota: checkpoint rilevato nel main Tick() dopo la reconciliation (server-side only).
+
+    // --- Drawing trail (local player) ---
+    {
+        const PlayerState& ls = player_.GetState();
+        auto& strokes = draw_trails_[local_player_id_];
+        bool& prev_dr = draw_prev_drawing_[local_player_id_];
+        if (ls.drawing && ls.kill_respawn_ticks == 0 && ls.respawn_grace_ticks == 0) {
+            // Count total points for this player across all strokes.
+            int total = 0;
+            for (const auto& st : strokes) total += static_cast<int>(st.pts.size());
+            if (total < DRAW_MAX_POINTS) {
+                if (!prev_dr || strokes.empty()) {
+                    // Start a new stroke.
+                    strokes.push_back({});
+                    strokes.back().pts.push_back({ls.x + TILE_SIZE * 0.5f,
+                                                  ls.y + TILE_SIZE * 0.5f});
+                } else {
+                    auto& cur = strokes.back().pts;
+                    const Vector2 last = cur.back();
+                    const float cx = ls.x + TILE_SIZE * 0.5f;
+                    const float cy = ls.y + TILE_SIZE * 0.5f;
+                    const float ddx = cx - last.x;
+                    const float ddy = cy - last.y;
+                    if (ddx * ddx + ddy * ddy >= DRAW_MIN_DIST * DRAW_MIN_DIST)
+                        cur.push_back({cx, cy});
+                }
+            }
+        }
+        prev_dr = ls.drawing;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -502,6 +547,33 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
                 prev_rwd   = rp.last_wall_jump_dir;
                 prev_rcp   = {rp.checkpoint_x, rp.checkpoint_y};
                 remote_prev_finished_[rp.player_id] = rp.finished;
+            }
+
+            // --- Drawing trail (remote player) ---
+            {
+                auto& strokes = draw_trails_[rp.player_id];
+                bool& prev_dr = draw_prev_drawing_[rp.player_id];
+                if (rp.drawing && rp.kill_respawn_ticks == 0 && rp.respawn_grace_ticks == 0) {
+                    int total = 0;
+                    for (const auto& st : strokes) total += static_cast<int>(st.pts.size());
+                    if (total < DRAW_MAX_POINTS) {
+                        if (!prev_dr || strokes.empty()) {
+                            strokes.push_back({});
+                            strokes.back().pts.push_back({rp.x + TILE_SIZE * 0.5f,
+                                                          rp.y + TILE_SIZE * 0.5f});
+                        } else {
+                            auto& cur = strokes.back().pts;
+                            const Vector2 last = cur.back();
+                            const float cx = rp.x + TILE_SIZE * 0.5f;
+                            const float cy = rp.y + TILE_SIZE * 0.5f;
+                            const float ddx = cx - last.x;
+                            const float ddy = cy - last.y;
+                            if (ddx * ddx + ddy * ddy >= DRAW_MIN_DIST * DRAW_MIN_DIST)
+                                cur.push_back({cx, cy});
+                        }
+                    }
+                }
+                prev_dr = rp.drawing;
             }
         }
 
@@ -709,6 +781,9 @@ void GameSession::LoadLevel(const char* path) {
     live_best_ticks_.clear();
     last_game_state_ = {};
 
+    draw_trails_.clear();
+    draw_prev_drawing_.clear();
+
     std::memset(input_history_, 0, sizeof(input_history_));
 }
 
@@ -764,6 +839,9 @@ void GameSession::LoadLevelFromGrid(int w, int h, const std::vector<std::string>
     live_best_ticks_.clear();
     last_game_state_ = {};
 
+    draw_trails_.clear();
+    draw_prev_drawing_.clear();
+
     std::memset(input_history_, 0, sizeof(input_history_));
 }
 
@@ -814,6 +892,52 @@ void GameSession::BuildLiveLeaderboard(LiveLeaderEntry* out, int& count) const {
 }
 
 // ---------------------------------------------------------------------------
+// UpdateStrokeTessellation — incrementally tessellate Catmull-Rom spline.
+// Only recomputes segments affected by newly-added control points.
+// ---------------------------------------------------------------------------
+void GameSession::UpdateStrokeTessellation(DrawStroke& st) {
+    const int n = static_cast<int>(st.pts.size());
+    if (n < 2) {
+        st.tessellated.clear();
+        st.tess_source_count = n;
+        return;
+    }
+    if (n == st.tess_source_count) return; // nothing new
+
+    if (n == 2) {
+        st.tessellated = { st.pts[0], st.pts[1] };
+        st.tess_source_count = n;
+        return;
+    }
+
+    // With old_n control points the last segment's p3 was clamped; adding points
+    // changes that p3, so segments 0..old_n-3 are stable.
+    const int safe_segs = (st.tess_source_count >= 3) ? st.tess_source_count - 2 : 0;
+    const int keep_verts = (safe_segs > 0) ? safe_segs * TESS_DIVISIONS + 1 : 0;
+    if (keep_verts < static_cast<int>(st.tessellated.size()))
+        st.tessellated.resize(keep_verts);
+
+    const int total_segs = n - 1;
+    st.tessellated.reserve(total_segs * TESS_DIVISIONS + 1);
+
+    for (int seg = safe_segs; seg < total_segs; ++seg) {
+        const Vector2 p0 = st.pts[std::max(seg - 1, 0)];
+        const Vector2 p1 = st.pts[seg];
+        const Vector2 p2 = st.pts[seg + 1];
+        const Vector2 p3 = st.pts[std::min(seg + 2, n - 1)];
+
+        if (st.tessellated.empty())
+            st.tessellated.push_back(CatmullRomPoint(p0, p1, p2, p3, 0.f));
+
+        for (int d = 1; d <= TESS_DIVISIONS; ++d) {
+            const float t = static_cast<float>(d) / static_cast<float>(TESS_DIVISIONS);
+            st.tessellated.push_back(CatmullRomPoint(p0, p1, p2, p3, t));
+        }
+    }
+    st.tess_source_count = n;
+}
+
+// ---------------------------------------------------------------------------
 // DoRender — tutto il frame di rendering
 // ---------------------------------------------------------------------------
 void GameSession::DoRender(float draw_x, float draw_y, float dt,
@@ -833,6 +957,31 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
     renderer.BeginWorldDraw();
 
         renderer.DrawTilemap(world_);
+
+        // --- Drawing trails (persistent map marks) ---
+        {
+            // Tessellate incrementally, then pass cached polylines to renderer.
+            std::vector<Renderer::DrawStroke> stroke_buf;
+            for (auto& [pid, strokes] : draw_trails_) {
+                const bool is_local_pid = (pid == local_player_id_);
+                const Color col = is_local_pid
+                    ? Color{CLRS_PLAYER_LOCAL.r, CLRS_PLAYER_LOCAL.g, CLRS_PLAYER_LOCAL.b, 200}
+                    : Color{CLRS_PLAYER_REMOTE.r, CLRS_PLAYER_REMOTE.g, CLRS_PLAYER_REMOTE.b, 200};
+                stroke_buf.clear();
+                for (auto& st : strokes) {
+                    UpdateStrokeTessellation(st);
+                    if (st.pts.size() == 1) {
+                        // Single point → pass raw point for dot rendering.
+                        stroke_buf.push_back({st.pts.data(), 1});
+                    } else if (!st.tessellated.empty()) {
+                        stroke_buf.push_back({st.tessellated.data(),
+                                              static_cast<int>(st.tessellated.size())});
+                    }
+                }
+                if (!stroke_buf.empty())
+                    renderer.DrawMapTrails(stroke_buf.data(), static_cast<int>(stroke_buf.size()), col);
+            }
+        }
 
         // Trail remoti
         for (uint32_t i = 0; i < last_game_state_.count; i++) {

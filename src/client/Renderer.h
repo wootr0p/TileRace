@@ -39,6 +39,11 @@ public:
     void DrawDeathParticles(const DeathParticles& dp);
     void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true);
 
+    // Drawing trails — persistent spline marks left on the map by the draw button.
+    // Each stroke is a vector of points; drawn as Catmull-Rom splines.
+    struct DrawStroke { const Vector2* pts; int count; };
+    void DrawMapTrails(const DrawStroke* strokes, int stroke_count, Color color);
+
     // Emote system (world-space, call between BeginWorldDraw / EndWorldDraw)
     void DrawEmoteWheel(float cx, float cy, int highlighted_dir);  // local-only wheel overlay
     void DrawEmoteBubble(float px, float py, uint8_t emote_id, float alpha, bool is_local);

@@ -29,6 +29,8 @@ inline PlayerState SpawnReset(PlayerState s, float sx, float sy, bool with_kill)
     s.finished           = false;
     s.checkpoint_x       = 0.f;  // clear checkpoint on full spawn reset
     s.checkpoint_y       = 0.f;
+    s.drawing            = false;
+    s.sprinting          = false;
     if (with_kill) {
         s.kill_respawn_ticks  = 60;
         s.respawn_grace_ticks = 0;
@@ -64,6 +66,8 @@ inline PlayerState CheckpointReset(PlayerState s, float cx, float cy, bool with_
     s.dash_jump_ticks    = 0;
     // level_ticks intentionally NOT reset — time keeps running
     s.finished           = false;
+    s.drawing            = false;
+    s.sprinting          = false;
     // checkpoint coordinates preserved
     if (with_kill) {
         s.kill_respawn_ticks  = 60;

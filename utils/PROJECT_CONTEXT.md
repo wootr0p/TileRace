@@ -15,6 +15,8 @@ TileRace is a cooperative real-time 2D side-scrolling platformer (cross-platform
 - Jump, wall-jump, variable-height jump (hold = higher), coyote time, jump buffer
 - Dash (360°) with suspended gravity, cooldown, and post-dash enhanced jump
 - Dash push: dashing into another player slams them with 2× dash velocity
+- Sprint: hold Right Ctrl / R2 for 1.5× horizontal speed (disabled during dash)
+- Drawing trails: hold P / L2 to leave persistent coloured spline marks on the map
 - Kill tiles ('K') that trigger a death animation and respawn
 - Ready/Go! overlay displayed at the start of each level
 
@@ -24,6 +26,8 @@ TileRace is a cooperative real-time 2D side-scrolling platformer (cross-platform
 | ← / → / A / D | Left stick / D-pad | Move |
 | SPACE | Cross (×) | Jump / wall-jump |
 | SHIFT | Square (□) or Circle (○) | Dash (direction from stick/WASD/D-pad) |
+| P | L2 (left trigger) | Draw trail on map (hold) |
+| Right Ctrl | R2 (right trigger) | Sprint (hold) |
 | Backspace / Triangle | Triangle (△) | Restart from spawn |
 | ESC | Start / Options | Pause menu |
 
@@ -176,6 +180,27 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
   the mutual push impulse.
 - Position separation (from `ResolvePlayerCollisions`) still applies after the velocity push.
 
+### Sprint
+
+- Hold Right Ctrl (keyboard) or R2 / right trigger (gamepad, threshold > 0.3) to sprint.
+- `BTN_SPRINT` (bit 8) is set in InputFrame; `Player::Simulate` multiplies `MOVE_SPEED` by `SPRINT_MULTIPLIER` (1.5).
+- Sprint is disabled while a dash is active (`dash_active_ticks > 0`).
+- `PlayerState::sprinting` flag is set for potential animation/visual use.
+- `InputFrame::buttons` is `uint16_t` to accommodate the 9th bit (PROTOCOL_VERSION bumped to 8).
+
+### Drawing trails
+
+- Player holds P (keyboard) or L2 / left trigger (gamepad) to enter draw mode.
+- `BTN_DRAW` (bit 7) is set in InputFrame; `Player::Simulate` sets `PlayerState::drawing = true`.
+- Client-side recording: each player accumulates strokes as `vector<Vector2>` (one stroke per press cycle).
+  Points are sampled every tick, but a new point is only added when the distance from the last is ≥ 8 px.
+- Max 4000 points per player per level; cleared on level change.
+- **Optimised rendering:** Catmull-Rom splines are tessellated incrementally into cached polylines
+  (`DrawStroke::tessellated`). Only new/tail segments are recomputed when points are added
+  (6 subdivisions per segment). `Renderer::DrawMapTrails` draws the pre-computed polyline
+  with `DrawLineEx` — no per-frame spline math.
+  Colour matches the player (local = cyan, remote = orange), alpha 200.
+
 ### Kill tiles and respawn
 
 - Touching a 'K' tile → server sets `kill_respawn_ticks = 60` (death animation, ~1 s)
@@ -228,14 +253,31 @@ After generation, `LevelValidator` runs a BFS agent that tries ~17 macro-actions
 (walk, jump, dash, wall-jump, dash-jump combos) from every reachable ground tile
 using the real `Player::Simulate` physics. If the agent cannot reach any 'E' tile,
 the level is discarded and regenerated with a different seed (up to 10 retries).
+**Validation is only enabled in offline (single-player) mode**; online mode skips
+it entirely so that occasional impossible levels can appear (intentionally fun).
 Generated levels are transmitted to clients via `PKT_LEVEL_DATA` (variable-size packet
 containing the full tile grid, including the `level` number for HUD display).
-`MAX_GENERATED_LEVELS = 8` controls how many levels are played before the session ends.
+`MAX_GENERATED_LEVELS = 10` controls how many levels are played before the session ends.
 
 **Difficulty curve:** the generator maps `level_num / total_levels` to a `[0,1]` progression
 (`t`), then selects mid chunks whose `difficulty` property falls within a band centred on
-`min_d + t * (max_d - min_d)` (±0.5). Level length also grows with `t`: the first level
-has 4 mid chunks, the last has 14. This ensures all difficulty tiers are used evenly.
+`min_d + t * (max_d - min_d)` (±0.5). Level length grows aggressively with `t`: the first
+level has 4 mid chunks and the last has 28 (≈ double the previous max of 14).
+This ensures all difficulty tiers are used evenly.
+
+**Chunk-based checkpoint placement:** at startup, `ChunkStore` classifies mid chunks
+into two sub-pools: `mid_checkpoint_` (contain 'C' tiles) and `mid_normal_` (no 'C' tiles).
+During level generation, the generator picks checkpoint chunks at regular intervals:
+
+- Levels with < 8 mid chunks: no checkpoint chunks inserted.
+- Levels with ≥ 8 mid chunks: every 5th mid slot uses a checkpoint chunk instead of a normal one.
+  For branching levels, each branch independently continues the counter from the pre-fork section.
+- 'C' tiles from chunk data are preserved (no longer stripped during finalisation).
+
+**Shared checkpoints (cooperative):** when _any single player_ reaches a checkpoint tile,
+the server activates that checkpoint for _all_ players (`ServerSession::activated_checkpoints_`).
+Once a checkpoint has been activated, passing over it again does not trigger it a second time.
+This prevents a player that backtracks from resetting everyone's checkpoint to an earlier position.
 
 The server tracks cooperative level clears in `coop_cleared_levels_`.
 At session end, `PKT_GLOBAL_RESULTS` broadcasts the team's clear count to all clients.
@@ -346,6 +388,7 @@ DASH_SPEED           = 1200     // px/s during dash
 DASH_ACTIVE_TICKS    = 12       // ~200 ms
 DASH_COOLDOWN_TICKS  = 25       // ~417 ms
 DASH_PUSH_MULTIPLIER = 2.0      // pushed player gets 2× dash velocity
+SPRINT_MULTIPLIER    = 1.5      // sprint horizontal speed factor
 DASH_JUMP_WINDOW     = 10       // post-dash jump boost window
 JUMP_BUFFER_TICKS    = 10       // ~167 ms
 COYOTE_TICKS         = 6        // ~100 ms
@@ -393,7 +436,8 @@ Tileset (`TileSet.tsx`) tile properties:
 | 8       | `chunk_entry` | false   | `I`         | Chunk entry (alt tile ID)                             |
 | 9       | `chunk_exit`  | false   | `O`         | Chunk exit (alt tile ID)                              |
 
-On death (kill tile) the player respawns at their last checkpoint (`PlayerState::checkpoint_x/y`); if no checkpoint has been reached they respawn at the level spawn. `SpawnReset` clears the checkpoint; `CheckpointReset` preserves it.
+On death (kill tile) the player respawns at their last shared checkpoint (`PlayerState::checkpoint_x/y`); if no checkpoint has been activated they respawn at the level spawn. `SpawnReset` clears the checkpoint; `CheckpointReset` preserves it.
+Checkpoints are shared: one player reaching a 'C' tile group activates the spawn position for every connected player.
 
 **Restart keys:**
 
@@ -474,44 +518,47 @@ cmake --install build/release --component TileRaceRuntime --prefix /custom/path
 
 After changing `CMakeLists.txt`, run `cmake --preset release` once to apply the new prefix to the cache.
 
-| Feature                                                 | Status                    |
-| ------------------------------------------------------- | ------------------------- |
-| Tilemap loading and rendering                           | ✅                        |
-| Tiled `.tmj` map format + TSX property parsing          | ✅                        |
-| Checkpoint tiles ('C') + death-respawn at checkpoint    | ✅                        |
-| Player physics (move, accel, gravity, collision)        | ✅                        |
-| Jump buffer, coyote time, variable height, wall jump    | ✅                        |
-| Dash (360°, air limit, cooldown, dash-jump)             | ✅                        |
-| Dash push (slam other players with 2× dash force)       | ✅                        |
-| Fixed timestep (60 Hz)                                  | ✅                        |
-| Camera follow + shake + sub-frame interpolation         | ✅                        |
-| ENet client/server (online + offline)                   | ✅                        |
-| Client-side prediction + server reconciliation          | ✅                        |
-| Multiple players, remote player rendering               | ✅                        |
-| Off-screen player indicators (compass arrows)           | ✅                        |
-| Kill tiles + death animation + Ready/Go! overlay        | ✅                        |
-| Race timer, live leaderboard                            | ✅                        |
-| End-of-level results screen                             | ✅                        |
-| Session-end global leaderboard (win counts per player)  | ✅                        |
-| Chunk-based procedural level generation                 | ✅                        |
-| AI-driven level validation (physics BFS)                | ✅                        |
-| Lobby → level progression loop                          | ✅                        |
-| 2-minute time limit per level                           | ✅                        |
-| Restart from spawn (PKT_RESTART)                        | ✅                        |
-| Main menu (offline/online, username, IP)                | ✅                        |
-| Splash screen (title + press any button)                | ✅                        |
-| Persistent save data (username, last IP, sfx mute)      | ✅                        |
-| Pause menu with quit confirmation                       | ✅                        |
-| Colour palette (Colors.h)                               | ✅                        |
-| Visual trail (dash), death particles                    | ✅                        |
-| Personal best time tracking                             | ✅                        |
-| Ready mechanic (skip results screen early)              | ✅                        |
-| Version mismatch detection + graceful error             | ✅                        |
-| Server-busy rejection                                   | ✅                        |
-| Win32 taskbar icon                                      | ✅                        |
-| SOLID refactoring (client + server)                     | ✅                        |
-| Audio SFX (jump, dash) — local + 2-D spatialized remote | ✅                        |
-| SFX mute toggle (main menu + pause menu, persisted)     | ✅                        |
-| Per-platform deploy folder (deploy/win\|mac\|linux)     | ✅                        |
-| Multiple spawn assignment by player_id                  | ❌ (all use center spawn) |
-| Linux / macOS build verification                        | ❌                        |
+| Feature                                                  | Status                    |
+| -------------------------------------------------------- | ------------------------- |
+| Tilemap loading and rendering                            | ✅                        |
+| Tiled `.tmj` map format + TSX property parsing           | ✅                        |
+| Shared checkpoints ('C') + cooperative activation        | ✅                        |
+| Chunk-based checkpoint placement (interspersed mid pool) | ✅                        |
+| Player physics (move, accel, gravity, collision)         | ✅                        |
+| Jump buffer, coyote time, variable height, wall jump     | ✅                        |
+| Dash (360°, air limit, cooldown, dash-jump)              | ✅                        |
+| Dash push (slam other players with 2× dash force)        | ✅                        |
+| Sprint (Right Ctrl / R2, 1.5× horizontal speed)          | ✅                        |
+| Drawing trails (P / L2, cached Catmull-Rom splines)      | ✅                        |
+| Fixed timestep (60 Hz)                                   | ✅                        |
+| Camera follow + shake + sub-frame interpolation          | ✅                        |
+| ENet client/server (online + offline)                    | ✅                        |
+| Client-side prediction + server reconciliation           | ✅                        |
+| Multiple players, remote player rendering                | ✅                        |
+| Off-screen player indicators (compass arrows)            | ✅                        |
+| Kill tiles + death animation + Ready/Go! overlay         | ✅                        |
+| Race timer, live leaderboard                             | ✅                        |
+| End-of-level results screen                              | ✅                        |
+| Session-end global leaderboard (win counts per player)   | ✅                        |
+| Chunk-based procedural level generation                  | ✅                        |
+| AI-driven level validation (physics BFS, offline only)   | ✅                        |
+| Lobby → level progression loop                           | ✅                        |
+| 2-minute time limit per level                            | ✅                        |
+| Restart from spawn (PKT_RESTART)                         | ✅                        |
+| Main menu (offline/online, username, IP)                 | ✅                        |
+| Splash screen (title + press any button)                 | ✅                        |
+| Persistent save data (username, last IP, sfx mute)       | ✅                        |
+| Pause menu with quit confirmation                        | ✅                        |
+| Colour palette (Colors.h)                                | ✅                        |
+| Visual trail (dash), death particles                     | ✅                        |
+| Personal best time tracking                              | ✅                        |
+| Ready mechanic (skip results screen early)               | ✅                        |
+| Version mismatch detection + graceful error              | ✅                        |
+| Server-busy rejection                                    | ✅                        |
+| Win32 taskbar icon                                       | ✅                        |
+| SOLID refactoring (client + server)                      | ✅                        |
+| Audio SFX (jump, dash) — local + 2-D spatialized remote  | ✅                        |
+| SFX mute toggle (main menu + pause menu, persisted)      | ✅                        |
+| Per-platform deploy folder (deploy/win\|mac\|linux)      | ✅                        |
+| Multiple spawn assignment by player_id                   | ❌ (all use center spawn) |
+| Linux / macOS build verification                         | ❌                        |

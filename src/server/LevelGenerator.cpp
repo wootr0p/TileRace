@@ -153,12 +153,14 @@ static BBox ComputeBranchBBox(const std::vector<const Chunk*>& chunks,
 // Place a linear sequence of chunks onto the grid, starting by aligning
 // the first chunk's entry to (start_wx + extra_off_x, start_wy).
 // Returns the last exit world position.
+// If out_entries is non-null, records each chunk's entry world position.
 static std::pair<int,int> PlaceLinearSequence(
     std::unordered_map<int64_t, TileCell>& grid,
     const std::vector<const Chunk*>& chunks,
     int start_wx, int start_wy,
     int extra_off_x,
-    int& min_x, int& min_y, int& max_x, int& max_y)
+    int& min_x, int& min_y, int& max_x, int& max_y,
+    std::vector<std::pair<int,int>>* out_entries = nullptr)
 {
     int prev_exit_wx = start_wx + extra_off_x;
     int prev_exit_wy = start_wy;
@@ -172,6 +174,9 @@ static std::pair<int,int> PlaceLinearSequence(
             off_x = prev_exit_wx;
             off_y = prev_exit_wy + 1;
         }
+        if (out_entries && c->entry_tx >= 0)
+            out_entries->push_back({off_x + c->entry_tx, off_y + c->entry_ty});
+
         BlitChunk(grid, *c, off_x, off_y, min_x, min_y, max_x, max_y);
 
         if (c->exit_tx >= 0) {
@@ -195,7 +200,7 @@ float LevelGenerator::TargetDifficulty(int level_num, int total_levels) {
 int LevelGenerator::MidChunkCount(int level_num, int total_levels) {
     const float t = TargetDifficulty(level_num, total_levels);
     constexpr int MIN_MIDS =  4;
-    constexpr int MAX_MIDS = 14;
+    constexpr int MAX_MIDS = 28;
     int n = MIN_MIDS + static_cast<int>(std::round(t * (MAX_MIDS - MIN_MIDS)));
     return std::clamp(n, MIN_MIDS, MAX_MIDS);
 }
@@ -288,6 +293,24 @@ static int PickForkEnd(const std::vector<Chunk>& pool, int n_entries,
 static constexpr int BRANCH_GAP = 2;
 
 // ============================================================================
+// Pick mid chunk: checkpoint chunk at interval slots, normal chunk otherwise.
+// Falls back to the full mid pool if the selected sub-pool is empty.
+// ============================================================================
+
+static const Chunk* PickMidChunk(const ChunkStore& store, int mid_num,
+                                  int checkpoint_interval,
+                                  int band_lo, int band_hi, std::mt19937& rng) {
+    const bool use_cp = checkpoint_interval > 0 &&
+                        (mid_num % checkpoint_interval == 0) &&
+                        store.HasMidCheckpointChunks();
+    const auto& pool = use_cp ? store.MidCheckpointChunks()
+                              : store.MidNormalChunks();
+    if (pool.empty())
+        return &store.MidChunks()[PickMidByDifficulty(store.MidChunks(), band_lo, band_hi, rng)];
+    return &pool[PickMidByDifficulty(pool, band_lo, band_hi, rng)];
+}
+
+// ============================================================================
 // Build a linear chunk sequence and place it on the grid.
 // This is the original algorithm (start + N mid + end), used when no
 // fork chunks are available or as a fallback.
@@ -297,14 +320,15 @@ static void BuildAndPlaceLinear(
     std::unordered_map<int64_t, TileCell>& grid,
     const ChunkStore& store, int start_idx, int end_idx,
     int mid_count, int band_lo, int band_hi,
+    int checkpoint_interval,
     std::mt19937& rng,
     int& min_x, int& min_y, int& max_x, int& max_y)
 {
     std::vector<const Chunk*> sequence;
     sequence.push_back(&store.StartChunks()[start_idx]);
     for (int i = 0; i < mid_count; ++i)
-        sequence.push_back(&store.MidChunks()[PickMidByDifficulty(
-            store.MidChunks(), band_lo, band_hi, rng)]);
+        sequence.push_back(PickMidChunk(store, i + 1, checkpoint_interval,
+                                        band_lo, band_hi, rng));
     sequence.push_back(&store.EndChunks()[end_idx]);
 
     // Stitch chunks via entry/exit alignment
@@ -328,6 +352,7 @@ static void BuildAndPlaceLinear(
             off_y = prev_exit_wy + 1;
         }
         BlitChunk(grid, c, off_x, off_y, min_x, min_y, max_x, max_y);
+
         if (c.exit_tx >= 0) {
             prev_exit_wx = off_x + c.exit_tx;
             prev_exit_wy = off_y + c.exit_ty;
@@ -345,6 +370,7 @@ static bool BuildAndPlaceBranching(
     const ChunkStore& store, int start_idx, int end_idx,
     int mid_count, int band_lo, int band_hi,
     int max_paths, int max_arrivals,
+    int checkpoint_interval,
     std::mt19937& rng,
     int& min_x, int& min_y, int& max_x, int& max_y)
 {
@@ -388,9 +414,12 @@ static bool BuildAndPlaceBranching(
     // === Phase 1: Place start chunk + pre-fork mid chunks ===
     std::vector<const Chunk*> pre_fork;
     pre_fork.push_back(&store.StartChunks()[start_idx]);
-    for (int i = 0; i < pre_fork_mids; ++i)
-        pre_fork.push_back(&store.MidChunks()[PickMidByDifficulty(
-            store.MidChunks(), band_lo, band_hi, rng)]);
+    int mid_counter = 0;
+    for (int i = 0; i < pre_fork_mids; ++i) {
+        ++mid_counter;
+        pre_fork.push_back(PickMidChunk(store, mid_counter, checkpoint_interval,
+                                        band_lo, band_hi, rng));
+    }
 
     auto [trunk_exit_wx, trunk_exit_wy] = PlaceLinearSequence(
         grid, pre_fork, 0, 0, 0, min_x, min_y, max_x, max_y);
@@ -418,9 +447,13 @@ static bool BuildAndPlaceBranching(
     const int mids_per_branch = std::max(1, branch_mids / n_branches);
     std::vector<std::vector<const Chunk*>> branch_chunks(n_branches);
     for (int b = 0; b < n_branches; ++b) {
-        for (int j = 0; j < mids_per_branch; ++j)
-            branch_chunks[b].push_back(&store.MidChunks()[
-                PickMidByDifficulty(store.MidChunks(), band_lo, band_hi, rng)]);
+        int branch_counter = mid_counter;
+        for (int j = 0; j < mids_per_branch; ++j) {
+            ++branch_counter;
+            branch_chunks[b].push_back(PickMidChunk(store, branch_counter,
+                                                     checkpoint_interval,
+                                                     band_lo, band_hi, rng));
+        }
     }
 
     // === Phase 4: Compute bounding boxes and offsets for gap enforcement ===
@@ -485,9 +518,13 @@ static bool BuildAndPlaceBranching(
         const int merge_exit_wy = fe_off_y + fe.exit_ty;
 
         std::vector<const Chunk*> post_merge;
-        for (int i = 0; i < post_merge_mids; ++i)
-            post_merge.push_back(&store.MidChunks()[PickMidByDifficulty(
-                store.MidChunks(), band_lo, band_hi, rng)]);
+        int post_counter = mid_counter + mids_per_branch;
+        for (int i = 0; i < post_merge_mids; ++i) {
+            ++post_counter;
+            post_merge.push_back(PickMidChunk(store, post_counter,
+                                              checkpoint_interval,
+                                              band_lo, band_hi, rng));
+        }
         post_merge.push_back(&store.EndChunks()[end_idx]);
 
         PlaceLinearSequence(grid, post_merge,
@@ -524,7 +561,8 @@ static bool BuildAndPlaceBranching(
 static bool FinalizeGrid(std::unordered_map<int64_t, TileCell>& grid,
                           int min_x, int min_y, int max_x, int max_y,
                           World& world) {
-    // Strip entry/exit tiles (I, O → air)
+    // Strip entry/exit marker tiles (I, O → air).
+    // 'C' tiles from checkpoint chunks are preserved.
     for (auto& [key, cell] : grid) {
         if (cell.ch == 'I' || cell.ch == 'O') {
             cell.ch    = ' ';
@@ -614,6 +652,11 @@ bool LevelGenerator::Generate(const ChunkStore& store, const GeneratorParams& pa
            start_idx, mid_count, end_idx,
            max_paths, max_arrivals, can_fork ? "yes" : "no");
 
+    // --- Checkpoint interval (chunk-based) ---
+    // Short / easy levels (< 8 mids): no checkpoint chunks inserted.
+    // Medium+ levels: one checkpoint chunk every 5 mid chunks.
+    const int checkpoint_interval = (mid_count >= 8) ? 5 : 0;
+
     // --- Sparse grid ---
     std::unordered_map<int64_t, TileCell> grid;
     int min_x = INT_MAX, min_y = INT_MAX;
@@ -623,7 +666,9 @@ bool LevelGenerator::Generate(const ChunkStore& store, const GeneratorParams& pa
         bool ok = BuildAndPlaceBranching(
             grid, store, start_idx, end_idx,
             mid_count, band_lo, band_hi,
-            max_paths, max_arrivals, rng,
+            max_paths, max_arrivals,
+            checkpoint_interval,
+            rng,
             min_x, min_y, max_x, max_y);
         if (!ok) {
             printf("[LevelGenerator] branching failed, falling back to linear\n");
@@ -631,14 +676,22 @@ bool LevelGenerator::Generate(const ChunkStore& store, const GeneratorParams& pa
             min_x = INT_MAX; min_y = INT_MAX;
             max_x = INT_MIN; max_y = INT_MIN;
             BuildAndPlaceLinear(grid, store, start_idx, end_idx,
-                                mid_count, band_lo, band_hi, rng,
+                                mid_count, band_lo, band_hi,
+                                checkpoint_interval,
+                                rng,
                                 min_x, min_y, max_x, max_y);
         }
     } else {
         BuildAndPlaceLinear(grid, store, start_idx, end_idx,
-                            mid_count, band_lo, band_hi, rng,
+                            mid_count, band_lo, band_hi,
+                            checkpoint_interval,
+                            rng,
                             min_x, min_y, max_x, max_y);
     }
+
+    if (checkpoint_interval > 0)
+        printf("[LevelGenerator] checkpoint chunks interspersed every %d mids (pool=%zu)\n",
+               checkpoint_interval, store.MidCheckpointChunks().size());
 
     return FinalizeGrid(grid, min_x, min_y, max_x, max_y, world);
 }

@@ -344,6 +344,7 @@ bool ChunkStore::ParseChunk(const char* path, Chunk& out) {
             }
             if (ch == 'X') out.has_spawn = true;
             if (ch == 'E') out.has_end   = true;
+            if (ch == 'C') out.has_checkpoint = true;
         }
     }
 
@@ -357,11 +358,20 @@ void ChunkStore::Classify(Chunk chunk) {
     const bool has_entry = (chunk.entry_tx >= 0);
     const bool has_exit  = (chunk.exit_tx  >= 0);
 
+    // Helper: also populate checkpoint/normal mid sub-pools.
+    auto add_to_mid = [this](const Chunk& c) {
+        if (c.has_checkpoint)
+            mid_checkpoint_.push_back(c);
+        else
+            mid_normal_.push_back(c);
+    };
+
     if (chunk.role == "start") {
         start_.push_back(std::move(chunk));
     } else if (chunk.role == "end") {
         end_.push_back(std::move(chunk));
     } else if (chunk.role == "mid") {
+        add_to_mid(chunk);
         mid_.push_back(std::move(chunk));
     } else {
         // role == "any": auto-classify based on tile content
@@ -376,12 +386,14 @@ void ChunkStore::Classify(Chunk chunk) {
             classified = true;
         }
         if (has_entry && has_exit && !chunk.has_spawn && !chunk.has_end) {
+            add_to_mid(chunk);
             mid_.push_back(chunk);
             classified = true;
         }
         if (!classified) {
             // Fallback: if it has both entry and exit, use as mid
             if (has_entry && has_exit) {
+                add_to_mid(chunk);
                 mid_.push_back(std::move(chunk));
             } else {
                 printf("[ChunkStore] WARNING: chunk with role='any' couldn't be classified, skipped\n");
@@ -396,6 +408,8 @@ bool ChunkStore::LoadFromDirectory(const char* dir) {
     end_.clear();
     fork_start_.clear();
     fork_end_.clear();
+    mid_checkpoint_.clear();
+    mid_normal_.clear();
 
     const auto files = ListTmjFiles(dir);
     printf("[ChunkStore] scanning '%s': found %zu .tmj files\n", dir, files.size());
@@ -404,21 +418,22 @@ bool ChunkStore::LoadFromDirectory(const char* dir) {
         Chunk chunk;
         if (ParseChunk(path.c_str(), chunk)) {
             printf("[ChunkStore]   loaded '%s' (%dx%d) role='%s' entry=(%d,%d) exit=(%d,%d)"
-                   " entries=%d exits=%d\n",
+                   " entries=%d exits=%d checkpoint=%s\n",
                    path.c_str(), chunk.width, chunk.height,
                    chunk.role.c_str(),
                    chunk.entry_tx, chunk.entry_ty,
                    chunk.exit_tx, chunk.exit_ty,
                    static_cast<int>(chunk.entries.size()),
-                   static_cast<int>(chunk.exits.size()));
+                   static_cast<int>(chunk.exits.size()),
+                   chunk.has_checkpoint ? "yes" : "no");
             Classify(std::move(chunk));
         } else {
             printf("[ChunkStore]   FAILED to parse '%s'\n", path.c_str());
         }
     }
 
-    printf("[ChunkStore] pools: %zu start, %zu mid, %zu end\n",
-           start_.size(), mid_.size(), end_.size());
+    printf("[ChunkStore] pools: %zu start, %zu mid (%zu checkpoint, %zu normal), %zu end\n",
+           start_.size(), mid_.size(), mid_checkpoint_.size(), mid_normal_.size(), end_.size());
 
     // Compute min/max difficulty among mid chunks.
     if (!mid_.empty()) {

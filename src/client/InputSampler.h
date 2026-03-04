@@ -32,6 +32,8 @@ public:
     float GetMoveX()                       const;
     void  GetDashDir(float& dx, float& dy) const;
     bool  IsJumpHeld()                     const;
+    bool  IsDrawHeld()                      const;
+    bool  IsSprintHeld()                     const;
 
     // Emote wheel (E key / right-stick click).
     bool IsEmoteWheelOpen()       const { return emote_wheel_open_; }

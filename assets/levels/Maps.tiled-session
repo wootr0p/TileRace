@@ -8,6 +8,9 @@
     ],
     "file.lastUsedOpenFilter": "Tutti i file (*)",
     "fileStates": {
+        "D:/GameDev/RayLib/Progetti/TileRace/assets/TileSet.tsx": {
+            "scaleInDock": 1
+        },
         "D:/Personal/Raylib/Progetti/TileRace/assets/proj/TileSet.tsx": {
             "scaleInDock": 1
         },
@@ -35,160 +38,200 @@
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/01/Flat02.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/01/Flat03.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/01/Flat04.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/01/Flat05.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/02/Simple01.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/02/Simple02.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/02/Simple03.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/02/Simple04.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/02/Simple05.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/03/Medium01.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/03/Medium02.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/03/Medium03.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/03/Medium04.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/03/Medium05.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/04/Hard01.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 527.8447515436637,
+                "y": 34.775654219347246
             }
         },
         "chunks/04/Hard02.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 588.7021464275214,
+                "y": 368.87033225521907
             }
         },
         "chunks/04/Hard03.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 387.50014701558365,
-                "y": 330.9897089091444
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/04/Hard04.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 643.3496030579242,
-                "y": 362.03940017641867
+                "x": 527.8447515436637,
+                "y": 368.87033225521907
             }
         },
         "chunks/04/Hard05.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436636,
-                "y": 368.24933842987355
+                "x": 690.5451337841811,
+                "y": 363.9023816524551
+            }
+        },
+        "chunks/05/Extreme01.tmj": {
+            "scale": 1.018371212121212,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 568.0639761949043,
+                "y": 393.275060442626
+            }
+        },
+        "chunks/05/Extreme02.tmj": {
+            "scale": 1.018371212121212,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 527.8036079598289,
+                "y": 367.74409522038314
+            }
+        },
+        "chunks/05/Extreme03.tmj": {
+            "scale": 1.018371212121212,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 527.8036079598289,
+                "y": 367.74409522038314
+            }
+        },
+        "chunks/05/Extreme04.tmj": {
+            "scale": 1.018371212121212,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 527.8036079598289,
+                "y": 367.74409522038314
+            }
+        },
+        "chunks/05/Extreme05.tmj": {
+            "scale": 1.018371212121212,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 527.8036079598289,
+                "y": 367.74409522038314
             }
         },
         "chunks/End.tmj": {
@@ -274,6 +317,46 @@
         "chunks/TileSet.tsx": {
             "scaleInDock": 1
         },
+        "chunks/_Checkpoint01.tmj": {
+            "scale": 0.7847826086956522,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 539.0027700831025,
+                "y": 389.91689750692524
+            }
+        },
+        "chunks/_End01.tmj": {
+            "scale": 0.75,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 669.3333333333334,
+                "y": 358.6666666666667
+            }
+        },
+        "chunks/_Fork01.tmj": {
+            "scale": 0.5,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 604,
+                "y": 426
+            }
+        },
+        "chunks/_Merge01.tmj": {
+            "scale": 0.75,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 522.6666666666665,
+                "y": -220
+            }
+        },
+        "chunks/_Start01.tmj": {
+            "scale": 0.5,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 688,
+                "y": 516
+            }
+        },
         "tilemaps/Level01.tmj": {
             "scale": 0.33,
             "selectedLayer": 0,
@@ -294,12 +377,12 @@
             "scale": 0.5,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 1046,
-                "y": 581
+                "x": 800,
+                "y": 510
             }
         }
     },
-    "last.externalTilesetPath": "D:/Personal/Raylib/Progetti/TileRace/assets/levels",
+    "last.externalTilesetPath": "D:/GameDev/RayLib/Progetti/TileRace/assets/levels",
     "last.imagePath": "D:/Personal/Raylib/Progetti/TileRace/assets/levels",
     "map.fixedSize": false,
     "map.lastUsedFormat": "json",
