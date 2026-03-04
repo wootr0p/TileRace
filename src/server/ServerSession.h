@@ -57,7 +57,7 @@ private:
     bool AllInZone()        const;
     uint32_t CountdownTicks() const;
     PlayerState ApplySpawnReset(PlayerState s, bool with_kill) const;
-    void ResolvePlayerCollisions();   // coop mode: push overlapping player AABBs apart
+    void ResolvePlayerCollisions(const World& world);   // coop mode: push overlapping player AABBs apart
 
     LevelManager level_mgr_;
     ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator

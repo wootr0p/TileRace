@@ -271,7 +271,7 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
 
     UpdateZone();
     // Push overlapping player AABBs apart each tick.
-    ResolvePlayerCollisions();
+    ResolvePlayerCollisions(world);
     BroadcastGameState(host);
 
     // --- Verifica scadenza timer zona ---
@@ -420,17 +420,11 @@ void ServerSession::DoLevelChange(ENetHost* host) {
 
     if (loaded) {
         for (auto& [peer, pl] : players_) {
-            PlayerState s = pl.GetState();
-            s.x = level_mgr_.SpawnX();  s.y = level_mgr_.SpawnY();
-            s.vel_x = 0.f;  s.vel_y = 0.f;
-            s.move_vel_x  = 0.f;
-            s.level_ticks = 0;
-            s.finished    = false;
-            s.kill_respawn_ticks  = 0;
-            s.respawn_grace_ticks = 25;
-            s.checkpoint_x = 0.f;  // clear checkpoint on level change
-            s.checkpoint_y = 0.f;
+            // Full reset: clears dash/jump/movement state that was previously leaking
+            // across levels (e.g. dash_active_ticks carrying over → instant dash on spawn).
+            PlayerState s = ApplySpawnReset(pl.GetState(), false);
             pl.SetState(s);
+            pl.ResetTransient();  // clear non-serialised edge-detection flags
         }
 
         // Send the generated level data to all clients.
@@ -671,7 +665,46 @@ PlayerState ServerSession::ApplySpawnReset(PlayerState s, bool with_kill) const 
 // ---------------------------------------------------------------------------
 // ResolvePlayerCollisions — push overlapping player AABBs apart
 // ---------------------------------------------------------------------------
-void ServerSession::ResolvePlayerCollisions() {
+
+// Snap a single player out of any solid tile it overlaps (min-penetration axis).
+static void ClampToWorld(PlayerState& s, const World& world) {
+    // Iterate until no solid overlap remains (max 4 passes for corner cases).
+    for (int pass = 0; pass < 4; ++pass) {
+        const int tx0 = static_cast<int>(s.x)                    / TILE_SIZE;
+        const int ty0 = static_cast<int>(s.y)                    / TILE_SIZE;
+        const int tx1 = static_cast<int>(s.x + TILE_SIZE - 1.f)  / TILE_SIZE;
+        const int ty1 = static_cast<int>(s.y + TILE_SIZE - 1.f)  / TILE_SIZE;
+
+        float best_ov = 1e9f;
+        int   best_axis = -1;  // 0=left, 1=right, 2=up, 3=down
+        for (int ty = ty0; ty <= ty1; ++ty) {
+            for (int tx = tx0; tx <= tx1; ++tx) {
+                if (!world.IsSolid(tx, ty)) continue;
+                const float tile_l = static_cast<float>(tx * TILE_SIZE);
+                const float tile_r = tile_l + TILE_SIZE;
+                const float tile_t = static_cast<float>(ty * TILE_SIZE);
+                const float tile_b = tile_t + TILE_SIZE;
+                const float ov_l = (s.x + TILE_SIZE) - tile_l;  // push left
+                const float ov_r = tile_r - s.x;                // push right
+                const float ov_u = (s.y + TILE_SIZE) - tile_t;  // push up
+                const float ov_d = tile_b - s.y;                // push down
+                if (ov_l > 0 && ov_l < best_ov) { best_ov = ov_l; best_axis = 0; }
+                if (ov_r > 0 && ov_r < best_ov) { best_ov = ov_r; best_axis = 1; }
+                if (ov_u > 0 && ov_u < best_ov) { best_ov = ov_u; best_axis = 2; }
+                if (ov_d > 0 && ov_d < best_ov) { best_ov = ov_d; best_axis = 3; }
+            }
+        }
+        if (best_axis < 0) break;  // no overlap
+        switch (best_axis) {
+            case 0: s.x -= best_ov; if (s.vel_x > 0.f) s.vel_x = 0.f; break;
+            case 1: s.x += best_ov; if (s.vel_x < 0.f) s.vel_x = 0.f; break;
+            case 2: s.y -= best_ov; if (s.vel_y > 0.f) s.vel_y = 0.f; s.on_ground = true; break;
+            case 3: s.y += best_ov; if (s.vel_y < 0.f) s.vel_y = 0.f; break;
+        }
+    }
+}
+
+void ServerSession::ResolvePlayerCollisions(const World& world) {
     // Collect mutable states.
     std::vector<std::pair<ENetPeer*, PlayerState>> states;
     states.reserve(players_.size());
@@ -697,6 +730,35 @@ void ServerSession::ResolvePlayerCollisions() {
             const float ov_x = (ax0 < bx0) ? (ax1 - bx0) : (bx1 - ax0);
             const float ov_y = (ay0 < by0) ? (ay1 - by0) : (by1 - ay0);
 
+            // --- Dash push: dashing player slams the other with 2× dash force ---
+            const bool a_dashing = a.dash_active_ticks > 0;
+            const bool b_dashing = b.dash_active_ticks > 0;
+            if (a_dashing || b_dashing) {
+                const float push = DASH_SPEED * DASH_PUSH_MULTIPLIER;
+                if (a_dashing && !b_dashing) {
+                    b.vel_x      = a.dash_dir_x * push;
+                    b.vel_y      = a.dash_dir_y * push;
+                    b.move_vel_x = 0.f;
+                } else if (b_dashing && !a_dashing) {
+                    a.vel_x      = b.dash_dir_x * push;
+                    a.vel_y      = b.dash_dir_y * push;
+                    a.move_vel_x = 0.f;
+                } else {
+                    // Both dashing — mutual push, both dashes cancelled
+                    const float a_dx = a.dash_dir_x, a_dy = a.dash_dir_y;
+                    const float b_dx = b.dash_dir_x, b_dy = b.dash_dir_y;
+                    a.vel_x      = b_dx * push;  a.vel_y      = b_dy * push;
+                    a.move_vel_x = 0.f;
+                    a.dash_active_ticks   = 0;
+                    a.dash_cooldown_ticks = static_cast<uint8_t>(DASH_COOLDOWN_TICKS);
+                    b.vel_x      = a_dx * push;  b.vel_y      = a_dy * push;
+                    b.move_vel_x = 0.f;
+                    b.dash_active_ticks   = 0;
+                    b.dash_cooldown_ticks = static_cast<uint8_t>(DASH_COOLDOWN_TICKS);
+                }
+                // Position separation still applied below
+            }
+
             if (ov_y < ov_x) {
                 // Resolve vertically: one player stands on the other.
                 // Also transfer horizontal velocity so the rider follows the carrier.
@@ -720,6 +782,10 @@ void ServerSession::ResolvePlayerCollisions() {
             }
         }
     }
+
+    // Clamp all players against solid tiles (prevents push into walls).
+    for (auto& [peer, s] : states)
+        ClampToWorld(s, world);
 
     // Write resolved states back.
     for (auto& [peer, s] : states) {

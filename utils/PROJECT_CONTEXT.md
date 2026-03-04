@@ -14,6 +14,7 @@ TileRace is a cooperative real-time 2D side-scrolling platformer (cross-platform
 - Horizontal movement with acceleration/deceleration inertia
 - Jump, wall-jump, variable-height jump (hold = higher), coyote time, jump buffer
 - Dash (360°) with suspended gravity, cooldown, and post-dash enhanced jump
+- Dash push: dashing into another player slams them with 2× dash velocity
 - Kill tiles ('K') that trigger a death animation and respawn
 - Ready/Go! overlay displayed at the start of each level
 
@@ -137,6 +138,10 @@ OnReceive → HandleInput → Player::Simulate → BroadcastGameState
 `MoveX` then `MoveY` independently — standard AABB tile-based approach.
 Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTION_PX` (8 px = TILE_SIZE/4), the player is nudged horizontally instead of being blocked.
 
+**Anti-tunnelling:** both `MoveX` and `MoveY` clamp the per-frame displacement to `TILE_SIZE − 1` px (31 px). This guarantees that `ResolveCollisionsX/Y` always sees the solid tile the player would penetrate, even under extreme velocities (e.g. dash push at 2400 px/s → 40 px/frame clamped to 31).
+
+**Player-vs-player world clamp:** after `ResolvePlayerCollisions` separates overlapping AABBs, each player is run through `ClampToWorld` which iteratively resolves any overlap with solid tiles using the minimum-penetration-axis method (up to 4 passes).
+
 ---
 
 ## 5. Player Mechanics Detail
@@ -161,6 +166,15 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 - `dash_ready` resets to true on landing (air dashes limited to one per airborne phase)
 - Cooldown: `DASH_COOLDOWN_TICKS = 25` after dash ends
 - Visual: `TrailState` ring buffer (12 points) rendered as fading ghost segments
+
+### Dash push
+
+- When a dashing player overlaps a non-dashing player, the target receives an impulse of
+  `DASH_SPEED × DASH_PUSH_MULTIPLIER` (2400 px/s) in the dasher's direction.
+- The target's `vel_x`, `vel_y` are overwritten and `move_vel_x` is zeroed.
+- When both players are dashing into each other, both dashes are cancelled and both receive
+  the mutual push impulse.
+- Position separation (from `ResolvePlayerCollisions`) still applies after the velocity push.
 
 ### Kill tiles and respawn
 
@@ -331,6 +345,7 @@ MAX_FALL_SPEED       = 1400     // px/s terminal velocity
 DASH_SPEED           = 1200     // px/s during dash
 DASH_ACTIVE_TICKS    = 12       // ~200 ms
 DASH_COOLDOWN_TICKS  = 25       // ~417 ms
+DASH_PUSH_MULTIPLIER = 2.0      // pushed player gets 2× dash velocity
 DASH_JUMP_WINDOW     = 10       // post-dash jump boost window
 JUMP_BUFFER_TICKS    = 10       // ~167 ms
 COYOTE_TICKS         = 6        // ~100 ms
@@ -467,6 +482,7 @@ After changing `CMakeLists.txt`, run `cmake --preset release` once to apply the 
 | Player physics (move, accel, gravity, collision)        | ✅                        |
 | Jump buffer, coyote time, variable height, wall jump    | ✅                        |
 | Dash (360°, air limit, cooldown, dash-jump)             | ✅                        |
+| Dash push (slam other players with 2× dash force)       | ✅                        |
 | Fixed timestep (60 Hz)                                  | ✅                        |
 | Camera follow + shake + sub-frame interpolation         | ✅                        |
 | ENet client/server (online + offline)                   | ✅                        |

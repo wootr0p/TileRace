@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-04 17:03
+ * Generated : 2026-03-04 19:52
  * ============================================================================
  *
  * PURPOSE
@@ -112,35 +112,35 @@
  *   └── app_icon.rc.in
  *
  * HEADERS INCLUDED BELOW  (29 files)
- *   [01]  src/common/GameState.h
- *   [02]  src/common/InputFrame.h
- *   [03]  src/common/Physics.h
- *   [04]  src/common/Player.h
- *   [05]  src/common/PlayerState.h
- *   [06]  src/common/Protocol.h
- *   [07]  src/common/SpawnFinder.h
- *   [08]  src/common/World.h
- *   [09]  src/server/ChunkStore.h
- *   [10]  src/server/LevelGenerator.h
- *   [11]  src/server/LevelManager.h
- *   [12]  src/server/LevelValidator.h
- *   [13]  src/server/PlayerReset.h
- *   [14]  src/server/ServerLogic.h
- *   [15]  src/server/ServerSession.h
- *   [16]  src/client/Colors.h
- *   [17]  src/client/GameSession.h
- *   [18]  src/client/InputSampler.h
- *   [19]  src/client/LevelPalette.h
- *   [20]  src/client/LocalServer.h
- *   [21]  src/client/MainMenu.h
- *   [22]  src/client/NetworkClient.h
- *   [23]  src/client/Renderer.h
- *   [24]  src/client/SaveData.h
- *   [25]  src/client/SfxManager.h
- *   [26]  src/client/SoundPool.h
- *   [27]  src/client/UIWidgets.h
- *   [28]  src/client/VisualEffects.h
- *   [29]  src/client/WinIcon.h
+ *   [01]  src\common\GameState.h
+ *   [02]  src\common\InputFrame.h
+ *   [03]  src\common\Physics.h
+ *   [04]  src\common\Player.h
+ *   [05]  src\common\PlayerState.h
+ *   [06]  src\common\Protocol.h
+ *   [07]  src\common\SpawnFinder.h
+ *   [08]  src\common\World.h
+ *   [09]  src\server\ChunkStore.h
+ *   [10]  src\server\LevelGenerator.h
+ *   [11]  src\server\LevelManager.h
+ *   [12]  src\server\LevelValidator.h
+ *   [13]  src\server\PlayerReset.h
+ *   [14]  src\server\ServerLogic.h
+ *   [15]  src\server\ServerSession.h
+ *   [16]  src\client\Colors.h
+ *   [17]  src\client\GameSession.h
+ *   [18]  src\client\InputSampler.h
+ *   [19]  src\client\LevelPalette.h
+ *   [20]  src\client\LocalServer.h
+ *   [21]  src\client\MainMenu.h
+ *   [22]  src\client\NetworkClient.h
+ *   [23]  src\client\Renderer.h
+ *   [24]  src\client\SaveData.h
+ *   [25]  src\client\SfxManager.h
+ *   [26]  src\client\SoundPool.h
+ *   [27]  src\client\UIWidgets.h
+ *   [28]  src\client\VisualEffects.h
+ *   [29]  src\client\WinIcon.h
  * ============================================================================
  */
 
@@ -251,6 +251,9 @@ inline constexpr int   CORNER_CORRECTION_PX = TILE_SIZE / 4;  // 8 px
 inline constexpr int   DASH_JUMP_WINDOW_TICKS = 10;    // post-dash window (~167 ms)
 inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 15% stronger than JUMP_FORCE
 
+// Dash push — force multiplier applied to DASH_SPEED when a dashing player hits another
+inline constexpr float DASH_PUSH_MULTIPLIER   = 2.0f;  // pushed player receives 2× dash velocity
+
 
 // ==========================================================================
 // FILE : Player.h
@@ -281,6 +284,9 @@ public:
     void CutJump();    // call when jump key is released while the player is still rising
     void RequestDash(float dx, float dy);
     void SteerDash(float dx, float dy);
+
+    // Reset non-serialised transient state (call on level change).
+    void ResetTransient() { prev_jump_held_ = false; }
 
 private:
     PlayerState state_;
@@ -362,7 +368,7 @@ struct PlayerState {
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.5b";
+static constexpr const char*  GAME_VERSION     = "0.2.6b";
 static constexpr uint16_t     PROTOCOL_VERSION = 7;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
@@ -504,8 +510,8 @@ struct PktLevelDataHeader {
 };
 
 // Number of generated levels per session before returning to lobby.
-static constexpr int MAX_GENERATED_LEVELS   = 5;   // levels per session
-static constexpr int DIFFICULTY_CURVE_LEVELS = 8;   // difficulty ramp reference (don't change)
+static constexpr int MAX_GENERATED_LEVELS   = 10;   // levels per session
+static constexpr int DIFFICULTY_CURVE_LEVELS = 8;   // difficulty ramp reference
 
 // Emote system — 8 directional emotes (mapped clockwise from Up).
 static constexpr int   EMOTE_COUNT      = 8;
@@ -638,6 +644,7 @@ private:
 #include "World.h"
 #include <string>
 #include <vector>
+#include <utility>
 
 // One chunk loaded in memory, parsed from a .tmj file.
 struct Chunk {
@@ -647,9 +654,16 @@ struct Chunk {
     std::vector<std::string>       rows;       // char grid ('0','E','K','X','C','I','O',' ')
     std::vector<std::vector<bool>> solid_grid; // parallel solid-flag grid
 
-    // Entry / exit tile positions (-1 if absent)
+    // Primary entry / exit tile positions (-1 if absent).
+    // These are the first 'I' and 'O' tiles found during scanning
+    // and remain for backward compatibility with single-entry/exit chunks.
     int entry_tx = -1, entry_ty = -1;
     int exit_tx  = -1, exit_ty  = -1;
+
+    // All entry ('I') and exit ('O') tile positions.
+    // Used to detect fork chunks: multiple exits = fork start, multiple entries = fork end.
+    std::vector<std::pair<int,int>> entries;  // all 'I' tile positions (tx, ty)
+    std::vector<std::pair<int,int>> exits;    // all 'O' tile positions (tx, ty)
 
     // Metadata from TMJ map properties
     std::string role;       // "start", "mid", "end", "any"
@@ -659,25 +673,36 @@ struct Chunk {
     // Content flags — set during loading
     bool has_spawn = false; // contains 'X'
     bool has_end   = false; // contains 'E'
+
+    // Fork detection helpers
+    bool IsForkStart() const { return exits.size() > 1; }
+    bool IsForkEnd()   const { return entries.size() > 1; }
+    int  ExitCount()   const { return static_cast<int>(exits.size()); }
+    int  EntryCount()  const { return static_cast<int>(entries.size()); }
 };
 
 // Loads all .tmj chunk files from a directory and classifies them into
-// start, mid, and end pools.
+// start, mid, end, fork_start, and fork_end pools.
 class ChunkStore {
 public:
     // Scan `dir` for .tmj files, parse each into a Chunk, classify into pools.
     // Returns true if at least one start, one mid, and one end chunk were found.
     bool LoadFromDirectory(const char* dir);
 
-    const std::vector<Chunk>& StartChunks() const { return start_; }
-    const std::vector<Chunk>& MidChunks()   const { return mid_; }
-    const std::vector<Chunk>& EndChunks()   const { return end_; }
+    const std::vector<Chunk>& StartChunks()     const { return start_; }
+    const std::vector<Chunk>& MidChunks()       const { return mid_; }
+    const std::vector<Chunk>& EndChunks()       const { return end_; }
+    const std::vector<Chunk>& ForkStartChunks() const { return fork_start_; }
+    const std::vector<Chunk>& ForkEndChunks()   const { return fork_end_; }
 
     // Min / max difficulty found among mid chunks (for difficulty curve mapping).
     int MinMidDifficulty() const { return min_mid_diff_; }
     int MaxMidDifficulty() const { return max_mid_diff_; }
 
     bool IsReady() const { return !start_.empty() && !mid_.empty() && !end_.empty(); }
+
+    // True if fork chunks are available (both fork-start and fork-end).
+    bool HasForkChunks() const { return !fork_start_.empty(); }
 
 private:
     // Parse a single .tmj chunk file. Returns false on failure.
@@ -686,9 +711,14 @@ private:
     // Classify chunk into start/mid/end pools based on role + content.
     void Classify(Chunk chunk);
 
+    // After all chunks are loaded, scan for fork chunks (multi-exit / multi-entry).
+    void DetectForkChunks();
+
     std::vector<Chunk> start_;
     std::vector<Chunk> mid_;
     std::vector<Chunk> end_;
+    std::vector<Chunk> fork_start_;   // chunks with multiple exits (fork entry points)
+    std::vector<Chunk> fork_end_;     // chunks with multiple entries (fork merge points)
     int min_mid_diff_ = 1;
     int max_mid_diff_ = 1;
 };
@@ -702,13 +732,17 @@ private:
 #pragma once
 // SRP: composes a playable level from chunk pieces stored in ChunkStore.
 // Algorithm: 1 start + N mid + 1 end, stitched via entry/exit tile alignment.
+// Supports branching paths via fork-start (multi-exit) and fork-end (multi-entry) chunks.
 // Adds a 5-tile solid border + 5-tile empty margin around the composed map.
+// Ensures at least 2 tiles of solid border between parallel branches.
 // No ENet or Raylib dependency.
 
 #include "ChunkStore.h"
 #include "World.h"
 #include "Protocol.h"
 #include <cstdint>
+#include <random>
+#include <unordered_map>
 
 struct GeneratorParams {
     int level_num    = 1;    // current level number (1-based)
@@ -728,6 +762,12 @@ private:
 
     // Compute the target difficulty [0.0, 1.0] → mapped to the store's range.
     static float TargetDifficulty(int level_num, int total_levels);
+
+    // Difficulty-based branching parameters.
+    // Easy (t≈0): more simultaneous paths (4-5), more arrivals (3-4).
+    // Hard (t≈1): fewer simultaneous paths (max 2), fewer arrivals (1-2).
+    static int MaxSimultaneousPaths(float t);
+    static int MaxArrivals(float t);
 };
 
 
@@ -895,7 +935,7 @@ private:
     bool AllInZone()        const;
     uint32_t CountdownTicks() const;
     PlayerState ApplySpawnReset(PlayerState s, bool with_kill) const;
-    void ResolvePlayerCollisions();   // coop mode: push overlapping player AABBs apart
+    void ResolvePlayerCollisions(const World& world);   // coop mode: push overlapping player AABBs apart
 
     LevelManager level_mgr_;
     ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator

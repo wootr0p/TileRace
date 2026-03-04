@@ -144,6 +144,12 @@ void Player::MoveX(float input_dx, const World& world) {
         total_dx = (state_.move_vel_x + state_.vel_x) * FIXED_DT;
     }
 
+    // Anti-tunnelling: clamp per-frame displacement to less than one tile
+    // so ResolveCollisionsX can always detect the solid tile at the new edge.
+    constexpr float MAX_DX = static_cast<float>(TILE_SIZE) - 1.f;
+    if (total_dx >  MAX_DX) total_dx =  MAX_DX;
+    if (total_dx < -MAX_DX) total_dx = -MAX_DX;
+
     state_.x += total_dx;
     ResolveCollisionsX(world, total_dx);   // snap + rileva on_wall_left/right
 
@@ -293,7 +299,13 @@ void Player::MoveY(float dt, const World& world) {
         state_.vel_y += GRAVITY * dt;
         if (state_.vel_y > MAX_FALL_SPEED)
             state_.vel_y = MAX_FALL_SPEED;
-        state_.y += state_.vel_y * dt;
+
+        // Anti-tunnelling: clamp vertical displacement to less than one tile.
+        float dy = state_.vel_y * dt;
+        constexpr float MAX_DY = static_cast<float>(TILE_SIZE) - 1.f;
+        if (dy >  MAX_DY) dy =  MAX_DY;
+        if (dy < -MAX_DY) dy = -MAX_DY;
+        state_.y += dy;
         ResolveCollisionsY(world);
     }
 

@@ -37,3 +37,6 @@ inline constexpr int   CORNER_CORRECTION_PX = TILE_SIZE / 4;  // 8 px
 // Dash jump — enhanced jump available in this window immediately after a dash ends
 inline constexpr int   DASH_JUMP_WINDOW_TICKS = 10;    // post-dash window (~167 ms)
 inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 15% stronger than JUMP_FORCE
+
+// Dash push — force multiplier applied to DASH_SPEED when a dashing player hits another
+inline constexpr float DASH_PUSH_MULTIPLIER   = 2.0f;  // pushed player receives 2× dash velocity

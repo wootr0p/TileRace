@@ -6,7 +6,7 @@
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.5b";
+static constexpr const char*  GAME_VERSION     = "0.2.6b";
 static constexpr uint16_t     PROTOCOL_VERSION = 7;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
@@ -148,8 +148,8 @@ struct PktLevelDataHeader {
 };
 
 // Number of generated levels per session before returning to lobby.
-static constexpr int MAX_GENERATED_LEVELS   = 5;   // levels per session
-static constexpr int DIFFICULTY_CURVE_LEVELS = 8;   // difficulty ramp reference (don't change)
+static constexpr int MAX_GENERATED_LEVELS   = 10;   // levels per session
+static constexpr int DIFFICULTY_CURVE_LEVELS = 8;   // difficulty ramp reference
 
 // Emote system — 8 directional emotes (mapped clockwise from Up).
 static constexpr int   EMOTE_COUNT      = 8;

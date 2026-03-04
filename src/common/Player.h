@@ -23,6 +23,9 @@ public:
     void RequestDash(float dx, float dy);
     void SteerDash(float dx, float dy);
 
+    // Reset non-serialised transient state (call on level change).
+    void ResetTransient() { prev_jump_held_ = false; }
+
 private:
     PlayerState state_;
     bool        prev_jump_held_ = false;
