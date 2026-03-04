@@ -926,8 +926,6 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
             last_game_state_.next_level_countdown_ticks);
     }
 
-    renderer.DrawNewRecord(false, last_game_state_.is_lobby);
-
     if (last_game_state_.is_lobby)
         renderer.DrawLobbyHints(last_game_state_.next_level_countdown_ticks,
                                 last_game_state_.count);
