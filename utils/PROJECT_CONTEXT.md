@@ -7,7 +7,7 @@
 
 ## 1. What the Game Is
 
-TileRace is a competitive real-time 2D side-scrolling platformer (cross-platform) where 2–8 players race to reach an exit tile on the same map. The player who finishes fastest wins.
+TileRace is a cooperative real-time 2D side-scrolling platformer (cross-platform) where 2–8 players work together to reach an exit tile on the same map. All players must finish the level to clear it.
 
 **Core mechanics (all implemented):**
 
@@ -223,8 +223,8 @@ containing the full tile grid, including the `level` number for HUD display).
 `min_d + t * (max_d - min_d)` (±0.5). Level length also grows with `t`: the first level
 has 4 mid chunks, the last has 14. This ensures all difficulty tiers are used evenly.
 
-The server tracks per-level 1st-place finishers in `session_wins_` (player_id → win count).
-At session end, `PKT_GLOBAL_RESULTS` broadcasts the accumulated win table to all clients.
+The server tracks cooperative level clears in `coop_cleared_levels_`.
+At session end, `PKT_GLOBAL_RESULTS` broadcasts the team's clear count to all clients.
 
 ### Packet types
 

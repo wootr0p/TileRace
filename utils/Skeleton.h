@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-03 23:44
+ * Generated : 2026-03-04 17:03
  * ============================================================================
  *
  * PURPOSE
@@ -112,35 +112,35 @@
  *   └── app_icon.rc.in
  *
  * HEADERS INCLUDED BELOW  (29 files)
- *   [01]  src\common\GameState.h
- *   [02]  src\common\InputFrame.h
- *   [03]  src\common\Physics.h
- *   [04]  src\common\Player.h
- *   [05]  src\common\PlayerState.h
- *   [06]  src\common\Protocol.h
- *   [07]  src\common\SpawnFinder.h
- *   [08]  src\common\World.h
- *   [09]  src\server\ChunkStore.h
- *   [10]  src\server\LevelGenerator.h
- *   [11]  src\server\LevelManager.h
- *   [12]  src\server\LevelValidator.h
- *   [13]  src\server\PlayerReset.h
- *   [14]  src\server\ServerLogic.h
- *   [15]  src\server\ServerSession.h
- *   [16]  src\client\Colors.h
- *   [17]  src\client\GameSession.h
- *   [18]  src\client\InputSampler.h
- *   [19]  src\client\LevelPalette.h
- *   [20]  src\client\LocalServer.h
- *   [21]  src\client\MainMenu.h
- *   [22]  src\client\NetworkClient.h
- *   [23]  src\client\Renderer.h
- *   [24]  src\client\SaveData.h
- *   [25]  src\client\SfxManager.h
- *   [26]  src\client\SoundPool.h
- *   [27]  src\client\UIWidgets.h
- *   [28]  src\client\VisualEffects.h
- *   [29]  src\client\WinIcon.h
+ *   [01]  src/common/GameState.h
+ *   [02]  src/common/InputFrame.h
+ *   [03]  src/common/Physics.h
+ *   [04]  src/common/Player.h
+ *   [05]  src/common/PlayerState.h
+ *   [06]  src/common/Protocol.h
+ *   [07]  src/common/SpawnFinder.h
+ *   [08]  src/common/World.h
+ *   [09]  src/server/ChunkStore.h
+ *   [10]  src/server/LevelGenerator.h
+ *   [11]  src/server/LevelManager.h
+ *   [12]  src/server/LevelValidator.h
+ *   [13]  src/server/PlayerReset.h
+ *   [14]  src/server/ServerLogic.h
+ *   [15]  src/server/ServerSession.h
+ *   [16]  src/client/Colors.h
+ *   [17]  src/client/GameSession.h
+ *   [18]  src/client/InputSampler.h
+ *   [19]  src/client/LevelPalette.h
+ *   [20]  src/client/LocalServer.h
+ *   [21]  src/client/MainMenu.h
+ *   [22]  src/client/NetworkClient.h
+ *   [23]  src/client/Renderer.h
+ *   [24]  src/client/SaveData.h
+ *   [25]  src/client/SfxManager.h
+ *   [26]  src/client/SoundPool.h
+ *   [27]  src/client/UIWidgets.h
+ *   [28]  src/client/VisualEffects.h
+ *   [29]  src/client/WinIcon.h
  * ============================================================================
  */
 
@@ -165,7 +165,6 @@ struct GameState {
     uint32_t    next_level_countdown_ticks = 0;   // > 0: ticks until automatic level change
     uint32_t    time_limit_secs            = 0;   // remaining seconds of the 2-minute time limit
     uint8_t     is_lobby                   = 0;   // 1 when the active map is _lobby.txt
-    uint8_t     game_mode                  = 1;   // 0 = competitive, 1 = cooperative (default)
 };
 
 
@@ -363,8 +362,8 @@ struct PlayerState {
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.0b";
-static constexpr uint16_t     PROTOCOL_VERSION = 6;
+static constexpr const char*  GAME_VERSION     = "0.2.5b";
+static constexpr uint16_t     PROTOCOL_VERSION = 7;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -401,7 +400,6 @@ enum PktType : uint8_t {
     PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
     PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
     PKT_GENERATING        = 17,  // S → C  server is generating the next level; client shows loading overlay
-    PKT_SET_GAME_MODE     = 18,  // C → S  lobby host sets game mode (0=competitive, 1=cooperative)
 };
 
 struct PktInput {
@@ -463,10 +461,10 @@ struct ResultEntry {
 
 // Sent at end of every non-lobby level. Displayed for RESULTS_DURATION_S; skippable with PKT_READY.
 struct PktLevelResults {
-    uint8_t     type    = PKT_LEVEL_RESULTS;
-    uint8_t     count   = 0;
-    uint8_t     level   = 0;
-    uint8_t     _pad    = 0;
+    uint8_t     type              = PKT_LEVEL_RESULTS;
+    uint8_t     count             = 0;
+    uint8_t     level             = 0;
+    uint8_t     coop_all_finished = 0;  // 1 = all players finished (cooperative mode)
     ResultEntry entries[MAX_PLAYERS];
 };
 
@@ -486,8 +484,9 @@ struct GlobalResultEntry {
 struct PktGlobalResults {
     uint8_t           type         = PKT_GLOBAL_RESULTS;
     uint8_t           count        = 0;    // number of valid entries
-    uint8_t           total_levels = 0;   // how many levels were played this session
-    uint8_t           _pad         = 0;
+    uint8_t           total_levels = 0;    // how many levels were played this session
+    uint8_t           coop_wins    = 0;    // how many levels the team cleared
+    uint8_t           _pad[4]      = {};
     GlobalResultEntry entries[MAX_PLAYERS];
 };
 
@@ -505,7 +504,8 @@ struct PktLevelDataHeader {
 };
 
 // Number of generated levels per session before returning to lobby.
-static constexpr int MAX_GENERATED_LEVELS = 8;
+static constexpr int MAX_GENERATED_LEVELS   = 5;   // levels per session
+static constexpr int DIFFICULTY_CURVE_LEVELS = 8;   // difficulty ramp reference (don't change)
 
 // Emote system — 8 directional emotes (mapped clockwise from Up).
 static constexpr int   EMOTE_COUNT      = 8;
@@ -529,13 +529,6 @@ struct PktEmoteBroadcast {
 struct PktGenerating {
     uint8_t type  = PKT_GENERATING;
     uint8_t level = 0;   // the level number being generated
-};
-
-// Sent by the lobby host to change the session game mode.
-// Server ignores this packet outside the lobby or from non-host players.
-struct PktSetGameMode {
-    uint8_t type = PKT_SET_GAME_MODE;
-    uint8_t mode = 1;   // 0 = competitive, 1 = cooperative
 };
 
 
@@ -714,11 +707,12 @@ private:
 
 #include "ChunkStore.h"
 #include "World.h"
+#include "Protocol.h"
 #include <cstdint>
 
 struct GeneratorParams {
     int level_num    = 1;    // current level number (1-based)
-    int total_levels = 8;    // total levels in the session (for difficulty curve)
+    int total_levels = DIFFICULTY_CURVE_LEVELS;  // difficulty curve reference
     uint32_t seed    = 0;    // RNG seed (0 = use current time)
 };
 
@@ -881,9 +875,8 @@ private:
     bool HandleInput     (ENetHost* host, ENetPeer* peer, const PktInput& pkt);
     void HandlePlayerInfo(ENetHost* host, ENetPeer* peer, const PktPlayerInfo& pkt);
     void HandleRestart   (ENetPeer* peer);       // respawn at last checkpoint (or spawn)
-    void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn (forbidden in coop mode)
+    void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn
     bool HandleReady     (ENetHost* host, ENetPeer* peer);  // returns true on level change
-    void HandleSetGameMode(ENetPeer* peer, uint8_t mode);   // lobby host sets cooperative/competitive
 
     // Load next map, reset all players, broadcast new state.
     void DoLevelChange(ENetHost* host);
@@ -911,7 +904,7 @@ private:
     int          initial_level_;
     int          current_level_;
     bool         skip_lobby_          = false;
-    uint8_t      game_mode_           = 1;   // 0 = competitive, 1 = cooperative (default)
+    uint32_t     coop_cleared_levels_ = 0;   // number of levels fully cleared by the team
 
     bool         is_ready_           = false;
     bool         in_lobby_            = false;
@@ -1114,11 +1107,13 @@ private:
     double            global_results_start_time_  = 0.0;
     uint8_t           global_results_count_       = 0;
     uint8_t           global_results_total_levels_= 0;
+    uint8_t           global_results_coop_wins_   = 0;   // levels cleared by team
     GlobalResultEntry global_results_entries_[MAX_PLAYERS] = {};
 
     bool     prev_finished_ = false;
     uint32_t best_ticks_    = 0;
     bool     show_record_   = false;
+    bool     results_coop_all_finished_ = false;   // set when PKT_LEVEL_RESULTS arrives in coop mode
 
     float   last_safe_x_           = 0.f;
     float   last_safe_y_           = 0.f;
@@ -1499,8 +1494,7 @@ public:
     void DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct);
     void DrawTimer(const PlayerState& s,
                    uint32_t best_ticks, uint32_t time_limit_secs,
-                   uint32_t next_level_cd_ticks,
-                   bool coop_mode);
+                   uint32_t next_level_cd_ticks);
     void DrawLiveLeaderboard(const LiveLeaderEntry* entries, int count);
     void DrawNewRecord(bool show, bool is_lobby);
     void DrawLobbyHints(uint32_t cd_ticks, uint32_t player_count);
@@ -1523,19 +1517,20 @@ public:
 
     // Pause menu
     Rectangle GetPauseItemRect(int item_index, int total_items = 3) const;  // for mouse hit-testing in GameSession
-    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
-                       bool is_lobby_host = false, bool coop_mode = false);
+    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted);
 
     // End-of-level results screen
     void DrawResultsScreen(bool in_results, bool local_ready,
                            const ResultEntry* entries, uint8_t count, uint8_t level,
-                           double elapsed_since_start, double total_duration);
+                           double elapsed_since_start, double total_duration,
+                           bool coop_all_finished);
 
     // Session-end global leaderboard (shown after the last level).
     void DrawGlobalResultsScreen(bool in_global, bool local_ready,
                                  const GlobalResultEntry* entries, uint8_t count,
                                  uint8_t total_levels,
-                                 double elapsed_since_start, double total_duration);
+                                 double elapsed_since_start, double total_duration,
+                                 uint8_t coop_wins);
 
     // Full-screen error / session-end overlays used in mini-loops inside main.cpp
     void DrawConnectionErrorScreen(const char* msg);
