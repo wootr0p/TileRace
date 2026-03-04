@@ -332,8 +332,16 @@ bool ChunkStore::ParseChunk(const char* path, Chunk& out) {
             out.rows[y][x]       = ch;
             out.solid_grid[y][x] = TileToSolid(gid, firstgid, tsx);
 
-            if (ch == 'I') { out.entry_tx = x; out.entry_ty = y; }
-            if (ch == 'O') { out.exit_tx  = x; out.exit_ty  = y; }
+            if (ch == 'I') {
+                out.entries.push_back({x, y});
+                // First entry becomes the primary (backward compat)
+                if (out.entry_tx < 0) { out.entry_tx = x; out.entry_ty = y; }
+            }
+            if (ch == 'O') {
+                out.exits.push_back({x, y});
+                // First exit becomes the primary (backward compat)
+                if (out.exit_tx < 0) { out.exit_tx = x; out.exit_ty = y; }
+            }
             if (ch == 'X') out.has_spawn = true;
             if (ch == 'E') out.has_end   = true;
         }
@@ -386,6 +394,8 @@ bool ChunkStore::LoadFromDirectory(const char* dir) {
     start_.clear();
     mid_.clear();
     end_.clear();
+    fork_start_.clear();
+    fork_end_.clear();
 
     const auto files = ListTmjFiles(dir);
     printf("[ChunkStore] scanning '%s': found %zu .tmj files\n", dir, files.size());
@@ -393,11 +403,14 @@ bool ChunkStore::LoadFromDirectory(const char* dir) {
     for (const auto& path : files) {
         Chunk chunk;
         if (ParseChunk(path.c_str(), chunk)) {
-            printf("[ChunkStore]   loaded '%s' (%dx%d) role='%s' entry=(%d,%d) exit=(%d,%d)\n",
+            printf("[ChunkStore]   loaded '%s' (%dx%d) role='%s' entry=(%d,%d) exit=(%d,%d)"
+                   " entries=%d exits=%d\n",
                    path.c_str(), chunk.width, chunk.height,
                    chunk.role.c_str(),
                    chunk.entry_tx, chunk.entry_ty,
-                   chunk.exit_tx, chunk.exit_ty);
+                   chunk.exit_tx, chunk.exit_ty,
+                   static_cast<int>(chunk.entries.size()),
+                   static_cast<int>(chunk.exits.size()));
             Classify(std::move(chunk));
         } else {
             printf("[ChunkStore]   FAILED to parse '%s'\n", path.c_str());
@@ -419,5 +432,36 @@ bool ChunkStore::LoadFromDirectory(const char* dir) {
                min_mid_diff_, max_mid_diff_);
     }
 
+    // Detect fork chunks (multi-exit / multi-entry) across all pools.
+    DetectForkChunks();
+
     return IsReady();
+}
+
+void ChunkStore::DetectForkChunks() {
+    fork_start_.clear();
+    fork_end_.clear();
+
+    // Scan all loaded chunks for multi-exit (fork start) and multi-entry (fork end).
+    // A chunk with >1 exits can serve as a fork start point.
+    // A chunk with >1 entries can serve as a fork merge point.
+    auto scan_pool = [this](const std::vector<Chunk>& pool) {
+        for (const auto& chunk : pool) {
+            if (chunk.exits.size() > 1)
+                fork_start_.push_back(chunk);
+            if (chunk.entries.size() > 1)
+                fork_end_.push_back(chunk);
+        }
+    };
+
+    scan_pool(start_);
+    scan_pool(mid_);
+    scan_pool(end_);
+
+    if (!fork_start_.empty() || !fork_end_.empty()) {
+        printf("[ChunkStore] fork chunks: %zu fork_start (multi-exit), %zu fork_end (multi-entry)\n",
+               fork_start_.size(), fork_end_.size());
+    } else {
+        printf("[ChunkStore] no fork chunks found — branching disabled\n");
+    }
 }
