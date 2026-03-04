@@ -12,16 +12,14 @@ void InputSampler::Poll() {
         jump_pressed_ = true;
 
     if (IsKeyPressed(KEY_LEFT_SHIFT) || IsKeyPressed(KEY_RIGHT_SHIFT) ||
-        (gp && (IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_LEFT) ||
-                IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))))
+        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_LEFT)))
         dash_pending_ = true;
 
     if (IsKeyPressed(KEY_BACKSPACE) ||
-        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)))  // Circle
+        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_UP)))     // Triangle
         restart_checkpoint_ = true;
 
-    if (IsKeyPressed(KEY_DELETE) ||
-        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_UP)))     // Triangle
+    if (IsKeyPressed(KEY_DELETE))
         restart_spawn_ = true;
 
     // --- Toggle pausa ---
@@ -106,10 +104,9 @@ bool InputSampler::IsJumpHeld() const {
 
 bool InputSampler::IsDrawHeld() const {
     if (IsKeyDown(KEY_P)) return true;
-    if (IsGamepadAvailable(GP)) {
-        const float lt = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_TRIGGER);
-        if (lt > 0.3f) return true;
-    }
+    if (IsGamepadAvailable(GP) &&
+        IsGamepadButtonDown(GP, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))  // Circle
+        return true;
     return false;
 }
 
@@ -118,6 +115,15 @@ bool InputSampler::IsSprintHeld() const {
     if (IsGamepadAvailable(GP)) {
         const float rt = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_RIGHT_TRIGGER);
         if (rt > 0.3f) return true;
+    }
+    return false;
+}
+
+bool InputSampler::IsMagnetHeld() const {
+    if (IsKeyDown(KEY_LEFT_ALT)) return true;
+    if (IsGamepadAvailable(GP)) {
+        const float lt = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_TRIGGER);
+        if (lt > 0.3f) return true;
     }
     return false;
 }

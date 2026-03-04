@@ -18,9 +18,9 @@ public:
     bool ConsumeJumpPressed()        { bool v = jump_pressed_;           jump_pressed_           = false; return v; }
     bool ConsumeDashPending()        { bool v = dash_pending_;           dash_pending_           = false; return v; }
     bool ConsumePauseToggle()        { bool v = pause_toggle_;           pause_toggle_           = false; return v; }
-    // Restart from last checkpoint (or spawn if none): Backspace / Circle
+    // Restart from last shared checkpoint (or spawn if none): Backspace / Triangle
     bool ConsumeRestartRequest()     { bool v = restart_checkpoint_;     restart_checkpoint_     = false; return v; }
-    // Restart always from level spawn, clearing checkpoint: Delete / Triangle
+    // Restart always from level spawn, clearing checkpoint: Delete
     bool ConsumeRestartSpawn()       { bool v = restart_spawn_;          restart_spawn_          = false; return v; }
 
     // Pause menu navigation — refreshed each render frame; do not consume.
@@ -34,6 +34,7 @@ public:
     bool  IsJumpHeld()                     const;
     bool  IsDrawHeld()                      const;
     bool  IsSprintHeld()                     const;
+    bool  IsMagnetHeld()                     const;
 
     // Emote wheel (E key / right-stick click).
     bool IsEmoteWheelOpen()       const { return emote_wheel_open_; }
@@ -46,8 +47,8 @@ private:
 
     bool  jump_pressed_       = false;
     bool  dash_pending_       = false;
-    bool  restart_checkpoint_ = false;  // Backspace / Circle
-    bool  restart_spawn_      = false;  // Delete   / Triangle
+    bool  restart_checkpoint_ = false;  // Backspace / Triangle
+    bool  restart_spawn_      = false;  // Delete
     bool  pause_toggle_       = false;
 
     bool  nav_up_   = false;

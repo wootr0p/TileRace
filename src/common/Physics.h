@@ -43,3 +43,6 @@ inline constexpr float DASH_PUSH_MULTIPLIER   = 2.0f;  // pushed player receives
 
 // Sprint — held modifier that boosts horizontal movement speed
 inline constexpr float SPRINT_MULTIPLIER      = 2.0f;  // 2× faster while sprinting
+
+// Magnet grab — grab and carry a nearby player
+inline constexpr float MAGNET_RANGE            = 64.f; // px — max grab radius

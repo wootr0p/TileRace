@@ -7,7 +7,7 @@
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
 static constexpr const char*  GAME_VERSION     = "0.2.6b";
-static constexpr uint16_t     PROTOCOL_VERSION = 8;
+static constexpr uint16_t     PROTOCOL_VERSION = 9;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -32,14 +32,14 @@ enum PktType : uint8_t {
     PKT_GAME_STATE        = 3,   // S → C  authoritative GameState broadcast
     PKT_WELCOME           = 4,   // S → C  assigned player_id + session_token
     PKT_PLAYER_INFO       = 5,   // C → S  name + protocol_version (sent right after PKT_WELCOME)
-    PKT_RESTART           = 6,   // C → S  respawn at last checkpoint (or spawn if none); Backspace / Circle
+    PKT_RESTART           = 6,   // C → S  respawn at last shared checkpoint (or spawn if none); Backspace / Triangle
     PKT_LOAD_LEVEL        = 7,   // S → C  load next level or return to menu (is_last=1)
     PKT_VERSION_MISMATCH  = 8,   // S → C  incompatible version; server disconnects immediately after
     PKT_SERVER_BUSY       = 9,   // S → C  session in progress, retry later
     PKT_LEVEL_RESULTS     = 10,  // S → C  end-of-level leaderboard
     PKT_READY             = 11,  // C → S  player ready for the next level
     PKT_GLOBAL_RESULTS    = 12,  // S → C  session-end global leaderboard (wins per player)
-    PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete / Square
+    PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete
     PKT_LEVEL_DATA        = 14,  // S → C  generated level tile grid (variable-size packet)
     PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
     PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients

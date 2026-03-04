@@ -56,4 +56,10 @@ struct PlayerState {
 
     // Sprint — true while the player holds the sprint button
     bool     sprinting    = false;
+
+    // Magnet — true while the player holds the magnet button
+    bool     magneting    = false;
+
+    // Grabbed — true while another player is carrying this player via magnet
+    bool     grabbed      = false;
 };

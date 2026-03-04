@@ -58,6 +58,8 @@ private:
     uint32_t CountdownTicks() const;
     PlayerState ApplySpawnReset(PlayerState s, bool with_kill) const;
     void ResolvePlayerCollisions(const World& world);   // coop mode: push overlapping player AABBs apart
+    void ApplyMagnetGrab();                              // magnet holders grab & carry nearby players
+    void ReleaseGrab(ENetPeer* grabber);                 // release a grabbed player (if any)
 
     LevelManager level_mgr_;
     ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator
@@ -91,6 +93,9 @@ private:
     // Shared checkpoint tracking — each activated spawn-position is recorded so that
     // re-visiting an already-activated checkpoint doesn't reset everyone's progress.
     std::vector<std::pair<float,float>> activated_checkpoints_;
+
+    // Magnet-grab relationships: grabber peer → grabbed peer.
+    std::unordered_map<ENetPeer*, ENetPeer*> grab_targets_;
 
     static constexpr uint32_t LEVEL_TIME_LIMIT_MS        = 120'000u;
     static constexpr uint32_t NEXT_LEVEL_MS              =   3'000u;

@@ -15,7 +15,8 @@ TileRace is a cooperative real-time 2D side-scrolling platformer (cross-platform
 - Jump, wall-jump, variable-height jump (hold = higher), coyote time, jump buffer
 - Dash (360°) with suspended gravity, cooldown, and post-dash enhanced jump
 - Dash push: dashing into another player slams them with 2× dash velocity
-- Sprint: hold Right Ctrl / R2 for 1.5× horizontal speed (disabled during dash)
+- Sprint: hold Right Ctrl / R2 for 2× horizontal speed (disabled during dash)
+- Magnet grab: hold Alt / Circle to grab and carry a nearby player (MAGNET_RANGE, GRAB_OFFSET_X)
 - Drawing trails: hold P / L2 to leave persistent coloured spline marks on the map
 - Kill tiles ('K') that trigger a death animation and respawn
 - Ready/Go! overlay displayed at the start of each level
@@ -25,10 +26,12 @@ TileRace is a cooperative real-time 2D side-scrolling platformer (cross-platform
 |---|---|---|
 | ← / → / A / D | Left stick / D-pad | Move |
 | SPACE | Cross (×) | Jump / wall-jump |
-| SHIFT | Square (□) or Circle (○) | Dash (direction from stick/WASD/D-pad) |
+| SHIFT | Square (□) | Dash (direction from stick/WASD/D-pad) |
 | P | L2 (left trigger) | Draw trail on map (hold) |
 | Right Ctrl | R2 (right trigger) | Sprint (hold) |
-| Backspace / Triangle | Triangle (△) | Restart from spawn |
+| Alt | Circle (○) | Magnet grab — grab and carry a nearby player (hold) |
+| Backspace | Triangle (△) | Restart from last checkpoint |
+| Delete | — | Restart from spawn (clears checkpoint) |
 | ESC | Start / Options | Pause menu |
 
 ---
@@ -183,10 +186,26 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 ### Sprint
 
 - Hold Right Ctrl (keyboard) or R2 / right trigger (gamepad, threshold > 0.3) to sprint.
-- `BTN_SPRINT` (bit 8) is set in InputFrame; `Player::Simulate` multiplies `MOVE_SPEED` by `SPRINT_MULTIPLIER` (1.5).
+- `BTN_SPRINT` (bit 8) is set in InputFrame; `Player::Simulate` multiplies `MOVE_SPEED` by `SPRINT_MULTIPLIER` (2.0).
 - Sprint is disabled while a dash is active (`dash_active_ticks > 0`).
 - `PlayerState::sprinting` flag is set for potential animation/visual use.
-- `InputFrame::buttons` is `uint16_t` to accommodate the 9th bit (PROTOCOL_VERSION bumped to 8).
+- `InputFrame::buttons` is `uint16_t` to accommodate 10 bits (PROTOCOL_VERSION = 9).
+
+### Magnet grab
+
+- Hold Alt (keyboard) or Circle / ○ (gamepad) to activate the magnet.
+- `BTN_MAGNET` (bit 9) is set in InputFrame; `Player::Simulate` sets `PlayerState::magneting = true` (disabled during dash).
+- Server-side: `ApplyMagnetGrab()` runs each tick between `UpdateZone` and `ResolvePlayerCollisions`.
+  When a magneting player has no grab target, the closest non-magneting player within `MAGNET_RANGE` (256 px)
+  is grabbed: `PlayerState::grabbed = true`, and the target’s physics are fully suspended (`Player::Simulate` early-returns).
+- While grabbed, the target’s position is snapped to the grabber’s side:
+  `target.x = grabber.x + grabber.last_dir × GRAB_OFFSET_X`, `target.y = grabber.y`.
+  Velocity is zeroed. The grabber moves normally and carries the target.
+- Grab is released when: the grabber releases the magnet button, either player dies/respawns/finishes,
+  or either player disconnects.
+- Grabbed players are excluded from `ResolvePlayerCollisions` (no push/separation applies to them).
+- `grab_targets_` map in `ServerSession` tracks active grabber→target relationships; cleared on level change.
+- `PlayerReset.h` resets `magneting = false` and `grabbed = false` on spawn and checkpoint resets.
 
 ### Drawing trails
 
@@ -284,20 +303,20 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the team's clear count to all cl
 
 ### Packet types
 
-| Packet                 | Direction | Event                                                                     |
-| ---------------------- | --------- | ------------------------------------------------------------------------- |
-| `PKT_INPUT`            | C → S     | One `InputFrame` per tick                                                 |
-| `PKT_GAME_STATE`       | S → C     | Full `GameState` broadcast after every input                              |
-| `PKT_WELCOME`          | S → C     | On connect: `player_id` + `session_token`                                 |
-| `PKT_PLAYER_INFO`      | C → S     | After welcome: `name` + `protocol_version`                                |
-| `PKT_LOAD_LEVEL`       | S → C     | Load next map from file (lobby) or `is_last=1` → return to menu           |
-| `PKT_LEVEL_DATA`       | S → C     | Generated level tile grid (variable-size: header + width×height chars)    |
-| `PKT_LEVEL_RESULTS`    | S → C     | End-of-level sorted leaderboard                                           |
-| `PKT_GLOBAL_RESULTS`   | S → C     | Session-end win leaderboard (after last level)                            |
-| `PKT_RESTART`          | C → S     | Respawn at last checkpoint (or spawn if none reached); Backspace / Circle |
-| `PKT_RESTART_SPAWN`    | C → S     | Respawn always at level spawn, clearing checkpoint; Delete / Triangle     |
-| `PKT_READY`            | C → S     | Skip results screen early                                                 |
-| `PKT_VERSION_MISMATCH` | S → C     | Incompatible `PROTOCOL_VERSION` — disconnect follows                      |
+| Packet                 | Direction | Event                                                                  |
+| ---------------------- | --------- | ---------------------------------------------------------------------- |
+| `PKT_INPUT`            | C → S     | One `InputFrame` per tick                                              |
+| `PKT_GAME_STATE`       | S → C     | Full `GameState` broadcast after every input                           |
+| `PKT_WELCOME`          | S → C     | On connect: `player_id` + `session_token`                              |
+| `PKT_PLAYER_INFO`      | C → S     | After welcome: `name` + `protocol_version`                             |
+| `PKT_LOAD_LEVEL`       | S → C     | Load next map from file (lobby) or `is_last=1` → return to menu        |
+| `PKT_LEVEL_DATA`       | S → C     | Generated level tile grid (variable-size: header + width×height chars) |
+| `PKT_LEVEL_RESULTS`    | S → C     | End-of-level sorted leaderboard                                        |
+| `PKT_GLOBAL_RESULTS`   | S → C     | Session-end win leaderboard (after last level)                         |
+| `PKT_RESTART`          | C → S     | Respawn at last checkpoint (or spawn if none); Backspace / Triangle    |
+| `PKT_RESTART_SPAWN`    | C → S     | Respawn always at level spawn, clearing checkpoint; Delete             |
+| `PKT_READY`            | C → S     | Skip results screen early                                              |
+| `PKT_VERSION_MISMATCH` | S → C     | Incompatible `PROTOCOL_VERSION` — disconnect follows                   |
 
 ---
 
@@ -357,7 +376,7 @@ exit zone, the server generates the first level from chunks and sends it via `PK
 ```cpp
 SERVER_PORT        = 58291   // online / dedicated server
 SERVER_PORT_LOCAL  = 58721   // in-process LocalServer (offline mode)
-PROTOCOL_VERSION   = 4       // increment on any breaking change
+PROTOCOL_VERSION   = 9       // increment on any breaking change
 MAX_PLAYERS        = 8
 CHANNEL_RELIABLE   = 0
 CHANNEL_COUNT      = 1
@@ -377,7 +396,7 @@ Disconnect reason codes are sent as the `data` field of `enet_peer_disconnect()`
 ```cpp
 TILE_SIZE            = 32       // px per tile
 FIXED_DT             = 1/60 s
-MOVE_SPEED           = 400      // px/s max
+MOVE_SPEED           = 300      // px/s max
 MOVE_ACCEL           = 8000     // px/s²
 MOVE_DECEL           = 6000     // px/s²
 GRAVITY              = 2000     // px/s²
@@ -388,7 +407,9 @@ DASH_SPEED           = 1200     // px/s during dash
 DASH_ACTIVE_TICKS    = 12       // ~200 ms
 DASH_COOLDOWN_TICKS  = 25       // ~417 ms
 DASH_PUSH_MULTIPLIER = 2.0      // pushed player gets 2× dash velocity
-SPRINT_MULTIPLIER    = 1.5      // sprint horizontal speed factor
+SPRINT_MULTIPLIER    = 2.0      // sprint horizontal speed factor
+MAGNET_RANGE         = 256      // px — magnet grab radius
+GRAB_OFFSET_X        = 36       // px — horizontal offset for carried player (TILE_SIZE + 4)
 DASH_JUMP_WINDOW     = 10       // post-dash jump boost window
 JUMP_BUFFER_TICKS    = 10       // ~167 ms
 COYOTE_TICKS         = 6        // ~100 ms
@@ -441,8 +462,8 @@ Checkpoints are shared: one player reaching a 'C' tile group activates the spawn
 
 **Restart keys:**
 
-- Backspace / Circle: restart at last checkpoint (or spawn if none)
-- Delete / Triangle: restart at level spawn (clears checkpoint)
+- Backspace / Triangle: restart at last checkpoint (or spawn if none)
+- Delete: restart at level spawn (clears checkpoint)
 
 ---
 
@@ -518,47 +539,48 @@ cmake --install build/release --component TileRaceRuntime --prefix /custom/path
 
 After changing `CMakeLists.txt`, run `cmake --preset release` once to apply the new prefix to the cache.
 
-| Feature                                                  | Status                    |
-| -------------------------------------------------------- | ------------------------- |
-| Tilemap loading and rendering                            | ✅                        |
-| Tiled `.tmj` map format + TSX property parsing           | ✅                        |
-| Shared checkpoints ('C') + cooperative activation        | ✅                        |
-| Chunk-based checkpoint placement (interspersed mid pool) | ✅                        |
-| Player physics (move, accel, gravity, collision)         | ✅                        |
-| Jump buffer, coyote time, variable height, wall jump     | ✅                        |
-| Dash (360°, air limit, cooldown, dash-jump)              | ✅                        |
-| Dash push (slam other players with 2× dash force)        | ✅                        |
-| Sprint (Right Ctrl / R2, 1.5× horizontal speed)          | ✅                        |
-| Drawing trails (P / L2, cached Catmull-Rom splines)      | ✅                        |
-| Fixed timestep (60 Hz)                                   | ✅                        |
-| Camera follow + shake + sub-frame interpolation          | ✅                        |
-| ENet client/server (online + offline)                    | ✅                        |
-| Client-side prediction + server reconciliation           | ✅                        |
-| Multiple players, remote player rendering                | ✅                        |
-| Off-screen player indicators (compass arrows)            | ✅                        |
-| Kill tiles + death animation + Ready/Go! overlay         | ✅                        |
-| Race timer, live leaderboard                             | ✅                        |
-| End-of-level results screen                              | ✅                        |
-| Session-end global leaderboard (win counts per player)   | ✅                        |
-| Chunk-based procedural level generation                  | ✅                        |
-| AI-driven level validation (physics BFS, offline only)   | ✅                        |
-| Lobby → level progression loop                           | ✅                        |
-| 2-minute time limit per level                            | ✅                        |
-| Restart from spawn (PKT_RESTART)                         | ✅                        |
-| Main menu (offline/online, username, IP)                 | ✅                        |
-| Splash screen (title + press any button)                 | ✅                        |
-| Persistent save data (username, last IP, sfx mute)       | ✅                        |
-| Pause menu with quit confirmation                        | ✅                        |
-| Colour palette (Colors.h)                                | ✅                        |
-| Visual trail (dash), death particles                     | ✅                        |
-| Personal best time tracking                              | ✅                        |
-| Ready mechanic (skip results screen early)               | ✅                        |
-| Version mismatch detection + graceful error              | ✅                        |
-| Server-busy rejection                                    | ✅                        |
-| Win32 taskbar icon                                       | ✅                        |
-| SOLID refactoring (client + server)                      | ✅                        |
-| Audio SFX (jump, dash) — local + 2-D spatialized remote  | ✅                        |
-| SFX mute toggle (main menu + pause menu, persisted)      | ✅                        |
-| Per-platform deploy folder (deploy/win\|mac\|linux)      | ✅                        |
-| Multiple spawn assignment by player_id                   | ❌ (all use center spawn) |
-| Linux / macOS build verification                         | ❌                        |
+| Feature                                                           | Status                    |
+| ----------------------------------------------------------------- | ------------------------- |
+| Tilemap loading and rendering                                     | ✅                        |
+| Tiled `.tmj` map format + TSX property parsing                    | ✅                        |
+| Shared checkpoints ('C') + cooperative activation                 | ✅                        |
+| Chunk-based checkpoint placement (interspersed mid pool)          | ✅                        |
+| Player physics (move, accel, gravity, collision)                  | ✅                        |
+| Jump buffer, coyote time, variable height, wall jump              | ✅                        |
+| Dash (360°, air limit, cooldown, dash-jump)                       | ✅                        |
+| Dash push (slam other players with 2× dash force)                 | ✅                        |
+| Sprint (Right Ctrl / R2, 1.5× horizontal speed)                   | ✅                        |
+| Drawing trails (P / L2, cached Catmull-Rom splines)               | ✅                        |
+| Fixed timestep (60 Hz)                                            | ✅                        |
+| Camera follow + shake + sub-frame interpolation                   | ✅                        |
+| ENet client/server (online + offline)                             | ✅                        |
+| Client-side prediction + server reconciliation                    | ✅                        |
+| Multiple players, remote player rendering                         | ✅                        |
+| Off-screen player indicators (compass arrows)                     | ✅                        |
+| Kill tiles + death animation + Ready/Go! overlay                  | ✅                        |
+| Race timer, live leaderboard                                      | ✅                        |
+| End-of-level results screen                                       | ✅                        |
+| Session-end global leaderboard (win counts per player)            | ✅                        |
+| Chunk-based procedural level generation                           | ✅                        |
+| AI-driven level validation (physics BFS, offline only)            | ✅                        |
+| Lobby → level progression loop                                    | ✅                        |
+| 2-minute time limit per level                                     | ✅                        |
+| Restart from checkpoint (PKT_RESTART) / spawn (PKT_RESTART_SPAWN) | ✅                        |
+| Magnet grab mechanic (Alt / Circle, grab & carry players)         | ✅                        |
+| Main menu (offline/online, username, IP)                          | ✅                        |
+| Splash screen (title + press any button)                          | ✅                        |
+| Persistent save data (username, last IP, sfx mute)                | ✅                        |
+| Pause menu with quit confirmation                                 | ✅                        |
+| Colour palette (Colors.h)                                         | ✅                        |
+| Visual trail (dash), death particles                              | ✅                        |
+| Personal best time tracking                                       | ✅                        |
+| Ready mechanic (skip results screen early)                        | ✅                        |
+| Version mismatch detection + graceful error                       | ✅                        |
+| Server-busy rejection                                             | ✅                        |
+| Win32 taskbar icon                                                | ✅                        |
+| SOLID refactoring (client + server)                               | ✅                        |
+| Audio SFX (jump, dash) — local + 2-D spatialized remote           | ✅                        |
+| SFX mute toggle (main menu + pause menu, persisted)               | ✅                        |
+| Per-platform deploy folder (deploy/win\|mac\|linux)               | ✅                        |
+| Multiple spawn assignment by player_id                            | ❌ (all use center spawn) |
+| Linux / macOS build verification                                  | ❌                        |

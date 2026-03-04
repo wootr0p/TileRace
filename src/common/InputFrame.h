@@ -13,6 +13,7 @@ enum InputBits : uint16_t {
     BTN_DOWN       = 1 << 6,  // held — dash direction / downward steer
     BTN_DRAW       = 1 << 7,  // held — player is drawing a trail on the map
     BTN_SPRINT     = 1 << 8,  // held — sprint (faster horizontal movement)
+    BTN_MAGNET     = 1 << 9,  // held — magnet (attracts nearby players)
 };
 
 // Deterministic input snapshot for one 60 Hz fixed tick.

@@ -1,8 +1,3 @@
-La modalità cooperativa diventa il default.
-Elimina tutti i riferimenti alla modalità competitiva che avevamo sviluppato.
-Ora resta il default la modalità cooperativa.
-Togli anche nel menù della lobby la logica che il primo player poteva cambiare la modalità dal menù.
-
 Improvment delle tilemap:
 
 - Pedane mobili
@@ -15,14 +10,4 @@ Improvement del gioco:
 
 - Replay e/o ghost della giocata
 
-Improvement del level generator:
 
-- Diramazioni nel level generator. Anzichè accatastare i chunk solo uno sopra l'altro,
-utilizza un chunk di inizio bivio e uno di fine bivio per creare altri percorsi possibili.
-Possono crearsi anche bivi di bivi e quindi avere più percorsi in tutto. Massimo devono potersi sdoppiare X strade in contemporanea
-e massimo ci possono essere Y arrivi. X e Y dipendono dalla curva di difficoltà.
-Fai in modo che se un livello è facile può avere più arrivi (max 3-4) ma se è difficile il numero di arrivi viene sorteggiato e può essere solo 1 o 2.
-Per quanto riguarda le strade in contemporanea, fai che se il livello è semplice ha più strade (anche 4-5) se difficile al massimo 2.
-Per identificare i chunk di inizio bivio e fine bivio il server controlla tutte le tile all'avvio e guarda se hanno più exit o più entrate.
-Se non vengono trovati chunk con inizi o fine multipli allora il percorso non si sdoppierà.
-Per quanto riguarda i bordi devono sempre rimanere all'esterno di tutto il percorso, ma in più devono esserci dei bordi di almeno 2 tile tra i percorsi diversi.

@@ -95,7 +95,7 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
         }
     }
 
-    // 5a. Restart al checkpoint (Backspace / Circle) — solo in gioco, player vivo, non lobby
+    // 5a. Restart al checkpoint (Backspace / Triangle) — solo in gioco, player vivo, non lobby
     if (pause_state_ == PauseState::PLAYING && !last_game_state_.is_lobby
         && input_sampler_.ConsumeRestartRequest()) {
         const PlayerState& cur = player_.GetState();
@@ -106,7 +106,7 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
         }
     }
 
-    // 5b. Restart allo spawn (Delete / Triangle) — solo in gioco, player vivo, non lobby
+    // 5b. Restart allo spawn (Delete) — solo in gioco, player vivo, non lobby
     if (pause_state_ == PauseState::PLAYING && !last_game_state_.is_lobby
         && input_sampler_.ConsumeRestartSpawn()) {
         const PlayerState& cur = player_.GetState();
@@ -330,6 +330,7 @@ void GameSession::TickFixed(NetworkClient& net) {
     if (input_sampler_.ConsumeDashPending()) { frame.buttons |= BTN_DASH; }
     if (input_sampler_.IsDrawHeld())           frame.buttons |= BTN_DRAW;
     if (input_sampler_.IsSprintHeld())          frame.buttons |= BTN_SPRINT;
+    if (input_sampler_.IsMagnetHeld())          frame.buttons |= BTN_MAGNET;
 
     // Blocca input durante morte/grace
     {

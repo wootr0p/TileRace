@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-04 20:50
+ * Generated : 2026-03-04 21:49
  * ============================================================================
  *
  * PURPOSE
@@ -188,6 +188,7 @@ enum InputBits : uint16_t {
     BTN_DOWN       = 1 << 6,  // held — dash direction / downward steer
     BTN_DRAW       = 1 << 7,  // held — player is drawing a trail on the map
     BTN_SPRINT     = 1 << 8,  // held — sprint (faster horizontal movement)
+    BTN_MAGNET     = 1 << 9,  // held — magnet (attracts nearby players)
 };
 
 // Deterministic input snapshot for one 60 Hz fixed tick.
@@ -221,7 +222,7 @@ struct InputFrame {
 inline constexpr int   TILE_SIZE   = 32;       // pixels per tile side
 
 // Horizontal movement
-inline constexpr float MOVE_SPEED  = 400.f;    // px/s  — max horizontal speed
+inline constexpr float MOVE_SPEED  = 300.f;    // px/s  — max horizontal speed
 inline constexpr float MOVE_ACCEL  = 8000.f;   // px/s² — acceleration toward target speed
 inline constexpr float MOVE_DECEL  = 6000.f;   // px/s² — deceleration on stop or direction reversal
 
@@ -257,7 +258,11 @@ inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 15% stronger than JUM
 inline constexpr float DASH_PUSH_MULTIPLIER   = 2.0f;  // pushed player receives 2× dash velocity
 
 // Sprint — held modifier that boosts horizontal movement speed
-inline constexpr float SPRINT_MULTIPLIER      = 1.5f;  // 50% faster while sprinting
+inline constexpr float SPRINT_MULTIPLIER      = 2.0f;  // 2× faster while sprinting
+
+// Magnet grab — grab and carry a nearby player
+inline constexpr float MAGNET_RANGE            = 256.f; // px — max grab radius
+inline constexpr float GRAB_OFFSET_X           = static_cast<float>(TILE_SIZE) + 4.f; // px — horizontal offset for carried player
 
 
 // ==========================================================================
@@ -365,6 +370,12 @@ struct PlayerState {
 
     // Sprint — true while the player holds the sprint button
     bool     sprinting    = false;
+
+    // Magnet — true while the player holds the magnet button
+    bool     magneting    = false;
+
+    // Grabbed — true while another player is carrying this player via magnet
+    bool     grabbed      = false;
 };
 
 // ==========================================================================
@@ -381,7 +392,7 @@ struct PlayerState {
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
 static constexpr const char*  GAME_VERSION     = "0.2.6b";
-static constexpr uint16_t     PROTOCOL_VERSION = 8;
+static constexpr uint16_t     PROTOCOL_VERSION = 9;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -406,14 +417,14 @@ enum PktType : uint8_t {
     PKT_GAME_STATE        = 3,   // S → C  authoritative GameState broadcast
     PKT_WELCOME           = 4,   // S → C  assigned player_id + session_token
     PKT_PLAYER_INFO       = 5,   // C → S  name + protocol_version (sent right after PKT_WELCOME)
-    PKT_RESTART           = 6,   // C → S  respawn at last checkpoint (or spawn if none); Backspace / Circle
+    PKT_RESTART           = 6,   // C → S  respawn at last shared checkpoint (or spawn if none); Backspace / Triangle
     PKT_LOAD_LEVEL        = 7,   // S → C  load next level or return to menu (is_last=1)
     PKT_VERSION_MISMATCH  = 8,   // S → C  incompatible version; server disconnects immediately after
     PKT_SERVER_BUSY       = 9,   // S → C  session in progress, retry later
     PKT_LEVEL_RESULTS     = 10,  // S → C  end-of-level leaderboard
     PKT_READY             = 11,  // C → S  player ready for the next level
     PKT_GLOBAL_RESULTS    = 12,  // S → C  session-end global leaderboard (wins per player)
-    PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete / Square
+    PKT_RESTART_SPAWN     = 13,  // C → S  respawn always at level spawn, ignoring checkpoints; Delete
     PKT_LEVEL_DATA        = 14,  // S → C  generated level tile grid (variable-size packet)
     PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
     PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
@@ -957,6 +968,8 @@ private:
     uint32_t CountdownTicks() const;
     PlayerState ApplySpawnReset(PlayerState s, bool with_kill) const;
     void ResolvePlayerCollisions(const World& world);   // coop mode: push overlapping player AABBs apart
+    void ApplyMagnetGrab();                              // magnet holders grab & carry nearby players
+    void ReleaseGrab(ENetPeer* grabber);                 // release a grabbed player (if any)
 
     LevelManager level_mgr_;
     ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator
@@ -990,6 +1003,9 @@ private:
     // Shared checkpoint tracking — each activated spawn-position is recorded so that
     // re-visiting an already-activated checkpoint doesn't reset everyone's progress.
     std::vector<std::pair<float,float>> activated_checkpoints_;
+
+    // Magnet-grab relationships: grabber peer → grabbed peer.
+    std::unordered_map<ENetPeer*, ENetPeer*> grab_targets_;
 
     static constexpr uint32_t LEVEL_TIME_LIMIT_MS        = 120'000u;
     static constexpr uint32_t NEXT_LEVEL_MS              =   3'000u;
@@ -1263,9 +1279,9 @@ public:
     bool ConsumeJumpPressed()        { bool v = jump_pressed_;           jump_pressed_           = false; return v; }
     bool ConsumeDashPending()        { bool v = dash_pending_;           dash_pending_           = false; return v; }
     bool ConsumePauseToggle()        { bool v = pause_toggle_;           pause_toggle_           = false; return v; }
-    // Restart from last checkpoint (or spawn if none): Backspace / Circle
+    // Restart from last shared checkpoint (or spawn if none): Backspace / Triangle
     bool ConsumeRestartRequest()     { bool v = restart_checkpoint_;     restart_checkpoint_     = false; return v; }
-    // Restart always from level spawn, clearing checkpoint: Delete / Triangle
+    // Restart always from level spawn, clearing checkpoint: Delete
     bool ConsumeRestartSpawn()       { bool v = restart_spawn_;          restart_spawn_          = false; return v; }
 
     // Pause menu navigation — refreshed each render frame; do not consume.
@@ -1279,6 +1295,7 @@ public:
     bool  IsJumpHeld()                     const;
     bool  IsDrawHeld()                      const;
     bool  IsSprintHeld()                     const;
+    bool  IsMagnetHeld()                     const;
 
     // Emote wheel (E key / right-stick click).
     bool IsEmoteWheelOpen()       const { return emote_wheel_open_; }
@@ -1291,8 +1308,8 @@ private:
 
     bool  jump_pressed_       = false;
     bool  dash_pending_       = false;
-    bool  restart_checkpoint_ = false;  // Backspace / Circle
-    bool  restart_spawn_      = false;  // Delete   / Triangle
+    bool  restart_checkpoint_ = false;  // Backspace / Triangle
+    bool  restart_spawn_      = false;  // Delete
     bool  pause_toggle_       = false;
 
     bool  nav_up_   = false;

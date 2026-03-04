@@ -11,6 +11,10 @@ void Player::Simulate(const InputFrame& frame, const World& world) {
     // Registra il tick processato per permettere la reconciliation lato client.
     state_.last_processed_tick = frame.tick;
 
+    // Grabbed: this player is being carried by a magnet holder — skip all physics.
+    // Position is set server-side by ApplyMagnetGrab().
+    if (state_.grabbed) return;
+
     // Morto: conta alla rovescia prima del respawn, salta tutta la fisica.
     if (state_.kill_respawn_ticks > 0) {
         state_.kill_respawn_ticks--;
@@ -59,6 +63,9 @@ void Player::Simulate(const InputFrame& frame, const World& world) {
 
     // 8. Sprint flag (held, authoritative for remote rendering)
     state_.sprinting = sprinting;
+
+    // 9. Magnet flag (held) — stays active even during dash so grabbed player isn't released
+    state_.magneting = frame.Has(BTN_MAGNET);
 }
 
 // ---------------------------------------------------------------------------
