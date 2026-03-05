@@ -392,18 +392,41 @@ void Renderer::DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct) {
 
 void Renderer::DrawTimer(const PlayerState& s,
                          uint32_t best_ticks, uint32_t time_limit_secs,
-                         uint32_t next_level_cd_ticks) {
-    // Countdown is the main center timer.
-    const uint32_t mins = time_limit_secs / 60;
-    const uint32_t secs_r = time_limit_secs % 60;
-    const char* t_str = TextFormat("%02u:%02u", mins, secs_r);
-    const Color t_col = (time_limit_secs <= 30 && time_limit_secs > 0)
-        ? CLRS_TIME_LIMIT_WARN : WHITE;
-    const Vector2 t_sz = MeasureTextEx(font_timer_, t_str, 48, 1);
-    DrawTextEx(font_timer_, t_str,
-        {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 48, 1, t_col);
+                         uint32_t next_level_cd_ticks,
+                         GameMode mode) {
+    if (mode == GameMode::RACE) {
+        // Race mode: current level timer at top center (large)
+        const uint32_t t_cs = s.level_ticks * 100 / 60;  // centiseconds
+        const char* lvl_str = TextFormat("%02u:%02u.%02u",
+            t_cs / 6000, (t_cs % 6000) / 100, t_cs % 100);
+        const Vector2 lvl_sz = MeasureTextEx(font_timer_, lvl_str, 48, 1);
+        DrawTextEx(font_timer_, lvl_str,
+            {GetScreenWidth() * 0.5f - lvl_sz.x * 0.5f, 10}, 48, 1, WHITE);
 
-    // "Next level in: X.XX s" (bottom right)
+        // Race mode: level expiry timer at top right (large, under "Race Mode")
+        const uint32_t mins = time_limit_secs / 60;
+        const uint32_t secs_r = time_limit_secs % 60;
+        const char* exp_str = TextFormat("%02u:%02u", mins, secs_r);
+        const Color exp_col = (time_limit_secs <= 30 && time_limit_secs > 0)
+            ? CLRS_TIME_LIMIT_WARN : WHITE;
+        const float sw = static_cast<float>(GetScreenWidth());
+        const Vector2 exp_sz = MeasureTextEx(font_hud_, exp_str, 24, 1);
+        // Position under the "Race Mode" label (which is at y=12, ~20px tall)
+        DrawTextEx(font_hud_, exp_str,
+            {sw - exp_sz.x - 12.f, 36.f}, 24, 1, exp_col);
+    } else {
+        // Co-op mode: countdown is the main center timer.
+        const uint32_t mins = time_limit_secs / 60;
+        const uint32_t secs_r = time_limit_secs % 60;
+        const char* t_str = TextFormat("%02u:%02u", mins, secs_r);
+        const Color t_col = (time_limit_secs <= 30 && time_limit_secs > 0)
+            ? CLRS_TIME_LIMIT_WARN : WHITE;
+        const Vector2 t_sz = MeasureTextEx(font_timer_, t_str, 48, 1);
+        DrawTextEx(font_timer_, t_str,
+            {GetScreenWidth() * 0.5f - t_sz.x * 0.5f, 10}, 48, 1, t_col);
+    }
+
+    // "Next level in: X.XX s" (bottom right) — both modes
     if (next_level_cd_ticks > 0) {
         const uint32_t rem_cs = next_level_cd_ticks * 100 / 60;
         const char* cd_str = TextFormat("Next level in: %u.%02u s", rem_cs / 100, rem_cs % 100);
@@ -486,7 +509,7 @@ void Renderer::DrawLobbyOptions(GameMode mode, bool is_leader, uint32_t leader_i
 
     // Panel background
     DrawRectangle(static_cast<int>(panel_x - 10), static_cast<int>(panel_y - 10),
-                  270, static_cast<int>(line_h * 5 + 20), {0, 0, 0, 140});
+                  270, static_cast<int>(line_h * 3 + 20), {0, 0, 0, 140});
 
     // Title
     DrawTextEx(font_bold_, "LOBBY", {panel_x, panel_y}, 22, 1, CLRS_ACCENT);
@@ -499,14 +522,6 @@ void Renderer::DrawLobbyOptions(GameMode mode, bool is_leader, uint32_t leader_i
     const char* mode_str = (mode == GameMode::RACE) ? "RACE" : "CO-OP";
     const char* mode_lbl = TextFormat("Mode: %s", mode_str);
     DrawTextEx(font_hud_, mode_lbl, {panel_x, panel_y + line_h * 2}, 20, 1, CLRS_TEXT_MAIN);
-
-    // Controls (leader only)
-    if (is_leader) {
-        DrawTextEx(font_hud_, "[TAB] Toggle mode", {panel_x, panel_y + line_h * 3}, 18, 1, CLRS_ACCENT_SOFT);
-        DrawTextEx(font_hud_, "[G] Start game", {panel_x, panel_y + line_h * 4}, 18, 1, CLRS_ACCENT_SOFT);
-    } else {
-        DrawTextEx(font_hud_, "Waiting for leader...", {panel_x, panel_y + line_h * 3}, 18, 1, CLRS_TEXT_DIM);
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -638,7 +653,8 @@ Rectangle Renderer::GetPauseItemRect(int idx, int total_items) const {
     return Rectangle{pcx - sz.x * 0.5f - 8, item_y - 4, sz.x + 16, 24.f + 8};
 }
 
-void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted) {
+void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
+                             bool show_lobby_settings, GameMode lobby_mode) {
     if (state == PauseState::PLAYING) return;
 
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), CLRS_BG_OVERLAY);
@@ -651,19 +667,44 @@ void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused,
         DrawTextEx(font_timer_, title, {pcx - ts.x * 0.5f, pcy - 150.f}, 48, 1, CLRS_ACCENT);
 
         const char* sfx_label = sfx_muted ? "SFX: OFF" : "SFX: ON";
-        // 3-item menu: Resume | SFX | Quit
-        const char* items[3] = {"Resume", sfx_label, "Quit to Menu"};
-        for (int i = 0; i < 3; i++) {
+        // Dynamic menu: Resume | [Lobby Settings] | SFX | Quit
+        const char* items[4];
+        int item_count = 0;
+        items[item_count++] = "Resume";
+        if (show_lobby_settings) items[item_count++] = "Lobby Settings";
+        items[item_count++] = sfx_label;
+        items[item_count++] = "Quit to Menu";
+
+        for (int i = 0; i < item_count; i++) {
             const bool  sel = (focused == i);
             const Color col = sel ? CLRS_ACCENT : CLRS_TEXT_MAIN;
             const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
             const Vector2 sz = MeasureTextEx(font_hud_, buf, 24, 1);
-            const float iy  = pcy - (3 - 1) * 22.f + i * 44.f;
+            const float iy  = pcy - (item_count - 1) * 22.f + i * 44.f;
             DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, iy}, 24, 1, col);
         }
         const char* hint = "up/down: navigate   enter: confirm   esc: resume";
         const Vector2 hs = MeasureTextEx(font_small_, hint, 18, 1);
         DrawTextEx(font_small_, hint, {pcx - hs.x * 0.5f, pcy + 160.f}, 18, 1, CLRS_TEXT_DIM);
+
+    } else if (state == PauseState::LOBBY_SETTINGS) {
+        const char* title = "LOBBY SETTINGS";
+        const Vector2 ts = MeasureTextEx(font_timer_, title, 48, 1);
+        DrawTextEx(font_timer_, title, {pcx - ts.x * 0.5f, pcy - 150.f}, 48, 1, CLRS_ACCENT);
+
+        const char* mode_str = (lobby_mode == GameMode::RACE) ? "RACE" : "CO-OP";
+        const char* items[2] = {TextFormat("Mode: %s", mode_str), "Back"};
+        for (int i = 0; i < 2; i++) {
+            const bool  sel = (focused == i);
+            const Color col = sel ? CLRS_ACCENT : CLRS_TEXT_MAIN;
+            const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
+            const Vector2 sz = MeasureTextEx(font_hud_, buf, 24, 1);
+            const float iy  = pcy - (2 - 1) * 22.f + i * 44.f;
+            DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, iy}, 24, 1, col);
+        }
+        const char* hint = "up/down: navigate   enter: confirm   esc: back";
+        const Vector2 hs = MeasureTextEx(font_small_, hint, 18, 1);
+        DrawTextEx(font_small_, hint, {pcx - hs.x * 0.5f, pcy + 100.f}, 18, 1, CLRS_TEXT_DIM);
 
     } else {  // CONFIRM_QUIT
         const char* msg = "Quit to main menu?";
@@ -676,7 +717,8 @@ void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused,
             const Color col = sel ? CLRS_ACCENT : CLRS_TEXT_MAIN;
             const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
             const Vector2 sz = MeasureTextEx(font_hud_, buf, 24, 1);
-            DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, pcy - 10.f + i * 44.f}, 24, 1, col);
+            const float iy = pcy - (2 - 1) * 22.f + i * 44.f;
+            DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, iy}, 24, 1, col);
         }
         const char* hint = "up/down: navigate   enter: confirm   esc: back";
         const Vector2 hs = MeasureTextEx(font_small_, hint, 18, 1);
