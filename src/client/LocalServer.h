@@ -3,6 +3,7 @@
 #include <atomic>
 #include <thread>
 #include <string>
+#include "GameMode.h"
 
 // Runs a game server instance in a background thread within the same process.
 // Used for offline mode: the client connects to 127.0.0.1 via ENet as normal
@@ -17,7 +18,9 @@ public:
 
     // Start the server on the given port. Blocks ~200 ms waiting for the ENet bind.
     // When skip_lobby is true the lobby is skipped and level 1 is generated immediately.
-    void Start(uint16_t port, const char* map_path, bool skip_lobby = false);
+    // initial_mode sets the starting game mode (RACE for offline).
+    void Start(uint16_t port, const char* map_path, bool skip_lobby = false,
+               GameMode initial_mode = GameMode::COOP);
 
     // Signal stop and join the background thread.
     void Stop();

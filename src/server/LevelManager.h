@@ -23,6 +23,7 @@ public:
     float        SpawnX()   const { return spawn_x_; }
     float        SpawnY()   const { return spawn_y_; }
     const World& GetWorld() const { return world_; }
+    World&       GetWorldMut()    { return world_; }  // mutable access for mode-specific post-processing
 
 private:
     World world_;

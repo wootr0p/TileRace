@@ -6,6 +6,7 @@
 #include <cstdint>
 #include "VisualEffects.h"
 #include "GameState.h"
+#include "GameMode.h"
 #include "Protocol.h"   // EMOTE_TEXTS, EMOTE_COUNT
 #include "LevelPalette.h"
 
@@ -37,7 +38,8 @@ public:
     void DrawTilemap(const World& world);
     void DrawTrail(const TrailState& t, bool is_local);
     void DrawDeathParticles(const DeathParticles& dp);
-    void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true);
+    void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true,
+                    bool is_leader = false);
 
     // Drawing trails — persistent spline marks left on the map by the draw button.
     // Each stroke is a vector of points; drawn as Catmull-Rom splines.
@@ -49,7 +51,8 @@ public:
     void DrawEmoteBubble(float px, float py, uint8_t emote_id, float alpha, bool is_local);
 
     // Screen-space HUD
-    void DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players);
+    void DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players,
+                 GameMode mode = GameMode::COOP);
     void DrawLevelIndicator(uint8_t level);  // bottom-center level number
     void DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct);
     void DrawTimer(const PlayerState& s,
@@ -58,6 +61,10 @@ public:
     void DrawLiveLeaderboard(const LiveLeaderEntry* entries, int count);
     void DrawNewRecord(bool show, bool is_lobby);
     void DrawLobbyHints(uint32_t cd_ticks, uint32_t player_count);
+
+    // Lobby options panel: shows game mode + leader controls.
+    void DrawLobbyOptions(GameMode mode, bool is_leader, uint32_t leader_id,
+                          const GameState& gs);
 
     // Off-screen player indicators: orange dot + name on the viewport border (~64 px margin).
     // Call after EndWorldDraw, before any other HUD element.
@@ -83,14 +90,16 @@ public:
     void DrawResultsScreen(bool in_results, bool local_ready,
                            const ResultEntry* entries, uint8_t count, uint8_t level,
                            double elapsed_since_start, double total_duration,
-                           bool coop_all_finished);
+                           bool coop_all_finished,
+                           GameMode mode = GameMode::COOP);
 
     // Session-end global leaderboard (shown after the last level).
     void DrawGlobalResultsScreen(bool in_global, bool local_ready,
                                  const GlobalResultEntry* entries, uint8_t count,
                                  uint8_t total_levels,
                                  double elapsed_since_start, double total_duration,
-                                 uint8_t coop_wins);
+                                 uint8_t coop_wins,
+                                 GameMode mode = GameMode::COOP);
 
     // Full-screen error / session-end overlays used in mini-loops inside main.cpp
     void DrawConnectionErrorScreen(const char* msg);

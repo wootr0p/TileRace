@@ -64,7 +64,7 @@ void SoundPool::PlayAt(float source_x, float source_y,
 
     const float dx   = source_x - listener_x;
     const float dy   = source_y - listener_y;
-    const float dist = std::sqrtf(dx * dx + dy * dy);
+    const float dist = std::sqrt(dx * dx + dy * dy);
 
     // Cull sounds beyond max_dist (saves processing audio for far-off players).
     if (dist >= max_dist) return;

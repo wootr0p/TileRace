@@ -7,6 +7,7 @@
 #include <raylib.h>
 #include <enet/enet.h>
 #include "Protocol.h"
+#include "GameMode.h"
 #include "Renderer.h"
 #include "MainMenu.h"
 #include "LocalServer.h"
@@ -59,11 +60,12 @@ int main() {
 
     // In modalità offline il server genera direttamente il primo livello,
     // senza passare dalla lobby (skip_lobby = true).
+    // Default game mode for offline is RACE.
     LocalServer local_srv;
     const bool is_offline = (menu.choice == MenuChoice::OFFLINE);
     const char* initial_map = LOBBY_MAP_PATH;
     if (is_offline)
-        local_srv.Start(SERVER_PORT_LOCAL, initial_map, /*skip_lobby=*/true);
+        local_srv.Start(SERVER_PORT_LOCAL, initial_map, /*skip_lobby=*/true, GameMode::RACE);
 
     const char*    connect_ip   = is_offline ? "127.0.0.1"      : menu.server_ip;
     const uint16_t connect_port = is_offline ? SERVER_PORT_LOCAL : SERVER_PORT;
