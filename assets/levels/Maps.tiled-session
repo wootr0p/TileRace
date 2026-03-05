@@ -3,7 +3,7 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "chunks/04/Hard05.tmj",
+    "activeFile": "tilemaps/_Lobby.tmj",
     "expandedProjectPaths": [
     ],
     "file.lastUsedOpenFilter": "Tutti i file (*)",
@@ -38,40 +38,40 @@
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "x": 527.2237577183181,
+                "y": 368.24933842987355
             }
         },
         "chunks/01/Flat02.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "x": 527.2237577183181,
+                "y": 368.24933842987355
             }
         },
         "chunks/01/Flat03.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "x": 527.2237577183181,
+                "y": 368.24933842987355
             }
         },
         "chunks/01/Flat04.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "x": 527.2237577183181,
+                "y": 368.24933842987355
             }
         },
         "chunks/01/Flat05.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "x": 527.2237577183181,
+                "y": 368.24933842987355
             }
         },
         "chunks/02/Simple01.tmj": {
@@ -79,7 +79,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/02/Simple02.tmj": {
@@ -87,7 +87,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/02/Simple03.tmj": {
@@ -95,7 +95,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/02/Simple04.tmj": {
@@ -103,7 +103,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/02/Simple05.tmj": {
@@ -111,7 +111,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/03/Medium01.tmj": {
@@ -119,7 +119,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/03/Medium02.tmj": {
@@ -127,7 +127,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/03/Medium03.tmj": {
@@ -135,7 +135,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/03/Medium04.tmj": {
@@ -143,7 +143,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/03/Medium05.tmj": {
@@ -151,7 +151,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/04/Hard01.tmj": {
@@ -159,15 +159,15 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 34.775654219347246
+                "y": 368.2493384298736
             }
         },
         "chunks/04/Hard02.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 588.7021464275214,
-                "y": 368.87033225521907
+                "x": 527.8447515436637,
+                "y": 368.2493384298736
             }
         },
         "chunks/04/Hard03.tmj": {
@@ -175,7 +175,7 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/04/Hard04.tmj": {
@@ -183,15 +183,15 @@
             "selectedLayer": 0,
             "viewCenter": {
                 "x": 527.8447515436637,
-                "y": 368.87033225521907
+                "y": 368.2493384298736
             }
         },
         "chunks/04/Hard05.tmj": {
             "scale": 0.8051609848484849,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 690.5451337841811,
-                "y": 363.9023816524551
+                "x": 527.2237577183181,
+                "y": 352.10349897089094
             }
         },
         "chunks/05/Extreme01.tmj": {
@@ -377,8 +377,8 @@
             "scale": 0.5,
             "selectedLayer": 0,
             "viewCenter": {
-                "x": 800,
-                "y": 510
+                "x": 799,
+                "y": 511
             }
         }
     },
@@ -414,16 +414,16 @@
     "property.type": "int",
     "recentFiles": [
         "TileSet.tsx",
-        "tilemaps/_Lobby.tmj",
-        "chunks/01/Flat01.tmj",
-        "chunks/01/Flat02.tmj",
-        "chunks/01/Flat03.tmj",
-        "chunks/01/Flat04.tmj",
-        "chunks/01/Flat05.tmj",
-        "chunks/02/Simple01.tmj",
-        "chunks/02/Simple02.tmj",
-        "chunks/02/Simple03.tmj",
-        "chunks/02/Simple04.tmj",
+        "chunks/04/Hard05.tmj",
+        "chunks/04/Hard04.tmj",
+        "chunks/04/Hard03.tmj",
+        "chunks/04/Hard02.tmj",
+        "chunks/04/Hard01.tmj",
+        "chunks/03/Medium05.tmj",
+        "chunks/03/Medium04.tmj",
+        "chunks/03/Medium03.tmj",
+        "chunks/03/Medium02.tmj",
+        "chunks/03/Medium01.tmj",
         "chunks/02/Simple05.tmj"
     ]
 }
