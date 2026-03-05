@@ -206,14 +206,16 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 
 - Hold Alt (keyboard) or Circle / ○ (gamepad) to activate the magnet.
 - `BTN_MAGNET` (bit 9) is set in InputFrame; `Player::Simulate` sets `PlayerState::magneting = true` (disabled during dash).
-- Server-side: `ApplyMagnetGrab()` runs each tick between `UpdateZone` and `ResolvePlayerCollisions`.
-  When a magneting player has no grab target, the closest non-magneting player within `MAGNET_RANGE` (256 px)
+- Server-side: `ApplyMagnetGrab(ENetPeer* break_free)` runs each tick between `UpdateZone` and `ResolvePlayerCollisions`.
+  When a magneting player has no grab target, the closest non-magneting player within `MAGNET_RANGE`
   is grabbed: `PlayerState::grabbed = true`, and the target’s physics are fully suspended (`Player::Simulate` early-returns).
-- While grabbed, the target’s position is snapped to the grabber’s side:
-  `target.x = grabber.x + grabber.last_dir × GRAB_OFFSET_X`, `target.y = grabber.y`.
+- While grabbed, the target’s position is snapped **one tile above** the grabber (`target.y = grabber.y - TILE_SIZE`, `target.x = grabber.x`).
   Velocity is zeroed. The grabber moves normally and carries the target.
 - Grab is released when: the grabber releases the magnet button, either player dies/respawns/finishes,
-  or either player disconnects.
+  either player disconnects, the **grabbed player presses jump (`BTN_JUMP_PRESS`) or dash (`BTN_DASH`)** (break-free),
+  or the **grabbed player is pushed against a horizontal wall** (detected by a horizontal x-shift after `ClampToWorld`).
+- After a break-free via jump/dash, the freed player is excluded from re-grabbing for the rest of that tick
+  (via the `break_free` parameter passed from `HandleInput` to `ApplyMagnetGrab`).
 - Grabbed players are excluded from `ResolvePlayerCollisions` (no push/separation applies to them).
 - `grab_targets_` map in `ServerSession` tracks active grabber→target relationships; cleared on level change.
 - `PlayerReset.h` resets `magneting = false` and `grabbed = false` on spawn and checkpoint resets.

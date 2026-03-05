@@ -63,7 +63,7 @@ private:
     uint32_t CountdownTicks() const;
     PlayerState ApplySpawnReset(PlayerState s, bool with_kill) const;
     void ResolvePlayerCollisions(const World& world);   // coop mode: push overlapping player AABBs apart
-    void ApplyMagnetGrab();                              // magnet holders grab & carry nearby players
+    void ApplyMagnetGrab(ENetPeer* break_free = nullptr);  // magnet holders grab & carry nearby players
     void ReleaseGrab(ENetPeer* grabber);                 // release a grabbed player (if any)
 
     // Leader election: elect a new leader from the remaining players.
