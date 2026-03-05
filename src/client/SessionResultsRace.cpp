@@ -36,16 +36,16 @@ void DrawSessionResultsModeRace(Font& font_hud, Font& font_timer,
 
     // Sort entries by wins descending
     GlobalResultEntry sorted[MAX_PLAYERS];
-    const int n = (count <= MAX_PLAYERS) ? count : MAX_PLAYERS;
-    for (int i = 0; i < n; i++) sorted[i] = entries[i];
-    std::sort(sorted, sorted + n, [](const GlobalResultEntry& a, const GlobalResultEntry& b) {
+    const int sorted_count = (count <= MAX_PLAYERS) ? count : MAX_PLAYERS;
+    for (int i = 0; i < sorted_count; i++) sorted[i] = entries[i];
+    std::sort(sorted, sorted + sorted_count, [](const GlobalResultEntry& a, const GlobalResultEntry& b) {
         return a.wins > b.wins;
     });
 
     // Draw ranked list
     const float row_start_y = 160.f;
     DrawLineEx({rcx - 220.f, row_start_y - 4.f}, {rcx + 220.f, row_start_y - 4.f}, 1.f, CLRS_TEXT_DIM);
-    for (int gi = 0; gi < n; gi++) {
+    for (int gi = 0; gi < sorted_count; gi++) {
         const GlobalResultEntry& ge = sorted[gi];
         const float gy = row_start_y + gi * 40.f;
         const char* name_str = ge.name[0] ? ge.name : "?";

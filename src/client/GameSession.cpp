@@ -135,7 +135,7 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
         }
     }
 
-    // 5d. Lobby controls — mode change and game start now handled via pause menu
+    // Lobby controls — mode change and game start now handled via pause menu
     //     (game starts automatically when all players reach the exit)
 
     // 6. Fixed-step loop (azzerato se in pausa, risultati o classifica globale)

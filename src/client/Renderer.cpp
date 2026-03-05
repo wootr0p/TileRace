@@ -411,7 +411,7 @@ void Renderer::DrawTimer(const PlayerState& s,
             ? CLRS_TIME_LIMIT_WARN : WHITE;
         const float sw = static_cast<float>(GetScreenWidth());
         const Vector2 exp_sz = MeasureTextEx(font_hud_, exp_str, 24, 1);
-        // Position under the "Race Mode" label (which is at y=12, ~20px tall)
+        // Position under the mode label in HudRace
         DrawTextEx(font_hud_, exp_str,
             {sw - exp_sz.x - 12.f, 36.f}, 24, 1, exp_col);
     } else {
