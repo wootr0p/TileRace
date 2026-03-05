@@ -57,7 +57,8 @@ public:
     void DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct);
     void DrawTimer(const PlayerState& s,
                    uint32_t best_ticks, uint32_t time_limit_secs,
-                   uint32_t next_level_cd_ticks);
+                   uint32_t next_level_cd_ticks,
+                   GameMode mode = GameMode::COOP);
     void DrawLiveLeaderboard(const LiveLeaderEntry* entries, int count);
     void DrawNewRecord(bool show, bool is_lobby);
     void DrawLobbyHints(uint32_t cd_ticks, uint32_t player_count);
@@ -84,7 +85,8 @@ public:
 
     // Pause menu
     Rectangle GetPauseItemRect(int item_index, int total_items = 3) const;  // for mouse hit-testing in GameSession
-    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted);
+    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
+                       bool show_lobby_settings = false, GameMode lobby_mode = GameMode::COOP);
 
     // End-of-level results screen
     void DrawResultsScreen(bool in_results, bool local_ready,

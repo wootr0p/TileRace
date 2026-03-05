@@ -135,22 +135,8 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
         }
     }
 
-    // 5d. Lobby controls — leader can toggle mode (TAB) and start game (G)
-    if (pause_state_ == PauseState::PLAYING && last_game_state_.is_lobby
-        && local_player_id_ == last_game_state_.leader_id) {
-        if (IsKeyPressed(KEY_TAB)) {
-            PktSetGameMode mpkt{};
-            const GameMode cur = static_cast<GameMode>(last_game_state_.game_mode);
-            mpkt.game_mode = (cur == GameMode::RACE)
-                ? static_cast<uint8_t>(GameMode::COOP)
-                : static_cast<uint8_t>(GameMode::RACE);
-            net.SendReliable(&mpkt, sizeof(mpkt));
-        }
-        if (IsKeyPressed(KEY_G)) {
-            PktStartGame spkt{};
-            net.SendReliable(&spkt, sizeof(spkt));
-        }
-    }
+    // Lobby controls — mode change and game start now handled via pause menu
+    //     (game starts automatically when all players reach the exit)
 
     // 6. Fixed-step loop (azzerato se in pausa, risultati o classifica globale)
     if (pause_state_ != PauseState::PLAYING || in_results_screen_ || in_global_results_screen_) accumulator_ = 0.f;
@@ -279,7 +265,12 @@ void GameSession::HandlePauseInput(Renderer& renderer, NetworkClient& net) {
     const Vector2 mouse   = GetMousePosition();
     const bool    clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 
-    const int  item_count = 3;
+    // Determine whether "Lobby Settings" should appear in the pause menu
+    const bool show_lobby_settings = last_game_state_.is_lobby
+        && (local_player_id_ == last_game_state_.leader_id);
+
+    // Dynamic item count: Resume, [Lobby Settings], SFX, Quit
+    const int  item_count = show_lobby_settings ? 4 : 3;
     auto item_rect = [&](int i) -> Rectangle { return renderer.GetPauseItemRect(i, item_count); };
 
     if (pause_state_ == PauseState::PLAYING && toggle && !in_results_screen_) {
@@ -297,7 +288,11 @@ void GameSession::HandlePauseInput(Renderer& renderer, NetworkClient& net) {
             if (pause_focused_ == 0) {
                 // Resume
                 pause_state_ = PauseState::PLAYING;
-            } else if (pause_focused_ == 1) {
+            } else if (show_lobby_settings && pause_focused_ == 1) {
+                // Lobby Settings sub-menu
+                pause_state_ = PauseState::LOBBY_SETTINGS;
+                pause_focused_ = 0;
+            } else if (pause_focused_ == (show_lobby_settings ? 2 : 1)) {
                 // SFX toggle
                 sfx_.SetMuted(!sfx_.IsMuted());
                 if (save_) { save_->sfx_muted = sfx_.IsMuted(); SaveSaveData(*save_); }
@@ -307,13 +302,36 @@ void GameSession::HandlePauseInput(Renderer& renderer, NetworkClient& net) {
             }
         }
 
-    } else if (pause_state_ == PauseState::CONFIRM_QUIT) {
+    } else if (pause_state_ == PauseState::LOBBY_SETTINGS) {
+        auto ls_rect = [&](int i) -> Rectangle { return renderer.GetPauseItemRect(i, 2); };
         for (int i = 0; i < 2; i++)
-            if (CheckCollisionPointRec(mouse, item_rect(i))) confirm_focused_ = i;
+            if (CheckCollisionPointRec(mouse, ls_rect(i))) pause_focused_ = i;
+
+        if      (toggle)       { pause_state_ = PauseState::PAUSED; pause_focused_ = 0; }
+        else if (nav_up || nav_dn)  pause_focused_ = 1 - pause_focused_;
+        else if (ok || (clicked && CheckCollisionPointRec(mouse, ls_rect(pause_focused_)))) {
+            if (pause_focused_ == 0) {
+                // Toggle mode
+                PktSetGameMode mpkt{};
+                const GameMode cur = static_cast<GameMode>(last_game_state_.game_mode);
+                mpkt.game_mode = (cur == GameMode::RACE)
+                    ? static_cast<uint8_t>(GameMode::COOP)
+                    : static_cast<uint8_t>(GameMode::RACE);
+                net.SendReliable(&mpkt, sizeof(mpkt));
+            } else {
+                // Back
+                pause_state_ = PauseState::PAUSED; pause_focused_ = 0;
+            }
+        }
+
+    } else if (pause_state_ == PauseState::CONFIRM_QUIT) {
+        auto confirm_rect = [&](int i) -> Rectangle { return renderer.GetPauseItemRect(i, 2); };
+        for (int i = 0; i < 2; i++)
+            if (CheckCollisionPointRec(mouse, confirm_rect(i))) confirm_focused_ = i;
 
         if      (toggle)                  pause_state_    = PauseState::PAUSED;
         else if (nav_up  || nav_dn)       confirm_focused_ = 1 - confirm_focused_;
-        else if (ok || (clicked && CheckCollisionPointRec(mouse, item_rect(confirm_focused_)))) {
+        else if (ok || (clicked && CheckCollisionPointRec(mouse, confirm_rect(confirm_focused_)))) {
             if (confirm_focused_ == 1) session_over_ = true;
             else                       pause_state_  = PauseState::PAUSED;
         }
@@ -1094,7 +1112,8 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
     if (!last_game_state_.is_lobby) {
         renderer.DrawTimer(local, best_ticks_,
             last_game_state_.time_limit_secs,
-            last_game_state_.next_level_countdown_ticks);
+            last_game_state_.next_level_countdown_ticks,
+            cur_mode);
     }
 
     if (last_game_state_.is_lobby) {
@@ -1113,7 +1132,10 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
         renderer.DrawEmoteWheel(sw * 0.5f, sh * 0.5f, input_sampler_.GetEmoteWheelHighlight());
     }
 
-    renderer.DrawPauseMenu(pause_state_, pause_focused_, confirm_focused_, sfx_.IsMuted());
+    const bool show_lobby_settings = last_game_state_.is_lobby
+        && (local_player_id_ == last_game_state_.leader_id);
+    renderer.DrawPauseMenu(pause_state_, pause_focused_, confirm_focused_, sfx_.IsMuted(),
+                           show_lobby_settings, cur_mode);
 
     renderer.DrawResultsScreen(in_results_screen_, local_ready_,
         results_entries_, results_count_, results_level_,

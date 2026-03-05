@@ -39,7 +39,7 @@ inline constexpr int   DASH_JUMP_WINDOW_TICKS = 10;    // post-dash window (~167
 inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 15% stronger than JUMP_FORCE
 
 // Dash push — force multiplier applied to DASH_SPEED when a dashing player hits another
-inline constexpr float DASH_PUSH_MULTIPLIER   = 2.0f;  // pushed player receives 2× dash velocity
+inline constexpr float DASH_PUSH_MULTIPLIER   = 0.8f;  // pushed player receives reduced dash velocity
 
 // Sprint — held modifier that boosts horizontal movement speed
 inline constexpr float SPRINT_MULTIPLIER      = 2.0f;  // 2× faster while sprinting

@@ -1,10 +1,11 @@
 // SessionResultsRace.cpp — race mode session-end global results screen.
-// Same as co-op but with "Race Mode" header.
+// Shows leaderboard sorted by wins (most wins first) with win counts.
 
 #include "SessionResultsRace.h"
 #include "Protocol.h"
 #include "Colors.h"
 #include <raylib.h>
+#include <algorithm>
 
 void DrawSessionResultsModeRace(Font& font_hud, Font& font_timer,
                                 bool in_global, bool local_ready,
@@ -24,24 +25,43 @@ void DrawSessionResultsModeRace(Font& font_hud, Font& font_timer,
     const Vector2 ml_sz = MeasureTextEx(font_timer, mode_lbl, 32, 1);
     DrawTextEx(font_timer, mode_lbl, {rcx - ml_sz.x * 0.5f, 10.f}, 32, 1, CLRS_ACCENT);
 
-    const bool  victory  = (coop_wins * 2 > total_levels);
-    const char* verdict  = victory ? "VICTORY!" : "DEFEAT!";
-    const Color vcol     = victory ? CLRS_SESSION_OK : CLRS_ERROR;
-    const Vector2 v_tsz  = MeasureTextEx(font_timer, verdict, 72, 1);
-    DrawTextEx(font_timer, verdict, {rcx - v_tsz.x * 0.5f, 50.f}, 72, 1, vcol);
+    // Title
+    const char* title = "LEADERBOARD";
+    const Vector2 t_sz = MeasureTextEx(font_timer, title, 52, 1);
+    DrawTextEx(font_timer, title, {rcx - t_sz.x * 0.5f, 50.f}, 52, 1, WHITE);
 
-    const char* g_sub = TextFormat("Levels cleared: %u / %u", (unsigned)coop_wins, (unsigned)total_levels);
+    const char* g_sub = TextFormat("Total levels: %u", (unsigned)total_levels);
     const Vector2 g_ssz = MeasureTextEx(font_hud, g_sub, 26, 1);
-    DrawTextEx(font_hud, g_sub, {rcx - g_ssz.x * 0.5f, 136.f}, 26, 1, CLRS_TEXT_DIM);
+    DrawTextEx(font_hud, g_sub, {rcx - g_ssz.x * 0.5f, 116.f}, 26, 1, CLRS_TEXT_DIM);
 
-    const float row_start_y = 188.f;
-    DrawLineEx({rcx - 200.f, row_start_y - 4.f}, {rcx + 200.f, row_start_y - 4.f}, 1.f, CLRS_TEXT_DIM);
-    for (int gi = 0; gi < (int)count; gi++) {
-        const GlobalResultEntry& ge = entries[gi];
+    // Sort entries by wins descending
+    GlobalResultEntry sorted[MAX_PLAYERS];
+    const int sorted_count = (count <= MAX_PLAYERS) ? count : MAX_PLAYERS;
+    for (int i = 0; i < sorted_count; i++) sorted[i] = entries[i];
+    std::sort(sorted, sorted + sorted_count, [](const GlobalResultEntry& a, const GlobalResultEntry& b) {
+        return a.wins > b.wins;
+    });
+
+    // Draw ranked list
+    const float row_start_y = 160.f;
+    DrawLineEx({rcx - 220.f, row_start_y - 4.f}, {rcx + 220.f, row_start_y - 4.f}, 1.f, CLRS_TEXT_DIM);
+    for (int gi = 0; gi < sorted_count; gi++) {
+        const GlobalResultEntry& ge = sorted[gi];
         const float gy = row_start_y + gi * 40.f;
         const char* name_str = ge.name[0] ? ge.name : "?";
-        const Vector2 n_sz = MeasureTextEx(font_hud, name_str, 26, 1);
-        DrawTextEx(font_hud, name_str, {rcx - n_sz.x * 0.5f, gy}, 26, 1, CLRS_TEXT_MAIN);
+        const char* rank_str = TextFormat("#%d", gi + 1);
+        const char* wins_str = TextFormat("%u wins", (unsigned)ge.wins);
+
+        // Rank number (left aligned)
+        const Color rank_col = (gi == 0) ? CLRS_ACCENT : CLRS_TEXT_MAIN;
+        DrawTextEx(font_hud, rank_str, {rcx - 200.f, gy}, 26, 1, rank_col);
+
+        // Name (center-left)
+        DrawTextEx(font_hud, name_str, {rcx - 130.f, gy}, 26, 1, rank_col);
+
+        // Wins (right aligned)
+        const Vector2 w_sz = MeasureTextEx(font_hud, wins_str, 26, 1);
+        DrawTextEx(font_hud, wins_str, {rcx + 200.f - w_sz.x, gy}, 26, 1, CLRS_TEXT_DIM);
     }
 
     const int g_remain = static_cast<int>(total_duration - elapsed_since_start);

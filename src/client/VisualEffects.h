@@ -39,7 +39,7 @@ struct LiveLeaderEntry {
     char     name[16]   = {};
 };
 
-enum class PauseState { PLAYING, PAUSED, CONFIRM_QUIT };
+enum class PauseState { PLAYING, PAUSED, CONFIRM_QUIT, LOBBY_SETTINGS };
 
 // Emote bubble — shown above a player after they trigger an emote.
 struct EmoteBubble {
