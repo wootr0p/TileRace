@@ -12,14 +12,14 @@ TileRace is a real-time 2D side-scrolling platformer (cross-platform) supporting
 - **Co-op** (default online): 2–8 players work together to reach an exit tile. All players must finish the level to clear it. Shared checkpoints, player-to-player collisions, and magnet grab are active.
 - **Race** (default offline): players race individually to the exit. No player collisions, no checkpoints in generated levels. Each player's finish time is tracked independently.
 
-The **session leader** (first connected player) can switch between modes and start the game from the lobby.
+The **session leader** (first connected player) can switch between modes via the pause menu's "Lobby Settings" option.
 
 **Core mechanics (all implemented):**
 
 - Horizontal movement with acceleration/deceleration inertia
 - Jump, wall-jump, variable-height jump (hold = higher), coyote time, jump buffer
 - Dash (360°) with suspended gravity, cooldown, and post-dash enhanced jump
-- Dash push: dashing into another player slams them with 2× dash velocity
+- Dash push: dashing into another player slams them with 0.8× dash velocity
 - Sprint: hold Right Ctrl / R2 for 2× horizontal speed (disabled during dash)
 - Magnet grab: hold Alt / Circle to grab and carry a nearby player (MAGNET_RANGE, GRAB_OFFSET_X)
 - Drawing trails: hold P / L2 to leave persistent coloured spline marks on the map
@@ -38,8 +38,6 @@ The **session leader** (first connected player) can switch between modes and sta
 | Backspace | Triangle (△) | Restart from last checkpoint |
 | Delete | — | Restart from spawn (clears checkpoint) |
 | ESC | Start / Options | Pause menu |
-| TAB | — | Toggle game mode (leader only, lobby) |
-| G | — | Start game (leader only, lobby) |
 
 ---
 
@@ -97,8 +95,8 @@ The codebase was refactored to follow SOLID and DRY principles:
 | `HudCoop` / `HudRace` | Mode-specific HUD overlay (co-op: standard; race: adds "Race Mode" label top-right) |
 | `LevelResultsCoop` / `LevelResultsRace` | Mode-specific end-of-level results screen |
 | `SessionResultsCoop` / `SessionResultsRace` | Mode-specific session-end global results screen |
-| `UIWidgets`      | Stateless Raylib UI helpers (buttons, text fields)                                   |
-| `VisualEffects`  | Client-only effect structs (trail, death particles) — no Raylib draw calls           |
+| `UIWidgets`      | Stateless Raylib UI helpers (buttons, text fields, CTRL+V paste support)             |
+| `VisualEffects`  | Client-only effect structs (trail, death particles, PauseState enum incl. LOBBY_SETTINGS) — no Raylib draw calls |
 | `LocalServer`    | Wraps server thread for offline mode                                                 |
 | `ServerSession`  | Full server session state machine; ENet-loop-agnostic. Manages leader election and game mode |
 | `LevelManager`   | Load maps, compute spawn, generate levels from chunks                                |
@@ -156,7 +154,7 @@ OnReceive → HandleInput → Player::Simulate → BroadcastGameState
 `MoveX` then `MoveY` independently — standard AABB tile-based approach.
 Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTION_PX` (8 px = TILE_SIZE/4), the player is nudged horizontally instead of being blocked.
 
-**Anti-tunnelling:** both `MoveX` and `MoveY` clamp the per-frame displacement to `TILE_SIZE − 1` px (31 px). This guarantees that `ResolveCollisionsX/Y` always sees the solid tile the player would penetrate, even under extreme velocities (e.g. dash push at 2400 px/s → 40 px/frame clamped to 31).
+**Anti-tunnelling:** both `MoveX` and `MoveY` clamp the per-frame displacement to `TILE_SIZE − 1` px (31 px). This guarantees that `ResolveCollisionsX/Y` always sees the solid tile the player would penetrate, even under extreme velocities (e.g. dash push at 960 px/s → 16 px/frame clamped to 31).
 
 **Player-vs-player world clamp:** after `ResolvePlayerCollisions` separates overlapping AABBs, each player is run through `ClampToWorld` which iteratively resolves any overlap with solid tiles using the minimum-penetration-axis method (up to 4 passes).
 
@@ -190,7 +188,7 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 ### Dash push
 
 - When a dashing player overlaps a non-dashing player, the target receives an impulse of
-  `DASH_SPEED × DASH_PUSH_MULTIPLIER` (2400 px/s) in the dasher's direction.
+  `DASH_SPEED × DASH_PUSH_MULTIPLIER` (960 px/s) in the dasher's direction.
 - The target's `vel_x`, `vel_y` are overwritten and `move_vel_x` is zeroed.
 - When both players are dashing into each other, both dashes are cancelled and both receive
   the mutual push impulse.
@@ -271,6 +269,8 @@ Each of these rendering areas is split into a co-op file and a race file:
 
 `Renderer` dispatches to the mode-specific implementation via `GameMode` parameter.
 Race mode variants are currently identical to co-op but include a "Race Mode" header label.
+Race mode HUD timers differ from co-op: the **top centre (48 px)** shows the player's current level completion time (`level_ticks` → `MM:SS.cc`), while the **top right (24 px)** shows the level expiry countdown directly below the "Race Mode" label (at y=36 px). Co-op mode shows only the time limit countdown at top centre.
+Race mode session results show a **leaderboard sorted by wins descending**: each row displays rank (#1, #2, …), player name, and win count. First place uses the accent colour.
 
 ### Leader election
 
@@ -280,13 +280,13 @@ Race mode variants are currently identical to co-op but include a "Race Mode" he
 
 ### Leader powers (lobby only)
 
-- **Toggle mode:** leader sends `PKT_SET_GAME_MODE` (client: TAB key). Server validates sender is leader.
-- **Start game:** leader sends `PKT_START_GAME` (client: G key). Server calls `DoLevelChange()` to skip the zone countdown.
+- **Toggle mode:** leader opens the pause menu and selects "Lobby Settings" → "Mode" to toggle between Co-op and Race. The client sends `PKT_SET_GAME_MODE`; server validates sender is leader.
+- **Start game:** the game starts automatically when all players reach the exit zone 'E'. The `PKT_START_GAME` packet is still supported server-side (for potential future UI use) but is no longer sent by the client (the G key binding was removed).
 
 ### Visual indicators
 
 - Leader name is rendered in **bold** (`font_bold_`) above the player sprite. Other players use `font_hud_`.
-- Lobby options panel (`DrawLobbyOptions`) shows: current mode, leader name, and controls (TAB to toggle mode, G to start — leader only).
+- Lobby options panel (`DrawLobbyOptions`) shows: current mode and leader name. The panel no longer displays control hints (TAB/G were removed); lobby settings are accessed via the pause menu instead.
 
 ---
 
@@ -300,8 +300,7 @@ main()
        └─ NetworkClient::Connect()
        └─ GameSession::Tick() loop
             ├─ InputSampler::Poll()
-            ├─ HandlePauseInput()
-            ├─ Lobby controls (leader: TAB=toggle mode, G=start game)
+            ├─ HandlePauseInput()  (includes lobby settings for leader)
             ├─ TickFixed() × N    (60 Hz physics + network send)
             ├─ PollNetwork()      (ENet events → HandlePacket)
             └─ DoRender()
@@ -314,7 +313,7 @@ main()
 ```
 Online mode:
   Lobby (_Lobby.tmj)  [file-based]
-    → leader presses G (PKT_START_GAME) OR all players in zone 'E' for 3 s → DoLevelChange()
+    → all players in zone 'E' for 3 s → DoLevelChange()
         → Generated Level 1, 2, … MAX_GENERATED_LEVELS (chunk-based)
             → all players finish OR 2-min time limit → SendResults() (15 s or all ready)
                 → DoLevelChange() → next generated level
@@ -394,9 +393,13 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the team's clear count to all cl
 
 **Mode-specific rendering:** `DrawHUD`, `DrawResultsScreen`, and `DrawGlobalResultsScreen` accept a `GameMode` parameter and dispatch to the mode-specific implementation (e.g. `DrawHudModeCoop` vs `DrawHudModeRace`). Race mode variants display a "Race Mode" header. See section 5b for the file breakdown.
 
+**Timer (`DrawTimer`):** accepts a `GameMode` parameter. In **co-op mode**: time-limit countdown at top centre (48 px). In **race mode**: level completion timer (`level_ticks` → `MM:SS.cc`) at top centre (48 px), level expiry countdown at top right (24 px, under the "Race Mode" label).
+
+**Pause menu (`DrawPauseMenu`):** accepts `show_lobby_settings` and `lobby_mode` parameters. When the local player is the session leader in the lobby, a "Lobby Settings" item appears in the menu. The "Lobby Settings" sub-menu (`LOBBY_SETTINGS` state) shows "Mode: CO-OP / RACE" (toggle) and "Back". The quit confirmation dialog (`CONFIRM_QUIT`) now uses `GetPauseItemRect(i, 2)` for consistent click hit-testing.
+
 **Leader display:** `DrawPlayer` accepts an `is_leader` parameter. Leader names are rendered in `font_bold_`; other players use `font_hud_`.
 
-**Lobby options panel:** `DrawLobbyOptions` shows a semi-transparent panel (top-right) with the current game mode, leader name, and controls (TAB to toggle mode, G to start — visible to the leader only).
+**Lobby options panel:** `DrawLobbyOptions` shows a semi-transparent panel (top-right) with the current game mode and leader name. Control hints (TAB/G) have been removed; the leader changes settings via the pause menu's "Lobby Settings" sub-menu instead.
 
 **Font sizes:**
 
@@ -442,7 +445,7 @@ Old save files without `"m"` key default to unmuted (backward-compatible).
 
 **Offline defaults to Race mode:** `LocalServer::Start` is called with `skip_lobby=true` and `GameMode::RACE`. The server generates level 1 immediately with checkpoints stripped.
 
-Online mode starts at the lobby (`_Lobby.tmj`), defaulting to Co-op mode. The leader can switch to Race mode using TAB before starting the game.
+Online mode starts at the lobby (`_Lobby.tmj`), defaulting to Co-op mode. The leader can switch to Race mode from the pause menu's "Lobby Settings" option.
 
 ---
 
@@ -481,7 +484,7 @@ MAX_FALL_SPEED       = 1400     // px/s terminal velocity
 DASH_SPEED           = 1200     // px/s during dash
 DASH_ACTIVE_TICKS    = 12       // ~200 ms
 DASH_COOLDOWN_TICKS  = 25       // ~417 ms
-DASH_PUSH_MULTIPLIER = 2.0      // pushed player gets 2× dash velocity
+DASH_PUSH_MULTIPLIER = 0.8      // pushed player gets 0.8× dash velocity
 SPRINT_MULTIPLIER    = 2.0      // sprint horizontal speed factor
 MAGNET_RANGE         = 256      // px — magnet grab radius
 GRAB_OFFSET_X        = 36       // px — horizontal offset for carried player (TILE_SIZE + 4)
@@ -592,7 +595,7 @@ Initial mute state is read from `SaveData::sfx_muted` in `GameSession`'s constru
 | Main menu  | Click **"SFX: ON [M]" / "SFX: OFF [M]"** label (bottom-left)   | Same                            |
 | Pause menu | Navigate to **"SFX: ON" / "SFX: OFF"** (middle item) + confirm | Same                            |
 
-Pause menu now has **3 items**: Resume / SFX toggle / Quit to Menu (navigation wraps mod-3).
+Pause menu now has **3 or 4 items** depending on context: Resume / [Lobby Settings (leader only, lobby)] / SFX toggle / Quit to Menu. When the local player is the session leader and in the lobby, the "Lobby Settings" item appears between Resume and SFX toggle (4 items total, navigation wraps mod-4); otherwise it is hidden (3 items, wraps mod-3).
 
 ---
 
@@ -645,7 +648,7 @@ After changing `CMakeLists.txt`, run `cmake --preset release` once to apply the 
 | Main menu (offline/online, username, IP)                          | ✅                        |
 | Splash screen (title + press any button)                          | ✅                        |
 | Persistent save data (username, last IP, sfx mute)                | ✅                        |
-| Pause menu with quit confirmation                                 | ✅                        |
+| Pause menu with quit confirmation + lobby settings                | ✅                        |
 | Colour palette (Colors.h)                                         | ✅                        |
 | Visual trail (dash), death particles                              | ✅                        |
 | Personal best time tracking                                       | ✅                        |
@@ -659,9 +662,12 @@ After changing `CMakeLists.txt`, run `cmake --preset release` once to apply the 
 | Per-platform deploy folder (deploy/win\|mac\|linux)               | ✅                        |
 | Game modes: Co-op (default online) / Race (default offline)       | ✅                        |
 | Session leader election + promotion on disconnect                 | ✅                        |
-| Leader lobby controls (toggle mode, start game)                   | ✅                        |
+| Leader lobby controls (toggle mode via pause menu)                | ✅                        |
 | Mode-specific rendering (HUD, results, session results)           | ✅                        |
 | Bold leader name display                                          | ✅                        |
 | Race mode: no collisions, no checkpoints, stripped 'C' tiles      | ✅                        |
+| CTRL+V paste in online menu text fields                           | ✅                        |
+| Race HUD: level timer (top centre) + expiry countdown (top right) | ✅                        |
+| Race session results: ranked leaderboard sorted by wins           | ✅                        |
 | Multiple spawn assignment by player_id                            | ❌ (all use center spawn) |
 | Linux / macOS build verification                                  | ❌                        |
