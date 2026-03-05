@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-05 08:15
+ * Generated : 2026-03-05 14:23
  * ============================================================================
  *
  * PURPOSE
@@ -295,7 +295,7 @@ inline constexpr int   DASH_JUMP_WINDOW_TICKS = 10;    // post-dash window (~167
 inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 15% stronger than JUMP_FORCE
 
 // Dash push — force multiplier applied to DASH_SPEED when a dashing player hits another
-inline constexpr float DASH_PUSH_MULTIPLIER   = 2.0f;  // pushed player receives 2× dash velocity
+inline constexpr float DASH_PUSH_MULTIPLIER   = 0.8f;  // pushed player receives reduced dash velocity
 
 // Sprint — held modifier that boosts horizontal movement speed
 inline constexpr float SPRINT_MULTIPLIER      = 2.0f;  // 2× faster while sprinting
@@ -1745,7 +1745,8 @@ public:
     void DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct);
     void DrawTimer(const PlayerState& s,
                    uint32_t best_ticks, uint32_t time_limit_secs,
-                   uint32_t next_level_cd_ticks);
+                   uint32_t next_level_cd_ticks,
+                   GameMode mode = GameMode::COOP);
     void DrawLiveLeaderboard(const LiveLeaderEntry* entries, int count);
     void DrawNewRecord(bool show, bool is_lobby);
     void DrawLobbyHints(uint32_t cd_ticks, uint32_t player_count);
@@ -1772,7 +1773,8 @@ public:
 
     // Pause menu
     Rectangle GetPauseItemRect(int item_index, int total_items = 3) const;  // for mouse hit-testing in GameSession
-    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted);
+    void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
+                       bool show_lobby_settings = false, GameMode lobby_mode = GameMode::COOP);
 
     // End-of-level results screen
     void DrawResultsScreen(bool in_results, bool local_ready,
@@ -2066,7 +2068,7 @@ struct LiveLeaderEntry {
     char     name[16]   = {};
 };
 
-enum class PauseState { PLAYING, PAUSED, CONFIRM_QUIT };
+enum class PauseState { PLAYING, PAUSED, CONFIRM_QUIT, LOBBY_SETTINGS };
 
 // Emote bubble — shown above a player after they trigger an emote.
 struct EmoteBubble {
