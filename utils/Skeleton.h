@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-04 21:49
+ * Generated : 2026-03-05 08:15
  * ============================================================================
  *
  * PURPOSE
@@ -57,9 +57,17 @@
  *   │   ├── Colors.h
  *   │   ├── GameSession.cpp
  *   │   ├── GameSession.h
+ *   │   ├── HudCoop.cpp
+ *   │   ├── HudCoop.h
+ *   │   ├── HudRace.cpp
+ *   │   ├── HudRace.h
  *   │   ├── InputSampler.cpp
  *   │   ├── InputSampler.h
  *   │   ├── LevelPalette.h
+ *   │   ├── LevelResultsCoop.cpp
+ *   │   ├── LevelResultsCoop.h
+ *   │   ├── LevelResultsRace.cpp
+ *   │   ├── LevelResultsRace.h
  *   │   ├── LocalServer.cpp
  *   │   ├── LocalServer.h
  *   │   ├── main.cpp
@@ -71,6 +79,10 @@
  *   │   ├── Renderer.h
  *   │   ├── SaveData.cpp
  *   │   ├── SaveData.h
+ *   │   ├── SessionResultsCoop.cpp
+ *   │   ├── SessionResultsCoop.h
+ *   │   ├── SessionResultsRace.cpp
+ *   │   ├── SessionResultsRace.h
  *   │   ├── SfxManager.cpp
  *   │   ├── SfxManager.h
  *   │   ├── SoundPool.cpp
@@ -83,6 +95,7 @@
  *   │   └── WinIcon.h
  *   ├── common
  *   │   ├── CMakeLists.txt
+ *   │   ├── GameMode.h
  *   │   ├── GameState.h
  *   │   ├── InputFrame.h
  *   │   ├── Physics.h
@@ -111,38 +124,61 @@
  *   │   └── ServerSession.h
  *   └── app_icon.rc.in
  *
- * HEADERS INCLUDED BELOW  (29 files)
- *   [01]  src\common\GameState.h
- *   [02]  src\common\InputFrame.h
- *   [03]  src\common\Physics.h
- *   [04]  src\common\Player.h
- *   [05]  src\common\PlayerState.h
- *   [06]  src\common\Protocol.h
- *   [07]  src\common\SpawnFinder.h
- *   [08]  src\common\World.h
- *   [09]  src\server\ChunkStore.h
- *   [10]  src\server\LevelGenerator.h
- *   [11]  src\server\LevelManager.h
- *   [12]  src\server\LevelValidator.h
- *   [13]  src\server\PlayerReset.h
- *   [14]  src\server\ServerLogic.h
- *   [15]  src\server\ServerSession.h
- *   [16]  src\client\Colors.h
- *   [17]  src\client\GameSession.h
- *   [18]  src\client\InputSampler.h
- *   [19]  src\client\LevelPalette.h
- *   [20]  src\client\LocalServer.h
- *   [21]  src\client\MainMenu.h
- *   [22]  src\client\NetworkClient.h
- *   [23]  src\client\Renderer.h
- *   [24]  src\client\SaveData.h
- *   [25]  src\client\SfxManager.h
- *   [26]  src\client\SoundPool.h
- *   [27]  src\client\UIWidgets.h
- *   [28]  src\client\VisualEffects.h
- *   [29]  src\client\WinIcon.h
+ * HEADERS INCLUDED BELOW  (36 files)
+ *   [01]  src/common/GameMode.h
+ *   [02]  src/common/GameState.h
+ *   [03]  src/common/InputFrame.h
+ *   [04]  src/common/Physics.h
+ *   [05]  src/common/Player.h
+ *   [06]  src/common/PlayerState.h
+ *   [07]  src/common/Protocol.h
+ *   [08]  src/common/SpawnFinder.h
+ *   [09]  src/common/World.h
+ *   [10]  src/server/ChunkStore.h
+ *   [11]  src/server/LevelGenerator.h
+ *   [12]  src/server/LevelManager.h
+ *   [13]  src/server/LevelValidator.h
+ *   [14]  src/server/PlayerReset.h
+ *   [15]  src/server/ServerLogic.h
+ *   [16]  src/server/ServerSession.h
+ *   [17]  src/client/Colors.h
+ *   [18]  src/client/GameSession.h
+ *   [19]  src/client/HudCoop.h
+ *   [20]  src/client/HudRace.h
+ *   [21]  src/client/InputSampler.h
+ *   [22]  src/client/LevelPalette.h
+ *   [23]  src/client/LevelResultsCoop.h
+ *   [24]  src/client/LevelResultsRace.h
+ *   [25]  src/client/LocalServer.h
+ *   [26]  src/client/MainMenu.h
+ *   [27]  src/client/NetworkClient.h
+ *   [28]  src/client/Renderer.h
+ *   [29]  src/client/SaveData.h
+ *   [30]  src/client/SessionResultsCoop.h
+ *   [31]  src/client/SessionResultsRace.h
+ *   [32]  src/client/SfxManager.h
+ *   [33]  src/client/SoundPool.h
+ *   [34]  src/client/UIWidgets.h
+ *   [35]  src/client/VisualEffects.h
+ *   [36]  src/client/WinIcon.h
  * ============================================================================
  */
+
+
+// ==========================================================================
+// FILE : GameMode.h
+// PATH : src/common/GameMode.h
+// ==========================================================================
+
+#pragma once
+#include <cstdint>
+
+// Game session mode — determines collision rules, checkpoint behavior, HUD, and results screens.
+// Stored in GameState and broadcast every tick so all clients stay in sync.
+enum class GameMode : uint8_t {
+    COOP = 0,   // default: shared checkpoints, player collisions, cooperative clear
+    RACE = 1,   // no collisions, no checkpoints, individual race
+};
 
 
 // ==========================================================================
@@ -152,6 +188,7 @@
 
 #pragma once
 #include "PlayerState.h"
+#include "GameMode.h"
 #include <cstdint>
 
 // Max simultaneous players; mirrors MAX_CLIENTS in the ENet host setup.
@@ -165,6 +202,9 @@ struct GameState {
     uint32_t    next_level_countdown_ticks = 0;   // > 0: ticks until automatic level change
     uint32_t    time_limit_secs            = 0;   // remaining seconds of the 2-minute time limit
     uint8_t     is_lobby                   = 0;   // 1 when the active map is _lobby.txt
+    uint8_t     game_mode                  = static_cast<uint8_t>(GameMode::COOP);
+    uint8_t     pad[2]                     = {};
+    uint32_t    leader_id                  = 0;   // player_id of the current session leader
 };
 
 
@@ -261,8 +301,7 @@ inline constexpr float DASH_PUSH_MULTIPLIER   = 2.0f;  // pushed player receives
 inline constexpr float SPRINT_MULTIPLIER      = 2.0f;  // 2× faster while sprinting
 
 // Magnet grab — grab and carry a nearby player
-inline constexpr float MAGNET_RANGE            = 256.f; // px — max grab radius
-inline constexpr float GRAB_OFFSET_X           = static_cast<float>(TILE_SIZE) + 4.f; // px — horizontal offset for carried player
+inline constexpr float MAGNET_RANGE            = 64.f; // px — max grab radius
 
 
 // ==========================================================================
@@ -385,6 +424,7 @@ struct PlayerState {
 
 #pragma once
 #include <cstdint>
+#include <cstddef>
 #include "InputFrame.h"
 #include "PlayerState.h"
 #include "GameState.h"
@@ -392,7 +432,7 @@ struct PlayerState {
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
 static constexpr const char*  GAME_VERSION     = "0.2.6b";
-static constexpr uint16_t     PROTOCOL_VERSION = 9;
+static constexpr uint16_t     PROTOCOL_VERSION = 10;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -429,6 +469,8 @@ enum PktType : uint8_t {
     PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
     PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
     PKT_GENERATING        = 17,  // S → C  server is generating the next level; client shows loading overlay
+    PKT_SET_GAME_MODE     = 18,  // C → S  leader sets the game mode (coop / race)
+    PKT_START_GAME        = 19,  // C → S  leader starts the game from the lobby
 };
 
 struct PktInput {
@@ -560,6 +602,17 @@ struct PktGenerating {
     uint8_t level = 0;   // the level number being generated
 };
 
+// Leader sets the game mode. Only accepted from the current session leader.
+struct PktSetGameMode {
+    uint8_t type      = PKT_SET_GAME_MODE;
+    uint8_t game_mode = 0;  // 0 = COOP, 1 = RACE
+};
+
+// Leader starts the game from the lobby. Only accepted from the current session leader.
+struct PktStartGame {
+    uint8_t type = PKT_START_GAME;
+};
+
 
 // ==========================================================================
 // FILE : SpawnFinder.h
@@ -639,6 +692,10 @@ public:
 
     int GetWidth()  const { return width_; }
     int GetHeight() const { return height_; }
+
+    // Replace all checkpoint tiles ('C') with air (' '). Used in race mode
+    // where checkpoints are not part of the gameplay.
+    void StripCheckpoints();
 
     const std::vector<std::string>&       GetRows()      const { return rows_; }
     const std::vector<std::vector<bool>>& GetSolidGrid() const { return solid_grid_; }
@@ -832,6 +889,7 @@ public:
     float        SpawnX()   const { return spawn_x_; }
     float        SpawnY()   const { return spawn_y_; }
     const World& GetWorld() const { return world_; }
+    World&       GetWorldMut()    { return world_; }  // mutable access for mode-specific post-processing
 
 private:
     World world_;
@@ -895,12 +953,14 @@ inline PlayerState CheckpointReset(PlayerState s, float cx, float cy, bool with_
 #pragma once
 #include <cstdint>
 #include <atomic>
+#include "GameMode.h"
 
 // Blocking ENet server loop. Caller must call enet_initialize() beforehand.
 // Returns only when stop_flag is set to true.
 // When skip_lobby is true the server generates level 1 immediately (no lobby).
+// initial_mode sets the starting game mode (RACE for offline, COOP for online).
 void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag,
-               bool skip_lobby = false);
+               bool skip_lobby = false, GameMode initial_mode = GameMode::COOP);
 
 
 // ==========================================================================
@@ -916,6 +976,7 @@ void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag
 #include "ChunkStore.h"
 #include "Player.h"
 #include "Protocol.h"
+#include "GameMode.h"
 #include <enet/enet.h>
 #include <unordered_map>
 #include <unordered_set>
@@ -926,7 +987,9 @@ class ServerSession {
 public:
     // Load the initial map. Check IsReady() after construction.
     // When skip_lobby is true the lobby is skipped: level 1 is generated immediately.
-    ServerSession(const char* initial_map_path, int initial_level, bool skip_lobby = false);
+    // initial_mode sets the starting game mode (used by offline → RACE).
+    ServerSession(const char* initial_map_path, int initial_level,
+                  bool skip_lobby = false, GameMode initial_mode = GameMode::COOP);
 
     bool IsReady() const { return is_ready_; }
 
@@ -949,6 +1012,8 @@ private:
     void HandleRestart   (ENetPeer* peer);       // respawn at last checkpoint (or spawn)
     void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn
     bool HandleReady     (ENetHost* host, ENetPeer* peer);  // returns true on level change
+    void HandleSetGameMode(ENetPeer* peer, const PktSetGameMode& pkt);
+    bool HandleStartGame (ENetHost* host, ENetPeer* peer);  // returns true on level change
 
     // Load next map, reset all players, broadcast new state.
     void DoLevelChange(ENetHost* host);
@@ -971,6 +1036,9 @@ private:
     void ApplyMagnetGrab();                              // magnet holders grab & carry nearby players
     void ReleaseGrab(ENetPeer* grabber);                 // release a grabbed player (if any)
 
+    // Leader election: elect a new leader from the remaining players.
+    void ElectLeader();
+
     LevelManager level_mgr_;
     ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator
 
@@ -985,6 +1053,9 @@ private:
     bool         game_locked_         = false;
     bool         in_results_          = false;
     bool         in_global_results_   = false;  // true while showing session-end global leaderboard
+
+    GameMode     game_mode_           = GameMode::COOP;
+    uint32_t     leader_id_           = 0;      // player_id of the current session leader
 
     uint32_t     session_token_           = 0u;
     uint32_t     next_player_id_          = 1u;
@@ -1255,6 +1326,38 @@ private:
 
 
 // ==========================================================================
+// FILE : HudCoop.h
+// PATH : src/client/HudCoop.h
+// ==========================================================================
+
+#pragma once
+// HUD rendering for co-op game mode.
+#include <raylib.h>
+#include <cstdint>
+
+struct PlayerState;
+
+void DrawHudModeCoop(Font& font_hud, const PlayerState& s,
+                     uint32_t player_count, bool show_players);
+
+
+// ==========================================================================
+// FILE : HudRace.h
+// PATH : src/client/HudRace.h
+// ==========================================================================
+
+#pragma once
+// HUD rendering for race game mode.
+#include <raylib.h>
+#include <cstdint>
+
+struct PlayerState;
+
+void DrawHudModeRace(Font& font_hud, const PlayerState& s,
+                     uint32_t player_count, bool show_players);
+
+
+// ==========================================================================
 // FILE : InputSampler.h
 // PATH : src/client/InputSampler.h
 // ==========================================================================
@@ -1380,10 +1483,10 @@ namespace detail {
 
 // h in [0, 360), s and l in [0, 1]  →  Color {r, g, b, alpha}
 inline Color HslToColor(float h, float s, float l, uint8_t alpha = 255) {
-    h = std::fmodf(h, 360.f);
+    h = std::fmod(h, 360.f);
     if (h < 0.f) h += 360.f;
-    const float c  = (1.f - std::fabsf(2.f * l - 1.f)) * s;
-    const float x  = c * (1.f - std::fabsf(std::fmodf(h / 60.f, 2.f) - 1.f));
+    const float c  = (1.f - std::fabs(2.f * l - 1.f)) * s;
+    const float x  = c * (1.f - std::fabs(std::fmod(h / 60.f, 2.f) - 1.f));
     const float m  = l - c * 0.5f;
     float r = 0.f, g = 0.f, b = 0.f;
     if      (h <  60.f) { r = c; g = x; }
@@ -1409,6 +1512,44 @@ inline LevelPalette MakeLevelPalette(uint8_t level_num) { /* body stripped */ }
 
 
 // ==========================================================================
+// FILE : LevelResultsCoop.h
+// PATH : src/client/LevelResultsCoop.h
+// ==========================================================================
+
+#pragma once
+// End-of-level results screen for co-op mode.
+#include <raylib.h>
+#include <cstdint>
+
+struct ResultEntry;
+
+void DrawLevelResultsModeCoop(Font& font_hud, Font& font_timer,
+                              bool in_results, bool local_ready,
+                              const ResultEntry* entries, uint8_t count, uint8_t level,
+                              double elapsed_since_start, double total_duration,
+                              bool coop_all_finished);
+
+
+// ==========================================================================
+// FILE : LevelResultsRace.h
+// PATH : src/client/LevelResultsRace.h
+// ==========================================================================
+
+#pragma once
+// End-of-level results screen for race mode.
+#include <raylib.h>
+#include <cstdint>
+
+struct ResultEntry;
+
+void DrawLevelResultsModeRace(Font& font_hud, Font& font_timer,
+                              bool in_results, bool local_ready,
+                              const ResultEntry* entries, uint8_t count, uint8_t level,
+                              double elapsed_since_start, double total_duration,
+                              bool coop_all_finished);
+
+
+// ==========================================================================
 // FILE : LocalServer.h
 // PATH : src/client/LocalServer.h
 // ==========================================================================
@@ -1418,6 +1559,7 @@ inline LevelPalette MakeLevelPalette(uint8_t level_num) { /* body stripped */ }
 #include <atomic>
 #include <thread>
 #include <string>
+#include "GameMode.h"
 
 // Runs a game server instance in a background thread within the same process.
 // Used for offline mode: the client connects to 127.0.0.1 via ENet as normal
@@ -1432,7 +1574,9 @@ public:
 
     // Start the server on the given port. Blocks ~200 ms waiting for the ENet bind.
     // When skip_lobby is true the lobby is skipped and level 1 is generated immediately.
-    void Start(uint16_t port, const char* map_path, bool skip_lobby = false);
+    // initial_mode sets the starting game mode (RACE for offline).
+    void Start(uint16_t port, const char* map_path, bool skip_lobby = false,
+               GameMode initial_mode = GameMode::COOP);
 
     // Signal stop and join the background thread.
     void Stop();
@@ -1550,6 +1694,7 @@ private:
 #include <cstdint>
 #include "VisualEffects.h"
 #include "GameState.h"
+#include "GameMode.h"
 #include "Protocol.h"   // EMOTE_TEXTS, EMOTE_COUNT
 #include "LevelPalette.h"
 
@@ -1581,7 +1726,8 @@ public:
     void DrawTilemap(const World& world);
     void DrawTrail(const TrailState& t, bool is_local);
     void DrawDeathParticles(const DeathParticles& dp);
-    void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true);
+    void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true,
+                    bool is_leader = false);
 
     // Drawing trails — persistent spline marks left on the map by the draw button.
     // Each stroke is a vector of points; drawn as Catmull-Rom splines.
@@ -1593,7 +1739,8 @@ public:
     void DrawEmoteBubble(float px, float py, uint8_t emote_id, float alpha, bool is_local);
 
     // Screen-space HUD
-    void DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players);
+    void DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players,
+                 GameMode mode = GameMode::COOP);
     void DrawLevelIndicator(uint8_t level);  // bottom-center level number
     void DrawNetStats(uint32_t rtt, uint32_t jitter, uint32_t loss_pct);
     void DrawTimer(const PlayerState& s,
@@ -1602,6 +1749,10 @@ public:
     void DrawLiveLeaderboard(const LiveLeaderEntry* entries, int count);
     void DrawNewRecord(bool show, bool is_lobby);
     void DrawLobbyHints(uint32_t cd_ticks, uint32_t player_count);
+
+    // Lobby options panel: shows game mode + leader controls.
+    void DrawLobbyOptions(GameMode mode, bool is_leader, uint32_t leader_id,
+                          const GameState& gs);
 
     // Off-screen player indicators: orange dot + name on the viewport border (~64 px margin).
     // Call after EndWorldDraw, before any other HUD element.
@@ -1627,14 +1778,16 @@ public:
     void DrawResultsScreen(bool in_results, bool local_ready,
                            const ResultEntry* entries, uint8_t count, uint8_t level,
                            double elapsed_since_start, double total_duration,
-                           bool coop_all_finished);
+                           bool coop_all_finished,
+                           GameMode mode = GameMode::COOP);
 
     // Session-end global leaderboard (shown after the last level).
     void DrawGlobalResultsScreen(bool in_global, bool local_ready,
                                  const GlobalResultEntry* entries, uint8_t count,
                                  uint8_t total_levels,
                                  double elapsed_since_start, double total_duration,
-                                 uint8_t coop_wins);
+                                 uint8_t coop_wins,
+                                 GameMode mode = GameMode::COOP);
 
     // Full-screen error / session-end overlays used in mini-loops inside main.cpp
     void DrawConnectionErrorScreen(const char* msg);
@@ -1682,6 +1835,46 @@ struct SaveData {
 bool LoadSaveData(SaveData& out);
 
 void SaveSaveData(const SaveData& data);
+
+
+// ==========================================================================
+// FILE : SessionResultsCoop.h
+// PATH : src/client/SessionResultsCoop.h
+// ==========================================================================
+
+#pragma once
+// Session-end global results screen for co-op mode.
+#include <raylib.h>
+#include <cstdint>
+
+struct GlobalResultEntry;
+
+void DrawSessionResultsModeCoop(Font& font_hud, Font& font_timer,
+                                bool in_global, bool local_ready,
+                                const GlobalResultEntry* entries, uint8_t count,
+                                uint8_t total_levels,
+                                double elapsed_since_start, double total_duration,
+                                uint8_t coop_wins);
+
+
+// ==========================================================================
+// FILE : SessionResultsRace.h
+// PATH : src/client/SessionResultsRace.h
+// ==========================================================================
+
+#pragma once
+// Session-end global results screen for race mode.
+#include <raylib.h>
+#include <cstdint>
+
+struct GlobalResultEntry;
+
+void DrawSessionResultsModeRace(Font& font_hud, Font& font_timer,
+                                bool in_global, bool local_ready,
+                                const GlobalResultEntry* entries, uint8_t count,
+                                uint8_t total_levels,
+                                double elapsed_since_start, double total_duration,
+                                uint8_t coop_wins);
 
 
 // ==========================================================================

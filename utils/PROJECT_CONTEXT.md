@@ -7,7 +7,12 @@
 
 ## 1. What the Game Is
 
-TileRace is a cooperative real-time 2D side-scrolling platformer (cross-platform) where 2–8 players work together to reach an exit tile on the same map. All players must finish the level to clear it.
+TileRace is a real-time 2D side-scrolling platformer (cross-platform) supporting two game modes:
+
+- **Co-op** (default online): 2–8 players work together to reach an exit tile. All players must finish the level to clear it. Shared checkpoints, player-to-player collisions, and magnet grab are active.
+- **Race** (default offline): players race individually to the exit. No player collisions, no checkpoints in generated levels. Each player's finish time is tracked independently.
+
+The **session leader** (first connected player) can switch between modes and start the game from the lobby.
 
 **Core mechanics (all implemented):**
 
@@ -33,6 +38,8 @@ TileRace is a cooperative real-time 2D side-scrolling platformer (cross-platform
 | Backspace | Triangle (△) | Restart from last checkpoint |
 | Delete | — | Restart from spawn (clears checkpoint) |
 | ESC | Start / Options | Pause menu |
+| TAB | — | Toggle game mode (leader only, lobby) |
+| G | — | Start game (leader only, lobby) |
 
 ---
 
@@ -72,7 +79,7 @@ CMake targets:
 common_logic     (static lib)  ← Player.cpp, World.cpp
 server_logic     (static lib)  ← ServerLogic.cpp, LevelManager.cpp, ServerSession.cpp, ChunkStore.cpp, LevelGenerator.cpp, LevelValidator.cpp
 TileRace_Server  (exe)         ← server/main.cpp
-TileRace         (exe)         ← client/main.cpp + all client .cpp files
+TileRace         (exe)         ← client/main.cpp + all client .cpp files (including mode-specific HudCoop/HudRace, LevelResultsCoop/LevelResultsRace, SessionResultsCoop/SessionResultsRace)
 ```
 
 `server_logic` is linked into the client because `LocalServer` (offline mode) runs the server in a background thread inside the same process.
@@ -86,11 +93,14 @@ The codebase was refactored to follow SOLID and DRY principles:
 | `GameSession`    | One play session: physics tick, reconciliation, render coordination                  |
 | `NetworkClient`  | ENet abstraction; `<enet/enet.h>` never appears outside NetworkClient.cpp            |
 | `InputSampler`   | All keyboard + gamepad sampling; sticky flags for rising-edge events                 |
-| `Renderer`       | All Raylib draw calls; no other file calls DrawXxx / BeginDrawing                    |
+| `Renderer`       | All Raylib draw calls; no other file calls DrawXxx / BeginDrawing. Dispatches mode-specific rendering by `GameMode` |
+| `HudCoop` / `HudRace` | Mode-specific HUD overlay (co-op: standard; race: adds "Race Mode" label top-right) |
+| `LevelResultsCoop` / `LevelResultsRace` | Mode-specific end-of-level results screen |
+| `SessionResultsCoop` / `SessionResultsRace` | Mode-specific session-end global results screen |
 | `UIWidgets`      | Stateless Raylib UI helpers (buttons, text fields)                                   |
 | `VisualEffects`  | Client-only effect structs (trail, death particles) — no Raylib draw calls           |
 | `LocalServer`    | Wraps server thread for offline mode                                                 |
-| `ServerSession`  | Full server session state machine; ENet-loop-agnostic                                |
+| `ServerSession`  | Full server session state machine; ENet-loop-agnostic. Manages leader election and game mode |
 | `LevelManager`   | Load maps, compute spawn, generate levels from chunks                                |
 | `ChunkStore`     | Loads all chunk TMJ files at startup; classifies into start/mid/end pools            |
 | `LevelGenerator` | Composes playable levels from chunks with difficulty-curve-based selection           |
@@ -99,6 +109,7 @@ The codebase was refactored to follow SOLID and DRY principles:
 | `PlayerReset.h`  | Header-only; shared reset helper for kill/restart/level-change events                |
 | `SoundPool`      | Pool of N sound variants; random pitch ±7 %; 2-D spatial audio (volume + stereo pan) |
 | `SfxManager`     | Owns jump + dash SoundPools; mute toggle; local vs. spatialized remote play          |
+| `GameMode.h`     | Header-only enum `GameMode { COOP, RACE }` — shared between client and server        |
 
 ---
 
@@ -149,6 +160,8 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 
 **Player-vs-player world clamp:** after `ResolvePlayerCollisions` separates overlapping AABBs, each player is run through `ClampToWorld` which iteratively resolves any overlap with solid tiles using the minimum-penetration-axis method (up to 4 passes).
 
+**Race mode:** player-to-player collisions (`ResolvePlayerCollisions`), magnet grab (`ApplyMagnetGrab`), and checkpoint activation are all skipped entirely. Each player races independently.
+
 ---
 
 ## 5. Player Mechanics Detail
@@ -189,7 +202,7 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 - `BTN_SPRINT` (bit 8) is set in InputFrame; `Player::Simulate` multiplies `MOVE_SPEED` by `SPRINT_MULTIPLIER` (2.0).
 - Sprint is disabled while a dash is active (`dash_active_ticks > 0`).
 - `PlayerState::sprinting` flag is set for potential animation/visual use.
-- `InputFrame::buttons` is `uint16_t` to accommodate 10 bits (PROTOCOL_VERSION = 9).
+- `InputFrame::buttons` is `uint16_t` to accommodate 10 bits (PROTOCOL_VERSION = 10).
 
 ### Magnet grab
 
@@ -228,17 +241,67 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 
 ---
 
+## 5b. Game Modes and Leader Election
+
+### Game modes
+
+`GameMode` (defined in `src/common/GameMode.h`) determines per-session rules:
+
+| Mode   | Enum value | Collisions | Checkpoints | Magnet grab | Default for |
+| ------ | ---------- | ---------- | ----------- | ----------- | ----------- |
+| `COOP` | 0          | ✅ Yes     | ✅ Yes      | ✅ Yes      | Online      |
+| `RACE` | 1          | ❌ No      | ❌ No       | ❌ No       | Offline     |
+
+`GameState` broadcasts `game_mode` and `leader_id` every tick so all clients stay in sync.
+
+In **race mode**:
+- `ResolvePlayerCollisions` and `ApplyMagnetGrab` are skipped (players pass through each other).
+- Checkpoint activation is skipped in `HandleInput`.
+- `World::StripCheckpoints()` replaces all 'C' tiles with air (' ') after level generation.
+
+### Mode-specific rendering
+
+Each of these rendering areas is split into a co-op file and a race file:
+
+| Feature          | Co-op file              | Race file               |
+| ---------------- | ----------------------- | ----------------------- |
+| HUD overlay      | `HudCoop.cpp`           | `HudRace.cpp`           |
+| Level results    | `LevelResultsCoop.cpp`  | `LevelResultsRace.cpp`  |
+| Session results  | `SessionResultsCoop.cpp`| `SessionResultsRace.cpp`|
+
+`Renderer` dispatches to the mode-specific implementation via `GameMode` parameter.
+Race mode variants are currently identical to co-op but include a "Race Mode" header label.
+
+### Leader election
+
+- **First connected:** when the server has no players and a new player connects, `leader_id_` is set to the new player's ID.
+- **Promotion:** if the leader disconnects, `ElectLeader()` promotes the remaining player with the lowest `player_id` (earliest connected).
+- **Reset:** when all players disconnect, `leader_id_` resets to 0 and `game_mode_` resets to `COOP`.
+
+### Leader powers (lobby only)
+
+- **Toggle mode:** leader sends `PKT_SET_GAME_MODE` (client: TAB key). Server validates sender is leader.
+- **Start game:** leader sends `PKT_START_GAME` (client: G key). Server calls `DoLevelChange()` to skip the zone countdown.
+
+### Visual indicators
+
+- Leader name is rendered in **bold** (`font_bold_`) above the player sprite. Other players use `font_hud_`.
+- Lobby options panel (`DrawLobbyOptions`) shows: current mode, leader name, and controls (TAB to toggle mode, G to start — leader only).
+
+---
+
 ## 6. Game Flow
 
 ```
 main()
   └─ ShowSplashScreen()            → blocks until any key/button pressed
   └─ ShowMainMenu()               → MenuResult { OFFLINE | ONLINE | QUIT, username, ip }
-       └─ [OFFLINE] LocalServer::Start()  (server thread on SERVER_PORT_LOCAL = 58721)
+       └─ [OFFLINE] LocalServer::Start(skip_lobby=true, GameMode::RACE)
        └─ NetworkClient::Connect()
        └─ GameSession::Tick() loop
             ├─ InputSampler::Poll()
             ├─ HandlePauseInput()
+            ├─ Lobby controls (leader: TAB=toggle mode, G=start game)
             ├─ TickFixed() × N    (60 Hz physics + network send)
             ├─ PollNetwork()      (ENet events → HandlePacket)
             └─ DoRender()
@@ -251,15 +314,15 @@ main()
 ```
 Online mode:
   Lobby (_Lobby.tmj)  [file-based]
-    → all players in zone 'E' for 3 s → DoLevelChange()
+    → leader presses G (PKT_START_GAME) OR all players in zone 'E' for 3 s → DoLevelChange()
         → Generated Level 1, 2, … MAX_GENERATED_LEVELS (chunk-based)
             → all players finish OR 2-min time limit → SendResults() (15 s or all ready)
                 → DoLevelChange() → next generated level
                     → last level complete → SendGlobalResults() (25 s or all ready)
                         → FinishSession() → PKT_LOAD_LEVEL(is_last=1) → ResetToInitial() → back to lobby
 
-Offline mode (skip_lobby):
-  Level 1 generated immediately (no lobby) → same progression as above
+Offline mode (skip_lobby, GameMode::RACE):
+  Level 1 generated immediately (no lobby, race mode) → same progression as above
 ```
 
 Online mode starts at the lobby; offline mode skips it and generates level 1
@@ -317,12 +380,23 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the team's clear count to all cl
 | `PKT_RESTART_SPAWN`    | C → S     | Respawn always at level spawn, clearing checkpoint; Delete             |
 | `PKT_READY`            | C → S     | Skip results screen early                                              |
 | `PKT_VERSION_MISMATCH` | S → C     | Incompatible `PROTOCOL_VERSION` — disconnect follows                   |
+| `PKT_EMOTE`            | C → S     | Emote selection (emote_id 0-7)                                         |
+| `PKT_EMOTE_BROADCAST`  | S → C     | Broadcast emote to all clients                                         |
+| `PKT_GENERATING`       | S → C     | Server is generating the next level; client shows loading overlay      |
+| `PKT_SET_GAME_MODE`    | C → S     | Leader sets the game mode (coop / race); lobby only                    |
+| `PKT_START_GAME`       | C → S     | Leader starts the game from the lobby                                  |
 
 ---
 
 ## 7. Rendering
 
 `Renderer` owns all Raylib calls. No other file may call `DrawXxx`, `BeginDrawing`, `BeginMode2D`, etc. Replacing Raylib means rewriting only `Renderer.cpp`.
+
+**Mode-specific rendering:** `DrawHUD`, `DrawResultsScreen`, and `DrawGlobalResultsScreen` accept a `GameMode` parameter and dispatch to the mode-specific implementation (e.g. `DrawHudModeCoop` vs `DrawHudModeRace`). Race mode variants display a "Race Mode" header. See section 5b for the file breakdown.
+
+**Leader display:** `DrawPlayer` accepts an `is_leader` parameter. Leader names are rendered in `font_bold_`; other players use `font_hud_`.
+
+**Lobby options panel:** `DrawLobbyOptions` shows a semi-transparent panel (top-right) with the current game mode, leader name, and controls (TAB to toggle mode, G to start — visible to the leader only).
 
 **Font sizes:**
 
@@ -366,8 +440,9 @@ Old save files without `"m"` key default to unmuted (backward-compatible).
 
 `LocalServer` starts `RunServer()` in a `std::thread`. The client connects to `127.0.0.1:58721` exactly as it would online. This allows single-player practice without a separate server process.
 
-Both offline and online mode start at the lobby (`_Lobby.tmj`). When the player enters the
-exit zone, the server generates the first level from chunks and sends it via `PKT_LEVEL_DATA`.
+**Offline defaults to Race mode:** `LocalServer::Start` is called with `skip_lobby=true` and `GameMode::RACE`. The server generates level 1 immediately with checkpoints stripped.
+
+Online mode starts at the lobby (`_Lobby.tmj`), defaulting to Co-op mode. The leader can switch to Race mode using TAB before starting the game.
 
 ---
 
@@ -376,7 +451,7 @@ exit zone, the server generates the first level from chunks and sends it via `PK
 ```cpp
 SERVER_PORT        = 58291   // online / dedicated server
 SERVER_PORT_LOCAL  = 58721   // in-process LocalServer (offline mode)
-PROTOCOL_VERSION   = 9       // increment on any breaking change
+PROTOCOL_VERSION   = 10      // increment on any breaking change
 MAX_PLAYERS        = 8
 CHANNEL_RELIABLE   = 0
 CHANNEL_COUNT      = 1
@@ -582,5 +657,11 @@ After changing `CMakeLists.txt`, run `cmake --preset release` once to apply the 
 | Audio SFX (jump, dash) — local + 2-D spatialized remote           | ✅                        |
 | SFX mute toggle (main menu + pause menu, persisted)               | ✅                        |
 | Per-platform deploy folder (deploy/win\|mac\|linux)               | ✅                        |
+| Game modes: Co-op (default online) / Race (default offline)       | ✅                        |
+| Session leader election + promotion on disconnect                 | ✅                        |
+| Leader lobby controls (toggle mode, start game)                   | ✅                        |
+| Mode-specific rendering (HUD, results, session results)           | ✅                        |
+| Bold leader name display                                          | ✅                        |
+| Race mode: no collisions, no checkpoints, stripped 'C' tiles      | ✅                        |
 | Multiple spawn assignment by player_id                            | ❌ (all use center spawn) |
 | Linux / macOS build verification                                  | ❌                        |
