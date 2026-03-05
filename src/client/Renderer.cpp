@@ -7,6 +7,12 @@
 #include "Physics.h"
 #include "Protocol.h"   // ResultEntry, MAX_PLAYERS
 #include "PlayerState.h"
+#include "HudCoop.h"
+#include "HudRace.h"
+#include "LevelResultsCoop.h"
+#include "LevelResultsRace.h"
+#include "SessionResultsCoop.h"
+#include "SessionResultsRace.h"
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -339,13 +345,6 @@ void Renderer::DrawEmoteBubble(float px, float py, uint8_t emote_id, float alpha
                {bx - ts.x * 0.5f, by - ts.y * 0.5f},
                FONT_SZ, 1, col);
 }
-
-#include "HudCoop.h"
-#include "HudRace.h"
-#include "LevelResultsCoop.h"
-#include "LevelResultsRace.h"
-#include "SessionResultsCoop.h"
-#include "SessionResultsRace.h"
 
 // ---------------------------------------------------------------------------
 // Screen-space HUD

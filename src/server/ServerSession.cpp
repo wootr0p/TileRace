@@ -34,8 +34,13 @@ ServerSession::ServerSession(const char* initial_map_path, int initial_level,
     if (skip_lobby_ && chunk_store_.IsReady()) {
         current_level_ = 1;
         is_ready_      = level_mgr_.Generate(current_level_, chunk_store_, 0, skip_lobby_);
-        if (is_ready_)
-            printf("[server] skip_lobby: generated level 1 immediately\n");
+        if (is_ready_) {
+            // Strip checkpoints for race mode.
+            if (game_mode_ == GameMode::RACE)
+                level_mgr_.GetWorldMut().StripCheckpoints();
+            printf("[server] skip_lobby: generated level 1 immediately (mode=%s)\n",
+                   game_mode_ == GameMode::RACE ? "RACE" : "COOP");
+        }
     } else {
         is_ready_ = level_mgr_.Load(initial_map_path);
     }
