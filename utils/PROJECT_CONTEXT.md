@@ -269,7 +269,7 @@ Each of these rendering areas is split into a co-op file and a race file:
 
 `Renderer` dispatches to the mode-specific implementation via `GameMode` parameter.
 Race mode variants are currently identical to co-op but include a "Race Mode" header label.
-Race mode HUD timers differ from co-op: the **top centre (48 px)** shows the player's current level completion time (`level_ticks` → `MM:SS.cc`), while the **top right (24 px)** shows the level expiry countdown positioned under the "Race Mode" label. Co-op mode shows only the time limit countdown at top centre.
+Race mode HUD timers differ from co-op: the **top centre (48 px)** shows the player's current level completion time (`level_ticks` → `MM:SS.cc`), while the **top right (24 px)** shows the level expiry countdown directly below the "Race Mode" label (at y=36 px). Co-op mode shows only the time limit countdown at top centre.
 Race mode session results show a **leaderboard sorted by wins descending**: each row displays rank (#1, #2, …), player name, and win count. First place uses the accent colour.
 
 ### Leader election
@@ -281,7 +281,7 @@ Race mode session results show a **leaderboard sorted by wins descending**: each
 ### Leader powers (lobby only)
 
 - **Toggle mode:** leader opens the pause menu and selects "Lobby Settings" → "Mode" to toggle between Co-op and Race. The client sends `PKT_SET_GAME_MODE`; server validates sender is leader.
-- **Start game:** the game starts automatically when all players reach the exit zone 'E'. The separate `PKT_START_GAME` packet is retained but no longer triggered by a dedicated key (G). The lobby now relies on natural progression (all-in-exit-zone countdown).
+- **Start game:** the game starts automatically when all players reach the exit zone 'E'. The `PKT_START_GAME` packet is still supported server-side (for potential future UI use) but is no longer sent by the client (the G key binding was removed).
 
 ### Visual indicators
 
