@@ -686,6 +686,18 @@ void ServerSession::SendResults(ENetHost* host, const char* reason) {
         coop_cleared_levels_++;
         printf("[server] COOP CLEARED (total=%u)\n", coop_cleared_levels_);
     }
+
+    // Race mode scoring: award one session win to the first finisher of this level.
+    if (game_mode_ == GameMode::RACE && any_done) {
+        for (const auto& e : entries) {
+            if (!e.finished) continue;
+            session_wins_[e.player_id]++;
+            printf("[server] RACE WIN level=%d player_id=%u total_wins=%u\n",
+                   current_level_, e.player_id, session_wins_[e.player_id]);
+            break;  // only first place gets the win
+        }
+    }
+
     res_pkt.coop_all_finished = coop_cleared ? 1u : 0u;
 
     res_pkt.count = static_cast<uint8_t>(entries.size());

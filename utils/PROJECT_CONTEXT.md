@@ -274,6 +274,7 @@ Each of these rendering areas is split into a co-op file and a race file:
 Race mode variants are currently identical to co-op but include a "Race Mode" header label.
 Both HUD variants show a top-right mode label ("Co-op Mode" / "Race Mode"). Race mode HUD timers differ from co-op: the **top centre (48 px)** shows the player's current level completion time (`level_ticks` → `MM:SS.cc`), while the **top right (24 px)** shows the level expiry countdown directly below the "Race Mode" label (at y=36 px). Co-op mode shows only the time limit countdown at top centre.
 Race mode session results show a **leaderboard sorted by wins descending**: each row displays rank (#1, #2, …), player name, and win count. First place uses the accent colour.
+In race mode, each cleared level awards exactly one win to the fastest finisher (1st place only).
 
 ### Leader election
 
