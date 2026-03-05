@@ -356,7 +356,8 @@ During level generation, the generator picks checkpoint chunks at regular interv
 - 'C' tiles from chunk data are preserved (no longer stripped during finalisation).
 
 **Shared checkpoints (cooperative):** when _any single player_ reaches a checkpoint tile,
-the server activates that checkpoint for _all_ players (`ServerSession::activated_checkpoints_`).
+the server activates that checkpoint for _all_ players (`ServerSession::activated_checkpoints_`)
+and immediately resets every player to start from that newly activated checkpoint.
 Once a checkpoint has been activated, passing over it again does not trigger it a second time.
 This prevents a player that backtracks from resetting everyone's checkpoint to an earlier position.
 
@@ -536,7 +537,7 @@ Tileset (`TileSet.tsx`) tile properties:
 | 9       | `chunk_exit`  | false   | `O`         | Chunk exit (alt tile ID)                              |
 
 On death (kill tile) the player respawns at their last shared checkpoint (`PlayerState::checkpoint_x/y`); if no checkpoint has been activated they respawn at the level spawn. `SpawnReset` clears the checkpoint; `CheckpointReset` preserves it.
-Checkpoints are shared: one player reaching a 'C' tile group activates the spawn position for every connected player.
+Checkpoints are shared: one player reaching a 'C' tile group activates the spawn position for every connected player and all players are reset to that checkpoint instantly.
 
 **Restart keys:**
 

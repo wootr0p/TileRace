@@ -280,18 +280,16 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
             }
             if (!already) {
                 activated_checkpoints_.push_back({cp.x, cp.y});
-                // Propagate to the triggering player (via s, which is SetState'd below).
-                s.checkpoint_x = cp.x;
-                s.checkpoint_y = cp.y;
-                // Propagate to ALL other players.
+                // Propagate + reset from the new shared checkpoint for ALL players.
                 for (auto& [p, player] : players_) {
-                    if (p == peer) continue;
                     PlayerState ps = player.GetState();
                     ps.checkpoint_x = cp.x;
                     ps.checkpoint_y = cp.y;
-                    player.SetState(ps);
+                    ps = CheckpointReset(ps, cp.x, cp.y, false);
+                    if (p == peer) s = ps;      // will be SetState'd below
+                    else           player.SetState(ps);
                 }
-                printf("[server] SHARED CHECKPOINT player_id=%u activated (%.0f, %.0f) → all players\n",
+                printf("[server] SHARED CHECKPOINT player_id=%u activated (%.0f, %.0f) → reset all players\n",
                        s.player_id, cp.x, cp.y);
             }
         }
