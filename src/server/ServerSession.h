@@ -6,6 +6,7 @@
 #include "ChunkStore.h"
 #include "Player.h"
 #include "Protocol.h"
+#include "GameMode.h"
 #include <enet/enet.h>
 #include <unordered_map>
 #include <unordered_set>
@@ -16,7 +17,9 @@ class ServerSession {
 public:
     // Load the initial map. Check IsReady() after construction.
     // When skip_lobby is true the lobby is skipped: level 1 is generated immediately.
-    ServerSession(const char* initial_map_path, int initial_level, bool skip_lobby = false);
+    // initial_mode sets the starting game mode (used by offline → RACE).
+    ServerSession(const char* initial_map_path, int initial_level,
+                  bool skip_lobby = false, GameMode initial_mode = GameMode::COOP);
 
     bool IsReady() const { return is_ready_; }
 
@@ -39,6 +42,8 @@ private:
     void HandleRestart   (ENetPeer* peer);       // respawn at last checkpoint (or spawn)
     void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn
     bool HandleReady     (ENetHost* host, ENetPeer* peer);  // returns true on level change
+    void HandleSetGameMode(ENetPeer* peer, const PktSetGameMode& pkt);
+    bool HandleStartGame (ENetHost* host, ENetPeer* peer);  // returns true on level change
 
     // Load next map, reset all players, broadcast new state.
     void DoLevelChange(ENetHost* host);
@@ -61,6 +66,9 @@ private:
     void ApplyMagnetGrab();                              // magnet holders grab & carry nearby players
     void ReleaseGrab(ENetPeer* grabber);                 // release a grabbed player (if any)
 
+    // Leader election: elect a new leader from the remaining players.
+    void ElectLeader();
+
     LevelManager level_mgr_;
     ChunkStore   chunk_store_;       // loaded at construction; used by LevelGenerator
 
@@ -75,6 +83,9 @@ private:
     bool         game_locked_         = false;
     bool         in_results_          = false;
     bool         in_global_results_   = false;  // true while showing session-end global leaderboard
+
+    GameMode     game_mode_           = GameMode::COOP;
+    uint32_t     leader_id_           = 0;      // player_id of the current session leader
 
     uint32_t     session_token_           = 0u;
     uint32_t     next_player_id_          = 1u;

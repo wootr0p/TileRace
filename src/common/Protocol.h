@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cstddef>
 #include "InputFrame.h"
 #include "PlayerState.h"
 #include "GameState.h"
@@ -7,7 +8,7 @@
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
 static constexpr const char*  GAME_VERSION     = "0.2.6b";
-static constexpr uint16_t     PROTOCOL_VERSION = 9;
+static constexpr uint16_t     PROTOCOL_VERSION = 10;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -44,6 +45,8 @@ enum PktType : uint8_t {
     PKT_EMOTE             = 15,  // C → S  emote selection (emote_id 0-7)
     PKT_EMOTE_BROADCAST   = 16,  // S → C  broadcast emote to all clients
     PKT_GENERATING        = 17,  // S → C  server is generating the next level; client shows loading overlay
+    PKT_SET_GAME_MODE     = 18,  // C → S  leader sets the game mode (coop / race)
+    PKT_START_GAME        = 19,  // C → S  leader starts the game from the lobby
 };
 
 struct PktInput {
@@ -175,4 +178,15 @@ struct PktEmoteBroadcast {
 struct PktGenerating {
     uint8_t type  = PKT_GENERATING;
     uint8_t level = 0;   // the level number being generated
+};
+
+// Leader sets the game mode. Only accepted from the current session leader.
+struct PktSetGameMode {
+    uint8_t type      = PKT_SET_GAME_MODE;
+    uint8_t game_mode = 0;  // 0 = COOP, 1 = RACE
+};
+
+// Leader starts the game from the lobby. Only accepted from the current session leader.
+struct PktStartGame {
+    uint8_t type = PKT_START_GAME;
 };

@@ -38,6 +38,10 @@ public:
     int GetWidth()  const { return width_; }
     int GetHeight() const { return height_; }
 
+    // Replace all checkpoint tiles ('C') with air (' '). Used in race mode
+    // where checkpoints are not part of the gameplay.
+    void StripCheckpoints();
+
     const std::vector<std::string>&       GetRows()      const { return rows_; }
     const std::vector<std::vector<bool>>& GetSolidGrid() const { return solid_grid_; }
 

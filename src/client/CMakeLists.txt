@@ -22,6 +22,12 @@ add_executable(TileRace
     GameSession.cpp
     SoundPool.cpp
     SfxManager.cpp
+    HudCoop.cpp
+    HudRace.cpp
+    LevelResultsCoop.cpp
+    LevelResultsRace.cpp
+    SessionResultsCoop.cpp
+    SessionResultsRace.cpp
 )
 
 # ENet non esporta include dir come PUBLIC, quindi la aggiungiamo manualmente.

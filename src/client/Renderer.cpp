@@ -7,6 +7,12 @@
 #include "Physics.h"
 #include "Protocol.h"   // ResultEntry, MAX_PLAYERS
 #include "PlayerState.h"
+#include "HudCoop.h"
+#include "HudRace.h"
+#include "LevelResultsCoop.h"
+#include "LevelResultsRace.h"
+#include "SessionResultsCoop.h"
+#include "SessionResultsRace.h"
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -240,7 +246,8 @@ void Renderer::DrawDeathParticles(const DeathParticles& dp) {
     }
 }
 
-void Renderer::DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local) {
+void Renderer::DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local,
+                          bool is_leader) {
     Color col;
     if (is_local) {
         const bool bright = s.dash_active_ticks > 0 || s.dash_ready;
@@ -252,13 +259,15 @@ void Renderer::DrawPlayer(float rx, float ry, const PlayerState& s, bool is_loca
     DrawRectangle(static_cast<int>(rx), static_cast<int>(ry), TILE_SIZE, TILE_SIZE, col);
 
     // Nome sopra il rettangolo — per tutti i player
+    // Leader names are drawn with the bold font.
     if (s.name[0] != '\0') {
         const float   nm_sz = 24.f;
         const Color   nm_col = is_local
             ? Color{CLRS_PLAYER_LOCAL.r, CLRS_PLAYER_LOCAL.g, CLRS_PLAYER_LOCAL.b, 180}
             : CLRS_PLAYER_REMOTE_NAME;
-        const Vector2 nm_ts = MeasureTextEx(font_hud_, s.name, nm_sz, 1);
-        DrawTextEx(font_hud_, s.name,
+        Font&         nm_font = is_leader ? font_bold_ : font_hud_;
+        const Vector2 nm_ts = MeasureTextEx(nm_font, s.name, nm_sz, 1);
+        DrawTextEx(nm_font, s.name,
             {rx + TILE_SIZE * 0.5f - nm_ts.x * 0.5f, ry - nm_sz - 4},
             nm_sz, 1, nm_col);
     }
@@ -340,12 +349,12 @@ void Renderer::DrawEmoteBubble(float px, float py, uint8_t emote_id, float alpha
 // ---------------------------------------------------------------------------
 // Screen-space HUD
 // ---------------------------------------------------------------------------
-void Renderer::DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players) {
-    (void)s;
-    const char* txt = show_players
-        ? TextFormat("fps: %d  players: %u", GetFPS(), player_count)
-        : TextFormat("fps: %d", GetFPS());
-    DrawTextEx(font_hud_, txt, {10, 10}, 24, 1, WHITE);
+void Renderer::DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players,
+                       GameMode mode) {
+    if (mode == GameMode::RACE)
+        DrawHudModeRace(font_hud_, s, player_count, show_players);
+    else
+        DrawHudModeCoop(font_hud_, s, player_count, show_players);
 }
 
 void Renderer::DrawLevelIndicator(uint8_t level) {
@@ -453,6 +462,50 @@ void Renderer::DrawLobbyHints(uint32_t cd_ticks, uint32_t player_count) {
         DrawTextEx(font_hud_, hint,
             {cx - hs.x * 0.5f, GetScreenHeight() - hs.y - 20.f},
             24, 1, CLRS_LOBBY_HINT);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Lobby options panel — game mode + leader controls
+// ---------------------------------------------------------------------------
+void Renderer::DrawLobbyOptions(GameMode mode, bool is_leader, uint32_t leader_id,
+                                const GameState& gs) {
+    const float sw = static_cast<float>(GetScreenWidth());
+    const float panel_x = sw - 280.f;
+    const float panel_y = 50.f;
+    const float line_h  = 28.f;
+
+    // Find leader name
+    const char* leader_name = "?";
+    for (uint32_t i = 0; i < gs.count; i++) {
+        if (gs.players[i].player_id == leader_id && gs.players[i].name[0]) {
+            leader_name = gs.players[i].name;
+            break;
+        }
+    }
+
+    // Panel background
+    DrawRectangle(static_cast<int>(panel_x - 10), static_cast<int>(panel_y - 10),
+                  270, static_cast<int>(line_h * 5 + 20), {0, 0, 0, 140});
+
+    // Title
+    DrawTextEx(font_bold_, "LOBBY", {panel_x, panel_y}, 22, 1, CLRS_ACCENT);
+
+    // Leader
+    const char* leader_lbl = TextFormat("Leader: %s", leader_name);
+    DrawTextEx(font_hud_, leader_lbl, {panel_x, panel_y + line_h}, 20, 1, CLRS_TEXT_MAIN);
+
+    // Game mode
+    const char* mode_str = (mode == GameMode::RACE) ? "RACE" : "CO-OP";
+    const char* mode_lbl = TextFormat("Mode: %s", mode_str);
+    DrawTextEx(font_hud_, mode_lbl, {panel_x, panel_y + line_h * 2}, 20, 1, CLRS_TEXT_MAIN);
+
+    // Controls (leader only)
+    if (is_leader) {
+        DrawTextEx(font_hud_, "[TAB] Toggle mode", {panel_x, panel_y + line_h * 3}, 18, 1, CLRS_ACCENT_SOFT);
+        DrawTextEx(font_hud_, "[G] Start game", {panel_x, panel_y + line_h * 4}, 18, 1, CLRS_ACCENT_SOFT);
+    } else {
+        DrawTextEx(font_hud_, "Waiting for leader...", {panel_x, panel_y + line_h * 3}, 18, 1, CLRS_TEXT_DIM);
     }
 }
 
@@ -632,106 +685,38 @@ void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused,
 }
 
 // ---------------------------------------------------------------------------
-// Classifica fine livello
+// Classifica fine livello — dispatch by mode
 // ---------------------------------------------------------------------------
 void Renderer::DrawResultsScreen(bool in_results, bool local_ready,
                                   const ResultEntry* entries, uint8_t count, uint8_t level,
                                   double elapsed_since_start, double total_duration,
-                                  bool coop_all_finished) {
-    if (!in_results) return;
-
-    const float rw  = static_cast<float>(GetScreenWidth());
-    const float rh  = static_cast<float>(GetScreenHeight());
-    const float rcx = rw * 0.5f;
-    DrawRectangle(0, 0, (int)rw, (int)rh, CLRS_BG_RESULTS);
-
-    const char* r_title = coop_all_finished ? "LEVEL CLEARED" : "LEVEL FAILED";
-    const Color r_tcol  = coop_all_finished ? CLRS_RESULTS_TITLE : CLRS_ERROR;
-    const Vector2 r_tsz = MeasureTextEx(font_timer_, r_title, 48, 1);
-    DrawTextEx(font_timer_, r_title, {rcx - r_tsz.x * 0.5f, 40.f}, 48, 1, r_tcol);
-
-    static const Color r_rank_col[3] = {CLRS_RESULTS_GOLD, CLRS_RESULTS_SILVER, CLRS_RESULTS_BRONZE};
-    const float r_board_y = 120.f;
-    for (int ri = 0; ri < (int)count; ri++) {
-        const ResultEntry& re = entries[ri];
-        const Color        rc = (ri < 3) ? r_rank_col[ri] : CLRS_TEXT_MAIN;
-        const float        ry = r_board_y + ri * 44.f + (ri >= 3 ? 20.f : 0.f);
-        DrawTextEx(font_hud_, TextFormat("#%d", ri + 1), {rcx - 230.f, ry}, 24, 1, rc);
-        DrawTextEx(font_hud_, re.name[0] ? re.name : "?", {rcx - 180.f, ry}, 24, 1, rc);
-        const char* r_time;
-        if (re.finished) {
-            const uint32_t r_cs = re.level_ticks * 100 / 60;
-            r_time = TextFormat("%02u:%02u.%02u",
-                r_cs / 6000, (r_cs % 6000) / 100, r_cs % 100);
-        } else {
-            r_time = "DNF";
-        }
-        const Vector2 r_tsz2 = MeasureTextEx(font_hud_, r_time, 24, 1);
-        DrawTextEx(font_hud_, r_time, {rcx + 180.f - r_tsz2.x, ry}, 24, 1, rc);
-    }
-
-    const int r_remain = static_cast<int>(total_duration - elapsed_since_start);
-    if (r_remain >= 0) {
-        const char*   r_cd  = TextFormat("%d", r_remain);
-        const Vector2 r_csz = MeasureTextEx(font_timer_, r_cd, 48, 1);
-        DrawTextEx(font_timer_, r_cd, {rw - r_csz.x - 20.f, 10.f}, 48, 1, CLRS_TEXT_SOFT_WHITE);
-    }
-
-    const char* r_btn  = local_ready ? "Waiting for others..." : "Press JUMP to ready up";
-    const Color r_bcol = local_ready ? CLRS_RESULTS_READY : CLRS_ACCENT;
-    const Vector2 r_bsz = MeasureTextEx(font_hud_, r_btn, 24, 1);
-    DrawTextEx(font_hud_, r_btn, {rcx - r_bsz.x * 0.5f, rh - 60.f}, 24, 1, r_bcol);
+                                  bool coop_all_finished, GameMode mode) {
+    if (mode == GameMode::RACE)
+        DrawLevelResultsModeRace(font_hud_, font_timer_, in_results, local_ready,
+                                 entries, count, level, elapsed_since_start, total_duration,
+                                 coop_all_finished);
+    else
+        DrawLevelResultsModeCoop(font_hud_, font_timer_, in_results, local_ready,
+                                 entries, count, level, elapsed_since_start, total_duration,
+                                 coop_all_finished);
 }
 
 // ---------------------------------------------------------------------------
-// Classifica globale di fine sessione
+// Classifica globale di fine sessione — dispatch by mode
 // ---------------------------------------------------------------------------
 void Renderer::DrawGlobalResultsScreen(bool in_global, bool local_ready,
                                         const GlobalResultEntry* entries, uint8_t count,
                                         uint8_t total_levels,
                                         double elapsed_since_start, double total_duration,
-                                        uint8_t coop_wins) {
-    if (!in_global) return;
-
-    const float rw  = static_cast<float>(GetScreenWidth());
-    const float rh  = static_cast<float>(GetScreenHeight());
-    const float rcx = rw * 0.5f;
-    DrawRectangle(0, 0, (int)rw, (int)rh, CLRS_BG_RESULTS);
-
-    const bool  victory  = (coop_wins * 2 > total_levels);
-    const char* verdict  = victory ? "VICTORY!" : "DEFEAT!";
-    const Color vcol     = victory ? CLRS_SESSION_OK : CLRS_ERROR;
-    const Vector2 v_tsz  = MeasureTextEx(font_timer_, verdict, 72, 1);
-    DrawTextEx(font_timer_, verdict, {rcx - v_tsz.x * 0.5f, 30.f}, 72, 1, vcol);
-
-    const char* g_sub = TextFormat("Levels cleared: %u / %u", (unsigned)coop_wins, (unsigned)total_levels);
-    const Vector2 g_ssz = MeasureTextEx(font_hud_, g_sub, 26, 1);
-    DrawTextEx(font_hud_, g_sub, {rcx - g_ssz.x * 0.5f, 116.f}, 26, 1, CLRS_TEXT_DIM);
-
-    // Player name list
-    const float row_start_y = 168.f;
-    DrawLineEx({rcx - 200.f, row_start_y - 4.f}, {rcx + 200.f, row_start_y - 4.f}, 1.f, CLRS_TEXT_DIM);
-    for (int gi = 0; gi < (int)count; gi++) {
-        const GlobalResultEntry& ge = entries[gi];
-        const float gy = row_start_y + gi * 40.f;
-        const char* name_str = ge.name[0] ? ge.name : "?";
-        const Vector2 n_sz = MeasureTextEx(font_hud_, name_str, 26, 1);
-        DrawTextEx(font_hud_, name_str, {rcx - n_sz.x * 0.5f, gy}, 26, 1, CLRS_TEXT_MAIN);
-    }
-
-    // Countdown
-    const int g_remain = static_cast<int>(total_duration - elapsed_since_start);
-    if (g_remain >= 0) {
-        const char*   g_cd  = TextFormat("%d", g_remain);
-        const Vector2 g_csz = MeasureTextEx(font_timer_, g_cd, 48, 1);
-        DrawTextEx(font_timer_, g_cd, {rw - g_csz.x - 20.f, 10.f}, 48, 1, CLRS_TEXT_SOFT_WHITE);
-    }
-
-    // Pulsante ready
-    const char* g_btn  = local_ready ? "Waiting for others..." : "Press JUMP to continue";
-    const Color g_bcol = local_ready ? CLRS_RESULTS_READY : CLRS_ACCENT;
-    const Vector2 g_bsz = MeasureTextEx(font_hud_, g_btn, 24, 1);
-    DrawTextEx(font_hud_, g_btn, {rcx - g_bsz.x * 0.5f, rh - 60.f}, 24, 1, g_bcol);
+                                        uint8_t coop_wins, GameMode mode) {
+    if (mode == GameMode::RACE)
+        DrawSessionResultsModeRace(font_hud_, font_timer_, in_global, local_ready,
+                                   entries, count, total_levels, elapsed_since_start,
+                                   total_duration, coop_wins);
+    else
+        DrawSessionResultsModeCoop(font_hud_, font_timer_, in_global, local_ready,
+                                   entries, count, total_levels, elapsed_since_start,
+                                   total_duration, coop_wins);
 }
 
 // ---------------------------------------------------------------------------

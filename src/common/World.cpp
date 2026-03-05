@@ -245,6 +245,12 @@ char World::GetTile(int tx, int ty) const {
     return rows_[ty][tx];
 }
 
+void World::StripCheckpoints() {
+    for (int y = 0; y < height_; ++y)
+        for (int x = 0; x < width_; ++x)
+            if (rows_[y][x] == 'C') rows_[y][x] = ' ';
+}
+
 // ============================================================================
 // Private loaders
 // ============================================================================

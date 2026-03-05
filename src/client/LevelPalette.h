@@ -44,10 +44,10 @@ namespace detail {
 
 // h in [0, 360), s and l in [0, 1]  →  Color {r, g, b, alpha}
 inline Color HslToColor(float h, float s, float l, uint8_t alpha = 255) {
-    h = std::fmodf(h, 360.f);
+    h = std::fmod(h, 360.f);
     if (h < 0.f) h += 360.f;
-    const float c  = (1.f - std::fabsf(2.f * l - 1.f)) * s;
-    const float x  = c * (1.f - std::fabsf(std::fmodf(h / 60.f, 2.f) - 1.f));
+    const float c  = (1.f - std::fabs(2.f * l - 1.f)) * s;
+    const float x  = c * (1.f - std::fabs(std::fmod(h / 60.f, 2.f) - 1.f));
     const float m  = l - c * 0.5f;
     float r = 0.f, g = 0.f, b = 0.f;
     if      (h <  60.f) { r = c; g = x; }
@@ -71,7 +71,7 @@ inline LevelPalette MakeLevelPalette(uint8_t level_num) {
 
     // Golden-angle distribution: maximally separates up to ~16 distinct hues.
     static constexpr float GOLDEN_DEG = 137.508f;
-    const float h = std::fmodf(level_num * GOLDEN_DEG, 360.f);
+    const float h = std::fmod(level_num * GOLDEN_DEG, 360.f);
 
     LevelPalette p;
     p.bg         = detail::HslToColor(h,          0.65f, 0.08f);

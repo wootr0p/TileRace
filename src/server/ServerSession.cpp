@@ -12,7 +12,8 @@
 // ---------------------------------------------------------------------------
 // Costruttore
 // ---------------------------------------------------------------------------
-ServerSession::ServerSession(const char* initial_map_path, int initial_level, bool skip_lobby)
+ServerSession::ServerSession(const char* initial_map_path, int initial_level,
+                             bool skip_lobby, GameMode initial_mode)
     : initial_map_path_(initial_map_path ? initial_map_path : "")
     , initial_level_(initial_level)
     , current_level_([&]{ return (std::strstr(initial_map_path, "_Lobby") ||
@@ -21,6 +22,7 @@ ServerSession::ServerSession(const char* initial_map_path, int initial_level, bo
     , skip_lobby_(skip_lobby)
     , in_lobby_(!skip_lobby && (std::strstr(initial_map_path, "_Lobby") ||
                                 std::strstr(initial_map_path, "_lobby")))
+    , game_mode_(initial_mode)
 {
     // Load all chunks from the chunks directory for procedural generation.
     if (!chunk_store_.LoadFromDirectory("assets/levels/chunks")) {
@@ -32,8 +34,13 @@ ServerSession::ServerSession(const char* initial_map_path, int initial_level, bo
     if (skip_lobby_ && chunk_store_.IsReady()) {
         current_level_ = 1;
         is_ready_      = level_mgr_.Generate(current_level_, chunk_store_, 0, skip_lobby_);
-        if (is_ready_)
-            printf("[server] skip_lobby: generated level 1 immediately\n");
+        if (is_ready_) {
+            // Strip checkpoints for race mode.
+            if (game_mode_ == GameMode::RACE)
+                level_mgr_.GetWorldMut().StripCheckpoints();
+            printf("[server] skip_lobby: generated level 1 immediately (mode=%s)\n",
+                   game_mode_ == GameMode::RACE ? "RACE" : "COOP");
+        }
     } else {
         is_ready_ = level_mgr_.Load(initial_map_path);
     }
@@ -63,6 +70,10 @@ void ServerSession::OnConnect(ENetHost* host, ENetPeer* peer) {
     Player pl{};
     pl.SetState(ps);
     players_[peer] = pl;
+
+    // Leader election: first connected player becomes the leader.
+    if (leader_id_ == 0)
+        leader_id_ = ps.player_id;
 
     PktWelcome welcome{};
     welcome.player_id     = ps.player_id;
@@ -100,6 +111,9 @@ bool ServerSession::OnDisconnect(ENetHost* host, ENetPeer* peer) {
     best_ticks_.erase(peer);
     ready_peers_.erase(peer);
 
+    // Leader promotion: if the leader disconnected, elect a new one.
+    ElectLeader();
+
     // Se in results/global_results e tutti i rimanenti già pronti → transizione immediata.
     if ((in_results_ || in_global_results_) && !players_.empty() &&
         ready_peers_.size() >= players_.size()) {
@@ -124,6 +138,8 @@ bool ServerSession::OnDisconnect(ENetHost* host, ENetPeer* peer) {
                            initial_map_path_.find("_lobby") != std::string::npos);
         game_locked_   = false;
         session_token_ = 0u;
+        leader_id_     = 0;
+        game_mode_     = GameMode::COOP;
         current_level_ = in_lobby_ ? 0 : initial_level_;
         level_mgr_.Load(initial_map_path_.c_str());
         zone_start_ms_  = 0;
@@ -181,6 +197,15 @@ bool ServerSession::OnReceive(ENetHost* host, ENetPeer* peer,
         }
         return false;
     }
+    if (type == PKT_SET_GAME_MODE && len >= sizeof(PktSetGameMode)) {
+        PktSetGameMode mpkt{};
+        std::memcpy(&mpkt, data, sizeof(PktSetGameMode));
+        HandleSetGameMode(peer, mpkt);
+        return false;
+    }
+    if (type == PKT_START_GAME && len >= sizeof(PktStartGame)) {
+        return HandleStartGame(host, peer);
+    }
     return false;
 }
 
@@ -234,8 +259,8 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
         }
     }
 
-    // --- Checkpoint tile 'C' (shared: activates for all players) ---
-    if (!s.finished) {
+    // --- Checkpoint tile 'C' (shared: activates for all players) — COOP only ---
+    if (game_mode_ == GameMode::COOP && !s.finished) {
         const int txc0 = static_cast<int>(s.x)                    / TILE_SIZE;
         const int tyc0 = static_cast<int>(s.y)                    / TILE_SIZE;
         const int txc1 = static_cast<int>(s.x + TILE_SIZE - 1.f)  / TILE_SIZE;
@@ -292,10 +317,11 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     it->second.SetState(s);
 
     UpdateZone();
-    // Apply magnet grab/carry between players.
-    ApplyMagnetGrab();
-    // Push overlapping player AABBs apart each tick.
-    ResolvePlayerCollisions(world);
+    // Apply magnet grab/carry and player collisions — coop mode only.
+    if (game_mode_ == GameMode::COOP) {
+        ApplyMagnetGrab();
+        ResolvePlayerCollisions(world);
+    }
     BroadcastGameState(host);
 
     // --- Verifica scadenza timer zona ---
@@ -403,6 +429,77 @@ bool ServerSession::HandleReady(ENetHost* host, ENetPeer* peer) {
 }
 
 // ---------------------------------------------------------------------------
+// HandleSetGameMode — leader changes the game mode (lobby only)
+// ---------------------------------------------------------------------------
+void ServerSession::HandleSetGameMode(ENetPeer* peer, const PktSetGameMode& pkt) {
+    if (!in_lobby_) return;  // mode can only be changed in the lobby
+
+    auto it = players_.find(peer);
+    if (it == players_.end()) return;
+    const uint32_t pid = it->second.GetState().player_id;
+    if (pid != leader_id_) {
+        printf("[server] SET_GAME_MODE rejected: player_id=%u is not leader (%u)\n",
+               pid, leader_id_);
+        return;
+    }
+    const uint8_t mode = pkt.game_mode;
+    if (mode > static_cast<uint8_t>(GameMode::RACE)) return;  // invalid mode
+
+    game_mode_ = static_cast<GameMode>(mode);
+    printf("[server] GAME MODE changed to %s by leader %u\n",
+           game_mode_ == GameMode::RACE ? "RACE" : "COOP", leader_id_);
+}
+
+// ---------------------------------------------------------------------------
+// HandleStartGame — leader starts the game from lobby
+// ---------------------------------------------------------------------------
+bool ServerSession::HandleStartGame(ENetHost* host, ENetPeer* peer) {
+    if (!in_lobby_) return false;
+
+    auto it = players_.find(peer);
+    if (it == players_.end()) return false;
+    const uint32_t pid = it->second.GetState().player_id;
+    if (pid != leader_id_) {
+        printf("[server] START_GAME rejected: player_id=%u is not leader (%u)\n",
+               pid, leader_id_);
+        return false;
+    }
+
+    printf("[server] START_GAME by leader %u\n", leader_id_);
+    zone_start_ms_ = 0;
+    DoLevelChange(host);
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// ElectLeader — promote the player with the lowest player_id
+// ---------------------------------------------------------------------------
+void ServerSession::ElectLeader() {
+    if (players_.empty()) {
+        leader_id_ = 0;
+        return;
+    }
+    // Check if the current leader is still connected.
+    bool leader_alive = false;
+    for (const auto& [peer, pl] : players_) {
+        if (pl.GetState().player_id == leader_id_) {
+            leader_alive = true;
+            break;
+        }
+    }
+    if (leader_alive) return;
+
+    // Promote the player with the lowest player_id (earliest assigned).
+    uint32_t best_id = UINT32_MAX;
+    for (const auto& [peer, pl] : players_) {
+        const uint32_t id = pl.GetState().player_id;
+        if (id < best_id) best_id = id;
+    }
+    leader_id_ = best_id;
+    printf("[server] LEADER promoted: player_id=%u\n", leader_id_);
+}
+
+// ---------------------------------------------------------------------------
 // DoLevelChange — transizione al livello successivo (privato)
 // ---------------------------------------------------------------------------
 void ServerSession::DoLevelChange(ENetHost* host) {
@@ -445,6 +542,10 @@ void ServerSession::DoLevelChange(ENetHost* host) {
     }
 
     if (loaded) {
+        // Race mode: strip checkpoint tiles from the generated level.
+        if (game_mode_ == GameMode::RACE)
+            level_mgr_.GetWorldMut().StripCheckpoints();
+
         for (auto& [peer, pl] : players_) {
             // Full reset: clears dash/jump/movement state that was previously leaking
             // across levels (e.g. dash_active_ticks carrying over → instant dash on spawn).
@@ -485,6 +586,8 @@ void ServerSession::ResetToInitial(ENetHost* host) {
     game_locked_   = false;
     coop_cleared_levels_ = 0;
     session_token_ = 0u;
+    leader_id_     = 0;
+    game_mode_     = GameMode::COOP;
     current_level_ = in_lobby_ ? 0 : initial_level_;
     level_mgr_.Load(initial_map_path_.c_str());
     level_start_ms_ = enet_time_get();
@@ -558,6 +661,8 @@ void ServerSession::BroadcastGameState(ENetHost* host) {
     }
     gs_pkt.state.next_level_countdown_ticks = CountdownTicks();
     gs_pkt.state.is_lobby    = in_lobby_ ? 1u : 0u;
+    gs_pkt.state.game_mode   = static_cast<uint8_t>(game_mode_);
+    gs_pkt.state.leader_id   = leader_id_;
     if (!in_lobby_ && !in_results_) {
         const uint32_t el = enet_time_get() - level_start_ms_;
         gs_pkt.state.time_limit_secs = el < LEVEL_TIME_LIMIT_MS

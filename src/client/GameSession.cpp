@@ -8,6 +8,7 @@
 #include "Physics.h"    // FIXED_DT, TILE_SIZE
 #include "Colors.h"
 #include "Protocol.h"   // LOBBY_MAP_PATH, PKT_* constants
+#include "GameMode.h"
 #include "SpawnFinder.h" // FindCenterSpawn (shared con server)
 #include <algorithm>
 #include <cmath>
@@ -131,6 +132,23 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
             eb.active   = true;
             eb.last_x   = player_.GetState().x;
             eb.last_y   = player_.GetState().y;
+        }
+    }
+
+    // 5d. Lobby controls — leader can toggle mode (TAB) and start game (G)
+    if (pause_state_ == PauseState::PLAYING && last_game_state_.is_lobby
+        && local_player_id_ == last_game_state_.leader_id) {
+        if (IsKeyPressed(KEY_TAB)) {
+            PktSetGameMode mpkt{};
+            const GameMode cur = static_cast<GameMode>(last_game_state_.game_mode);
+            mpkt.game_mode = (cur == GameMode::RACE)
+                ? static_cast<uint8_t>(GameMode::COOP)
+                : static_cast<uint8_t>(GameMode::RACE);
+            net.SendReliable(&mpkt, sizeof(mpkt));
+        }
+        if (IsKeyPressed(KEY_G)) {
+            PktStartGame spkt{};
+            net.SendReliable(&spkt, sizeof(spkt));
         }
     }
 
@@ -1002,14 +1020,16 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
                 const PlayerState& rp = last_game_state_.players[i];
                 if (rp.player_id != 0 && rp.player_id != local_player_id_
                     && rp.kill_respawn_ticks == 0)
-                    renderer.DrawPlayer(rp.x, rp.y, rp, false);
+                    renderer.DrawPlayer(rp.x, rp.y, rp, false,
+                                        rp.player_id == last_game_state_.leader_id);
             }
         }
 
         // Player locale (nascosto durante il respawn)
         const PlayerState& local = player_.GetState();
         if (local.kill_respawn_ticks == 0)
-            renderer.DrawPlayer(draw_x, draw_y, local);
+            renderer.DrawPlayer(draw_x, draw_y, local, true,
+                                local.player_id == last_game_state_.leader_id);
 
         // --- Emote bubbles (world-space, above each player) ---
         for (auto& [pid, eb] : emote_bubbles_) {
@@ -1050,7 +1070,8 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
         renderer.DrawOffscreenArrows(last_game_state_, local_player_id_);
 
     // HUD
-    renderer.DrawHUD(local, last_game_state_.count, !is_offline_);
+    const GameMode cur_mode = static_cast<GameMode>(last_game_state_.game_mode);
+    renderer.DrawHUD(local, last_game_state_.count, !is_offline_, cur_mode);
     renderer.DrawLevelIndicator(current_level_);
     renderer.DrawNetStats(net.GetRTT(), net.GetJitter(), net.GetLoss());
 
@@ -1076,9 +1097,14 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
             last_game_state_.next_level_countdown_ticks);
     }
 
-    if (last_game_state_.is_lobby)
+    if (last_game_state_.is_lobby) {
         renderer.DrawLobbyHints(last_game_state_.next_level_countdown_ticks,
                                 last_game_state_.count);
+        // Lobby options panel
+        const bool am_leader = (local_player_id_ == last_game_state_.leader_id);
+        renderer.DrawLobbyOptions(cur_mode, am_leader,
+                                  last_game_state_.leader_id, last_game_state_);
+    }
 
     // Emote wheel (screen-space, centered, above HUD, below pause)
     if (input_sampler_.IsEmoteWheelOpen() && pause_state_ == PauseState::PLAYING) {
@@ -1092,12 +1118,12 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
     renderer.DrawResultsScreen(in_results_screen_, local_ready_,
         results_entries_, results_count_, results_level_,
         GetTime() - results_start_time_, RESULTS_DURATION_S,
-        results_coop_all_finished_);
+        results_coop_all_finished_, cur_mode);
 
     renderer.DrawGlobalResultsScreen(in_global_results_screen_, local_global_ready_,
         global_results_entries_, global_results_count_, global_results_total_levels_,
         GetTime() - global_results_start_time_, GLOBAL_RESULTS_DURATION_S,
-        global_results_coop_wins_);
+        global_results_coop_wins_, cur_mode);
 
     renderer.EndFrame();
 }
