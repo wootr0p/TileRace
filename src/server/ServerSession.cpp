@@ -317,7 +317,19 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     UpdateZone();
     // Apply magnet grab/carry and player collisions — coop mode only.
     if (game_mode_ == GameMode::COOP) {
-        ApplyMagnetGrab();
+        // If this player is currently grabbed and presses jump or dash, break free.
+        // Pass the freed peer to ApplyMagnetGrab so it isn't immediately re-grabbed.
+        ENetPeer* break_free_peer = nullptr;
+        if (s.grabbed && (pkt.frame.Has(BTN_JUMP_PRESS) || pkt.frame.Has(BTN_DASH))) {
+            for (auto& [grabber, grabbed_peer] : grab_targets_) {
+                if (grabbed_peer == peer) {
+                    ReleaseGrab(grabber);
+                    break_free_peer = peer;
+                    break;
+                }
+            }
+        }
+        ApplyMagnetGrab(break_free_peer);
         ResolvePlayerCollisions(world);
     }
     BroadcastGameState(host);
@@ -852,7 +864,7 @@ void ServerSession::ReleaseGrab(ENetPeer* grabber) {
 // ---------------------------------------------------------------------------
 // ApplyMagnetGrab — magnet holders grab the closest player and carry them
 // ---------------------------------------------------------------------------
-void ServerSession::ApplyMagnetGrab() {
+void ServerSession::ApplyMagnetGrab(ENetPeer* break_free) {
     if (players_.size() < 2) return;
 
     // 1. Release grabs for players that stopped magneting, died, or whose target is gone/dead.
@@ -889,6 +901,7 @@ void ServerSession::ApplyMagnetGrab() {
 
         for (auto& [other_peer, other_pl] : players_) {
             if (other_peer == peer) continue;
+            if (other_peer == break_free) continue;  // just broke free this tick — skip
             const PlayerState& os = other_pl.GetState();
             if (os.kill_respawn_ticks > 0 || os.respawn_grace_ticks > 0 || os.finished) continue;
             if (os.grabbed) continue;       // already grabbed by someone else
@@ -913,7 +926,9 @@ void ServerSession::ApplyMagnetGrab() {
     }
 
     // 3. Snap each grabbed player on top of the grabber and clamp to world.
+    //    Release immediately if the grabbed player ends up against a horizontal wall.
     const World& world = level_mgr_.GetWorld();
+    std::vector<ENetPeer*> wall_release;
     for (auto& [grabber, grabbed] : grab_targets_) {
         auto git = players_.find(grabber);
         auto tit = players_.find(grabbed);
@@ -922,15 +937,24 @@ void ServerSession::ApplyMagnetGrab() {
         const PlayerState& gs = git->second.GetState();
         PlayerState ts = tit->second.GetState();
         // Place the grabbed player on top of the grabber (one tile above).
-        ts.x = gs.x;
+        const float snap_x = gs.x;
+        ts.x = snap_x;
         ts.y = gs.y - static_cast<float>(TILE_SIZE);
         ts.vel_x = 0.f;
         ts.vel_y = 0.f;
         ts.move_vel_x = 0.f;
         // Resolve any solid-tile overlap so the grabbed player doesn't clip into walls.
         ClampToWorld(ts, world);
+        // If ClampToWorld had to shift the player horizontally, they hit a wall — release.
+        // Any horizontal correction is at least 1 px; 0.5f safely detects any real adjustment.
+        const float dx_wall = ts.x - snap_x;
+        if (dx_wall < -0.5f || dx_wall > 0.5f) {
+            wall_release.push_back(grabber);
+            continue;
+        }
         tit->second.SetState(ts);
     }
+    for (ENetPeer* g : wall_release) ReleaseGrab(g);
 }
 
 void ServerSession::ResolvePlayerCollisions(const World& world) {
