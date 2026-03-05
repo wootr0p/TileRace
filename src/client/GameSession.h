@@ -111,6 +111,7 @@ private:
     PauseState pause_state_    = PauseState::PLAYING;
     int        pause_focused_  = 0;   // 0=Resume, 1=Quit to Menu
     int        confirm_focused_= 0;   // 0=No, 1=Yes
+    float      prev_pause_right_stick_x_ = 0.f;
 
     bool        session_over_ = false;
     std::string end_message_;

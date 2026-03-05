@@ -303,12 +303,49 @@ void GameSession::HandlePauseInput(Renderer& renderer, NetworkClient& net) {
         }
 
     } else if (pause_state_ == PauseState::LOBBY_SETTINGS) {
-        auto ls_rect = [&](int i) -> Rectangle { return renderer.GetPauseItemRect(i, 2); };
-        for (int i = 0; i < 2; i++)
+        auto ls_rect = [&](int i) -> Rectangle { return renderer.GetPauseItemRect(i, 3); };
+        for (int i = 0; i < 3; i++)
             if (CheckCollisionPointRec(mouse, ls_rect(i))) pause_focused_ = i;
 
+        const bool gp = IsGamepadAvailable(0);
+        const float rsx = gp ? GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X) : 0.f;
+        const bool stick_right = (prev_pause_right_stick_x_ < 0.5f && rsx >= 0.5f);
+        const bool stick_left  = (prev_pause_right_stick_x_ > -0.5f && rsx <= -0.5f);
+        prev_pause_right_stick_x_ = rsx;
+
+        const bool nav_left  = IsKeyPressed(KEY_LEFT)
+            || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT))
+            || stick_left;
+        const bool nav_right = IsKeyPressed(KEY_RIGHT)
+            || (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT))
+            || stick_right;
+        const float wheel = GetMouseWheelMove();
+        const bool wheel_left = wheel < -0.01f;
+        const bool wheel_right = wheel > 0.01f;
+
+        auto current_max_levels = [&]() -> uint8_t {
+            uint8_t v = last_game_state_.max_generated_levels;
+            if (v < static_cast<uint8_t>(MIN_GENERATED_LEVELS) ||
+                v > static_cast<uint8_t>(MAX_GENERATED_LEVELS_LIMIT)) {
+                v = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
+            }
+            return v;
+        };
+        auto send_max_levels = [&](int delta) {
+            int value = static_cast<int>(current_max_levels()) + delta;
+            if (value < MIN_GENERATED_LEVELS) value = MIN_GENERATED_LEVELS;
+            if (value > MAX_GENERATED_LEVELS_LIMIT) value = MAX_GENERATED_LEVELS_LIMIT;
+            if (value == static_cast<int>(current_max_levels())) return;
+            PktSetMaxLevels lpkt{};
+            lpkt.max_levels = static_cast<uint8_t>(value);
+            net.SendReliable(&lpkt, sizeof(lpkt));
+        };
+
         if      (toggle)       { pause_state_ = PauseState::PAUSED; pause_focused_ = 0; }
-        else if (nav_up || nav_dn)  pause_focused_ = 1 - pause_focused_;
+        else if (nav_up)       pause_focused_ = (pause_focused_ + 2) % 3;
+        else if (nav_dn)       pause_focused_ = (pause_focused_ + 1) % 3;
+        else if (pause_focused_ == 1 && (nav_left || wheel_left))  send_max_levels(-1);
+        else if (pause_focused_ == 1 && (nav_right || wheel_right)) send_max_levels(+1);
         else if (ok || (clicked && CheckCollisionPointRec(mouse, ls_rect(pause_focused_)))) {
             if (pause_focused_ == 0) {
                 // Toggle mode
@@ -318,6 +355,9 @@ void GameSession::HandlePauseInput(Renderer& renderer, NetworkClient& net) {
                     ? static_cast<uint8_t>(GameMode::COOP)
                     : static_cast<uint8_t>(GameMode::RACE);
                 net.SendReliable(&mpkt, sizeof(mpkt));
+            } else if (pause_focused_ == 1) {
+                // Quick increment when confirming the levels row.
+                send_max_levels(+1);
             } else {
                 // Back
                 pause_state_ = PauseState::PAUSED; pause_focused_ = 0;
@@ -1134,8 +1174,13 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
 
     const bool show_lobby_settings = last_game_state_.is_lobby
         && (local_player_id_ == last_game_state_.leader_id);
+    uint8_t lobby_max_levels = last_game_state_.max_generated_levels;
+    if (lobby_max_levels < static_cast<uint8_t>(MIN_GENERATED_LEVELS) ||
+        lobby_max_levels > static_cast<uint8_t>(MAX_GENERATED_LEVELS_LIMIT)) {
+        lobby_max_levels = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
+    }
     renderer.DrawPauseMenu(pause_state_, pause_focused_, confirm_focused_, sfx_.IsMuted(),
-                           show_lobby_settings, cur_mode);
+                           show_lobby_settings, cur_mode, lobby_max_levels);
 
     renderer.DrawResultsScreen(in_results_screen_, local_ready_,
         results_entries_, results_count_, results_level_,

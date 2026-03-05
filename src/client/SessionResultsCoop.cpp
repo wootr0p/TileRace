@@ -25,11 +25,36 @@ void DrawSessionResultsModeCoop(Font& font_hud, Font& font_timer,
     const Vector2 v_tsz  = MeasureTextEx(font_timer, verdict, 72, 1);
     DrawTextEx(font_timer, verdict, {rcx - v_tsz.x * 0.5f, 30.f}, 72, 1, vcol);
 
+    const float pct = (total_levels > 0)
+        ? (100.f * static_cast<float>(coop_wins) / static_cast<float>(total_levels))
+        : 0.f;
+    const char* medal_name = "No Medal";
+    Color medal_col = CLRS_TEXT_DIM;
+    if (total_levels > 0 && coop_wins == total_levels) {
+        medal_name = "DIAMOND MEDAL";
+        medal_col = Color{160, 245, 255, 255};
+    } else if (pct >= 90.f) {
+        medal_name = "GOLD MEDAL";
+        medal_col = CLRS_RESULTS_GOLD;
+    } else if (pct >= 80.f) {
+        medal_name = "SILVER MEDAL";
+        medal_col = CLRS_RESULTS_SILVER;
+    } else if (pct >= 70.f) {
+        medal_name = "BRONZE MEDAL";
+        medal_col = CLRS_RESULTS_BRONZE;
+    } else if (pct >= 50.f) {
+        medal_name = "WOOD MEDAL";
+        medal_col = Color{139, 94, 60, 255};
+    }
+    const char* medal_lbl = TextFormat("Reward: %s", medal_name);
+    const Vector2 msz = MeasureTextEx(font_hud, medal_lbl, 28, 1);
+    DrawTextEx(font_hud, medal_lbl, {rcx - msz.x * 0.5f, 108.f}, 28, 1, medal_col);
+
     const char* g_sub = TextFormat("Levels cleared: %u / %u", (unsigned)coop_wins, (unsigned)total_levels);
     const Vector2 g_ssz = MeasureTextEx(font_hud, g_sub, 26, 1);
-    DrawTextEx(font_hud, g_sub, {rcx - g_ssz.x * 0.5f, 116.f}, 26, 1, CLRS_TEXT_DIM);
+    DrawTextEx(font_hud, g_sub, {rcx - g_ssz.x * 0.5f, 144.f}, 26, 1, CLRS_TEXT_DIM);
 
-    const float row_start_y = 168.f;
+    const float row_start_y = 190.f;
     DrawLineEx({rcx - 200.f, row_start_y - 4.f}, {rcx + 200.f, row_start_y - 4.f}, 1.f, CLRS_TEXT_DIM);
     for (int gi = 0; gi < (int)count; gi++) {
         const GlobalResultEntry& ge = entries[gi];

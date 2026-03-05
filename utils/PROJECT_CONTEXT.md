@@ -9,7 +9,7 @@
 
 TileRace is a real-time 2D side-scrolling platformer (cross-platform) supporting two game modes:
 
-- **Co-op** (default online): 2–8 players work together to reach an exit tile. All players must finish the level to clear it. Shared checkpoints, player-to-player collisions, and magnet grab are active.
+- **Co-op** (default online): 2–8 players work together to reach an exit tile. A level is cleared as soon as at least one player reaches the exit (team win). Shared checkpoints, player-to-player collisions, and magnet grab are active.
 - **Race** (default offline): players race individually to the exit. No player collisions, no checkpoints in generated levels. Each player's finish time is tracked independently.
 
 The **session leader** (first connected player) can switch between modes via the pause menu's "Lobby Settings" option.
@@ -22,7 +22,7 @@ The **session leader** (first connected player) can switch between modes via the
 - Dash push: dashing into another player slams them with 0.8× dash velocity
 - Sprint: hold Right Ctrl / R2 for 2× horizontal speed (disabled during dash)
 - Magnet grab: hold Alt / Circle to grab and carry a nearby player (MAGNET_RANGE, GRAB_OFFSET_X)
-- Drawing trails: hold P / L2 to leave persistent coloured spline marks on the map
+- Drawing trails: hold P / R1 to leave persistent coloured spline marks on the map
 - Kill tiles ('K') that trigger a death animation and respawn
 - Ready/Go! overlay displayed at the start of each level
 
@@ -32,7 +32,7 @@ The **session leader** (first connected player) can switch between modes via the
 | ← / → / A / D | Left stick / D-pad | Move |
 | SPACE | Cross (×) | Jump / wall-jump |
 | SHIFT | Square (□) | Dash (direction from stick/WASD/D-pad) |
-| P | L2 (left trigger) | Draw trail on map (hold) |
+| P | R1 (right bumper) | Draw trail on map (hold) |
 | Right Ctrl | R2 (right trigger) | Sprint (hold) |
 | Alt | Circle (○) | Magnet grab — grab and carry a nearby player (hold) |
 | Backspace | Triangle (△) | Restart from last checkpoint |
@@ -86,28 +86,28 @@ TileRace         (exe)         ← client/main.cpp + all client .cpp files (incl
 
 The codebase was refactored to follow SOLID and DRY principles:
 
-| File             | Responsibility                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| `GameSession`    | One play session: physics tick, reconciliation, render coordination                  |
-| `NetworkClient`  | ENet abstraction; `<enet/enet.h>` never appears outside NetworkClient.cpp            |
-| `InputSampler`   | All keyboard + gamepad sampling; sticky flags for rising-edge events                 |
-| `Renderer`       | All Raylib draw calls; no other file calls DrawXxx / BeginDrawing. Dispatches mode-specific rendering by `GameMode` |
-| `HudCoop` / `HudRace` | Mode-specific HUD overlay (co-op: standard; race: adds "Race Mode" label top-right) |
-| `LevelResultsCoop` / `LevelResultsRace` | Mode-specific end-of-level results screen |
-| `SessionResultsCoop` / `SessionResultsRace` | Mode-specific session-end global results screen |
-| `UIWidgets`      | Stateless Raylib UI helpers (buttons, text fields, CTRL+V paste support)             |
-| `VisualEffects`  | Client-only effect structs (trail, death particles, PauseState enum incl. LOBBY_SETTINGS) — no Raylib draw calls |
-| `LocalServer`    | Wraps server thread for offline mode                                                 |
-| `ServerSession`  | Full server session state machine; ENet-loop-agnostic. Manages leader election and game mode |
-| `LevelManager`   | Load maps, compute spawn, generate levels from chunks                                |
-| `ChunkStore`     | Loads all chunk TMJ files at startup; classifies into start/mid/end pools            |
-| `LevelGenerator` | Composes playable levels from chunks with difficulty-curve-based selection           |
-| `LevelValidator` | AI agent: BFS over ground tiles using real Player::Simulate to verify completability |
-| `SpawnFinder.h`  | Header-only; shared between GameSession and LevelManager                             |
-| `PlayerReset.h`  | Header-only; shared reset helper for kill/restart/level-change events                |
-| `SoundPool`      | Pool of N sound variants; random pitch ±7 %; 2-D spatial audio (volume + stereo pan) |
-| `SfxManager`     | Owns jump + dash SoundPools; mute toggle; local vs. spatialized remote play          |
-| `GameMode.h`     | Header-only enum `GameMode { COOP, RACE }` — shared between client and server        |
+| File                                        | Responsibility                                                                                                      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `GameSession`                               | One play session: physics tick, reconciliation, render coordination                                                 |
+| `NetworkClient`                             | ENet abstraction; `<enet/enet.h>` never appears outside NetworkClient.cpp                                           |
+| `InputSampler`                              | All keyboard + gamepad sampling; sticky flags for rising-edge events                                                |
+| `Renderer`                                  | All Raylib draw calls; no other file calls DrawXxx / BeginDrawing. Dispatches mode-specific rendering by `GameMode` |
+| `HudCoop` / `HudRace`                       | Mode-specific HUD overlay (co-op: standard; race: adds "Race Mode" label top-right)                                 |
+| `LevelResultsCoop` / `LevelResultsRace`     | Mode-specific end-of-level results screen                                                                           |
+| `SessionResultsCoop` / `SessionResultsRace` | Mode-specific session-end global results screen                                                                     |
+| `UIWidgets`                                 | Stateless Raylib UI helpers (buttons, text fields, CTRL+V paste support)                                            |
+| `VisualEffects`                             | Client-only effect structs (trail, death particles, PauseState enum incl. LOBBY_SETTINGS) — no Raylib draw calls    |
+| `LocalServer`                               | Wraps server thread for offline mode                                                                                |
+| `ServerSession`                             | Full server session state machine; ENet-loop-agnostic. Manages leader election and game mode                        |
+| `LevelManager`                              | Load maps, compute spawn, generate levels from chunks                                                               |
+| `ChunkStore`                                | Loads all chunk TMJ files at startup; classifies into start/mid/end pools                                           |
+| `LevelGenerator`                            | Composes playable levels from chunks with difficulty-curve-based selection                                          |
+| `LevelValidator`                            | AI agent: BFS over ground tiles using real Player::Simulate to verify completability                                |
+| `SpawnFinder.h`                             | Header-only; shared between GameSession and LevelManager                                                            |
+| `PlayerReset.h`                             | Header-only; shared reset helper for kill/restart/level-change events                                               |
+| `SoundPool`                                 | Pool of N sound variants; random pitch ±7 %; 2-D spatial audio (volume + stereo pan)                                |
+| `SfxManager`                                | Owns jump + dash SoundPools; mute toggle; local vs. spatialized remote play                                         |
+| `GameMode.h`                                | Header-only enum `GameMode { COOP, RACE }` — shared between client and server                                       |
 
 ---
 
@@ -255,6 +255,7 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 `GameState` broadcasts `game_mode` and `leader_id` every tick so all clients stay in sync.
 
 In **race mode**:
+
 - `ResolvePlayerCollisions` and `ApplyMagnetGrab` are skipped (players pass through each other).
 - Checkpoint activation is skipped in `HandleInput`.
 - `World::StripCheckpoints()` replaces all 'C' tiles with air (' ') after level generation.
@@ -263,15 +264,15 @@ In **race mode**:
 
 Each of these rendering areas is split into a co-op file and a race file:
 
-| Feature          | Co-op file              | Race file               |
-| ---------------- | ----------------------- | ----------------------- |
-| HUD overlay      | `HudCoop.cpp`           | `HudRace.cpp`           |
-| Level results    | `LevelResultsCoop.cpp`  | `LevelResultsRace.cpp`  |
-| Session results  | `SessionResultsCoop.cpp`| `SessionResultsRace.cpp`|
+| Feature         | Co-op file               | Race file                |
+| --------------- | ------------------------ | ------------------------ |
+| HUD overlay     | `HudCoop.cpp`            | `HudRace.cpp`            |
+| Level results   | `LevelResultsCoop.cpp`   | `LevelResultsRace.cpp`   |
+| Session results | `SessionResultsCoop.cpp` | `SessionResultsRace.cpp` |
 
 `Renderer` dispatches to the mode-specific implementation via `GameMode` parameter.
 Race mode variants are currently identical to co-op but include a "Race Mode" header label.
-Race mode HUD timers differ from co-op: the **top centre (48 px)** shows the player's current level completion time (`level_ticks` → `MM:SS.cc`), while the **top right (24 px)** shows the level expiry countdown directly below the "Race Mode" label (at y=36 px). Co-op mode shows only the time limit countdown at top centre.
+Both HUD variants show a top-right mode label ("Co-op Mode" / "Race Mode"). Race mode HUD timers differ from co-op: the **top centre (48 px)** shows the player's current level completion time (`level_ticks` → `MM:SS.cc`), while the **top right (24 px)** shows the level expiry countdown directly below the "Race Mode" label (at y=36 px). Co-op mode shows only the time limit countdown at top centre.
 Race mode session results show a **leaderboard sorted by wins descending**: each row displays rank (#1, #2, …), player name, and win count. First place uses the accent colour.
 
 ### Leader election
@@ -283,6 +284,8 @@ Race mode session results show a **leaderboard sorted by wins descending**: each
 ### Leader powers (lobby only)
 
 - **Toggle mode:** leader opens the pause menu and selects "Lobby Settings" → "Mode" to toggle between Co-op and Race. The client sends `PKT_SET_GAME_MODE`; server validates sender is leader.
+- **Session length:** leader opens "Lobby Settings" → "Levels" and changes generated levels per session (`PKT_SET_MAX_LEVELS`).
+  Supported range is `1..20`, default `5`. Controls: left/right, mouse wheel, D-pad left/right, right stick left/right.
 - **Start game:** the game starts automatically when all players reach the exit zone 'E'. The `PKT_START_GAME` packet is still supported server-side (for potential future UI use) but is no longer sent by the client (the G key binding was removed).
 
 ### Visual indicators
@@ -336,11 +339,11 @@ After generation, `LevelValidator` runs a BFS agent that tries ~17 macro-actions
 (walk, jump, dash, wall-jump, dash-jump combos) from every reachable ground tile
 using the real `Player::Simulate` physics. If the agent cannot reach any 'E' tile,
 the level is discarded and regenerated with a different seed (up to 10 retries).
-**Validation is only enabled in offline (single-player) mode**; online mode skips
-it entirely so that occasional impossible levels can appear (intentionally fun).
+**Validation is enabled in offline mode**; unsolved variants are discarded.
+Online mode skips validation (`validate=false`) for faster generation.
 Generated levels are transmitted to clients via `PKT_LEVEL_DATA` (variable-size packet
 containing the full tile grid, including the `level` number for HUD display).
-`MAX_GENERATED_LEVELS = 10` controls how many levels are played before the session ends.
+Generated levels per session are leader-configurable in lobby (`1..20`, default `5`).
 
 **Difficulty curve:** the generator maps `level_num / total_levels` to a `[0,1]` progression
 (`t`), then selects mid chunks whose `difficulty` property falls within a band centred on

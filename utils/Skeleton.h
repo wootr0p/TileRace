@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-05 16:05
+ * Generated : 2026-03-05 20:52
  * ============================================================================
  *
  * PURPOSE
@@ -125,42 +125,42 @@
  *   └── app_icon.rc.in
  *
  * HEADERS INCLUDED BELOW  (36 files)
- *   [01]  src/common/GameMode.h
- *   [02]  src/common/GameState.h
- *   [03]  src/common/InputFrame.h
- *   [04]  src/common/Physics.h
- *   [05]  src/common/Player.h
- *   [06]  src/common/PlayerState.h
- *   [07]  src/common/Protocol.h
- *   [08]  src/common/SpawnFinder.h
- *   [09]  src/common/World.h
- *   [10]  src/server/ChunkStore.h
- *   [11]  src/server/LevelGenerator.h
- *   [12]  src/server/LevelManager.h
- *   [13]  src/server/LevelValidator.h
- *   [14]  src/server/PlayerReset.h
- *   [15]  src/server/ServerLogic.h
- *   [16]  src/server/ServerSession.h
- *   [17]  src/client/Colors.h
- *   [18]  src/client/GameSession.h
- *   [19]  src/client/HudCoop.h
- *   [20]  src/client/HudRace.h
- *   [21]  src/client/InputSampler.h
- *   [22]  src/client/LevelPalette.h
- *   [23]  src/client/LevelResultsCoop.h
- *   [24]  src/client/LevelResultsRace.h
- *   [25]  src/client/LocalServer.h
- *   [26]  src/client/MainMenu.h
- *   [27]  src/client/NetworkClient.h
- *   [28]  src/client/Renderer.h
- *   [29]  src/client/SaveData.h
- *   [30]  src/client/SessionResultsCoop.h
- *   [31]  src/client/SessionResultsRace.h
- *   [32]  src/client/SfxManager.h
- *   [33]  src/client/SoundPool.h
- *   [34]  src/client/UIWidgets.h
- *   [35]  src/client/VisualEffects.h
- *   [36]  src/client/WinIcon.h
+ *   [01]  src\common\GameMode.h
+ *   [02]  src\common\GameState.h
+ *   [03]  src\common\InputFrame.h
+ *   [04]  src\common\Physics.h
+ *   [05]  src\common\Player.h
+ *   [06]  src\common\PlayerState.h
+ *   [07]  src\common\Protocol.h
+ *   [08]  src\common\SpawnFinder.h
+ *   [09]  src\common\World.h
+ *   [10]  src\server\ChunkStore.h
+ *   [11]  src\server\LevelGenerator.h
+ *   [12]  src\server\LevelManager.h
+ *   [13]  src\server\LevelValidator.h
+ *   [14]  src\server\PlayerReset.h
+ *   [15]  src\server\ServerLogic.h
+ *   [16]  src\server\ServerSession.h
+ *   [17]  src\client\Colors.h
+ *   [18]  src\client\GameSession.h
+ *   [19]  src\client\HudCoop.h
+ *   [20]  src\client\HudRace.h
+ *   [21]  src\client\InputSampler.h
+ *   [22]  src\client\LevelPalette.h
+ *   [23]  src\client\LevelResultsCoop.h
+ *   [24]  src\client\LevelResultsRace.h
+ *   [25]  src\client\LocalServer.h
+ *   [26]  src\client\MainMenu.h
+ *   [27]  src\client\NetworkClient.h
+ *   [28]  src\client\Renderer.h
+ *   [29]  src\client\SaveData.h
+ *   [30]  src\client\SessionResultsCoop.h
+ *   [31]  src\client\SessionResultsRace.h
+ *   [32]  src\client\SfxManager.h
+ *   [33]  src\client\SoundPool.h
+ *   [34]  src\client\UIWidgets.h
+ *   [35]  src\client\VisualEffects.h
+ *   [36]  src\client\WinIcon.h
  * ============================================================================
  */
 
@@ -203,7 +203,8 @@ struct GameState {
     uint32_t    time_limit_secs            = 0;   // remaining seconds of the 2-minute time limit
     uint8_t     is_lobby                   = 0;   // 1 when the active map is _lobby.txt
     uint8_t     game_mode                  = static_cast<uint8_t>(GameMode::COOP);
-    uint8_t     pad[2]                     = {};
+    uint8_t     max_generated_levels       = 5;   // authoritative session setting (leader can change in lobby)
+    uint8_t     pad[1]                     = {};
     uint32_t    leader_id                  = 0;   // player_id of the current session leader
 };
 
@@ -432,7 +433,7 @@ struct PlayerState {
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
 static constexpr const char*  GAME_VERSION     = "0.2.6b";
-static constexpr uint16_t     PROTOCOL_VERSION = 10;
+static constexpr uint16_t     PROTOCOL_VERSION = 11;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -471,6 +472,7 @@ enum PktType : uint8_t {
     PKT_GENERATING        = 17,  // S → C  server is generating the next level; client shows loading overlay
     PKT_SET_GAME_MODE     = 18,  // C → S  leader sets the game mode (coop / race)
     PKT_START_GAME        = 19,  // C → S  leader starts the game from the lobby
+    PKT_SET_MAX_LEVELS    = 20,  // C → S  leader sets generated levels per session
 };
 
 struct PktInput {
@@ -575,7 +577,9 @@ struct PktLevelDataHeader {
 };
 
 // Number of generated levels per session before returning to lobby.
-static constexpr int MAX_GENERATED_LEVELS   = 10;   // levels per session
+static constexpr int MAX_GENERATED_LEVELS       = 5;   // default levels per session
+static constexpr int MIN_GENERATED_LEVELS       = 1;
+static constexpr int MAX_GENERATED_LEVELS_LIMIT = 20;
 static constexpr int DIFFICULTY_CURVE_LEVELS = 8;   // difficulty ramp reference
 
 // Emote system — 8 directional emotes (mapped clockwise from Up).
@@ -606,6 +610,12 @@ struct PktGenerating {
 struct PktSetGameMode {
     uint8_t type      = PKT_SET_GAME_MODE;
     uint8_t game_mode = 0;  // 0 = COOP, 1 = RACE
+};
+
+// Leader sets how many generated levels are played in this session.
+struct PktSetMaxLevels {
+    uint8_t type       = PKT_SET_MAX_LEVELS;
+    uint8_t max_levels = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
 };
 
 // Leader starts the game from the lobby. Only accepted from the current session leader.
@@ -1012,7 +1022,8 @@ private:
     void HandleRestart   (ENetPeer* peer);       // respawn at last checkpoint (or spawn)
     void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn
     bool HandleReady     (ENetHost* host, ENetPeer* peer);  // returns true on level change
-    void HandleSetGameMode(ENetPeer* peer, const PktSetGameMode& pkt);
+    void HandleSetGameMode(ENetHost* host, ENetPeer* peer, const PktSetGameMode& pkt);
+    void HandleSetMaxLevels(ENetHost* host, ENetPeer* peer, const PktSetMaxLevels& pkt);
     bool HandleStartGame (ENetHost* host, ENetPeer* peer);  // returns true on level change
 
     // Load next map, reset all players, broadcast new state.
@@ -1047,6 +1058,7 @@ private:
     int          current_level_;
     bool         skip_lobby_          = false;
     uint32_t     coop_cleared_levels_ = 0;   // number of levels fully cleared by the team
+    uint8_t      session_max_levels_  = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
 
     bool         is_ready_           = false;
     bool         in_lobby_            = false;
@@ -1278,6 +1290,7 @@ private:
     PauseState pause_state_    = PauseState::PLAYING;
     int        pause_focused_  = 0;   // 0=Resume, 1=Quit to Menu
     int        confirm_focused_= 0;   // 0=No, 1=Yes
+    float      prev_pause_right_stick_x_ = 0.f;
 
     bool        session_over_ = false;
     std::string end_message_;
@@ -1774,7 +1787,8 @@ public:
     // Pause menu
     Rectangle GetPauseItemRect(int item_index, int total_items = 3) const;  // for mouse hit-testing in GameSession
     void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
-                       bool show_lobby_settings = false, GameMode lobby_mode = GameMode::COOP);
+                       bool show_lobby_settings = false, GameMode lobby_mode = GameMode::COOP,
+                       uint8_t lobby_max_levels = static_cast<uint8_t>(MAX_GENERATED_LEVELS));
 
     // End-of-level results screen
     void DrawResultsScreen(bool in_results, bool local_ready,

@@ -86,7 +86,8 @@ public:
     // Pause menu
     Rectangle GetPauseItemRect(int item_index, int total_items = 3) const;  // for mouse hit-testing in GameSession
     void DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
-                       bool show_lobby_settings = false, GameMode lobby_mode = GameMode::COOP);
+                       bool show_lobby_settings = false, GameMode lobby_mode = GameMode::COOP,
+                       uint8_t lobby_max_levels = static_cast<uint8_t>(MAX_GENERATED_LEVELS));
 
     // End-of-level results screen
     void DrawResultsScreen(bool in_results, bool local_ready,

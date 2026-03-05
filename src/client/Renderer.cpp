@@ -509,7 +509,7 @@ void Renderer::DrawLobbyOptions(GameMode mode, bool is_leader, uint32_t leader_i
 
     // Panel background
     DrawRectangle(static_cast<int>(panel_x - 10), static_cast<int>(panel_y - 10),
-                  270, static_cast<int>(line_h * 3 + 20), {0, 0, 0, 140});
+                  270, static_cast<int>(line_h * 4 + 20), {0, 0, 0, 140});
 
     // Title
     DrawTextEx(font_bold_, "LOBBY", {panel_x, panel_y}, 22, 1, CLRS_ACCENT);
@@ -522,6 +522,9 @@ void Renderer::DrawLobbyOptions(GameMode mode, bool is_leader, uint32_t leader_i
     const char* mode_str = (mode == GameMode::RACE) ? "RACE" : "CO-OP";
     const char* mode_lbl = TextFormat("Mode: %s", mode_str);
     DrawTextEx(font_hud_, mode_lbl, {panel_x, panel_y + line_h * 2}, 20, 1, CLRS_TEXT_MAIN);
+
+    const char* levels_lbl = TextFormat("Levels: %u", static_cast<unsigned>(gs.max_generated_levels));
+    DrawTextEx(font_hud_, levels_lbl, {panel_x, panel_y + line_h * 3}, 20, 1, CLRS_TEXT_MAIN);
 }
 
 // ---------------------------------------------------------------------------
@@ -654,7 +657,8 @@ Rectangle Renderer::GetPauseItemRect(int idx, int total_items) const {
 }
 
 void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused, bool sfx_muted,
-                             bool show_lobby_settings, GameMode lobby_mode) {
+                             bool show_lobby_settings, GameMode lobby_mode,
+                             uint8_t lobby_max_levels) {
     if (state == PauseState::PLAYING) return;
 
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), CLRS_BG_OVERLAY);
@@ -693,16 +697,20 @@ void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused,
         DrawTextEx(font_timer_, title, {pcx - ts.x * 0.5f, pcy - 150.f}, 48, 1, CLRS_ACCENT);
 
         const char* mode_str = (lobby_mode == GameMode::RACE) ? "RACE" : "CO-OP";
-        const char* items[2] = {TextFormat("Mode: %s", mode_str), "Back"};
-        for (int i = 0; i < 2; i++) {
+        const char* items[3] = {
+            TextFormat("Mode: %s", mode_str),
+            TextFormat("Levels: %u", static_cast<unsigned>(lobby_max_levels)),
+            "Back"
+        };
+        for (int i = 0; i < 3; i++) {
             const bool  sel = (focused == i);
             const Color col = sel ? CLRS_ACCENT : CLRS_TEXT_MAIN;
             const char* buf = TextFormat("%s%s", sel ? "> " : "  ", items[i]);
             const Vector2 sz = MeasureTextEx(font_hud_, buf, 24, 1);
-            const float iy  = pcy - (2 - 1) * 22.f + i * 44.f;
+            const float iy  = pcy - (3 - 1) * 22.f + i * 44.f;
             DrawTextEx(font_hud_, buf, {pcx - sz.x * 0.5f, iy}, 24, 1, col);
         }
-        const char* hint = "up/down: navigate   enter: confirm   esc: back";
+        const char* hint = "up/down: navigate   left/right or wheel: change levels   enter: confirm   esc: back";
         const Vector2 hs = MeasureTextEx(font_small_, hint, 18, 1);
         DrawTextEx(font_small_, hint, {pcx - hs.x * 0.5f, pcy + 100.f}, 18, 1, CLRS_TEXT_DIM);
 

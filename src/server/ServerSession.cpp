@@ -65,8 +65,12 @@ void ServerSession::OnConnect(ENetHost* host, ENetPeer* peer) {
 
     PlayerState ps{};
     ps.player_id = next_player_id_++;
-    ps.x = level_mgr_.SpawnX();
-    ps.y = level_mgr_.SpawnY();
+    if (skip_lobby_ && !in_lobby_) {
+        ps = SpawnReset(ps, level_mgr_.SpawnX(), level_mgr_.SpawnY(), false);
+    } else {
+        ps.x = level_mgr_.SpawnX();
+        ps.y = level_mgr_.SpawnY();
+    }
     Player pl{};
     pl.SetState(ps);
     players_[peer] = pl;
@@ -140,6 +144,7 @@ bool ServerSession::OnDisconnect(ENetHost* host, ENetPeer* peer) {
         session_token_ = 0u;
         leader_id_     = 0;
         game_mode_     = GameMode::COOP;
+        session_max_levels_ = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
         current_level_ = in_lobby_ ? 0 : initial_level_;
         level_mgr_.Load(initial_map_path_.c_str());
         zone_start_ms_  = 0;
@@ -200,7 +205,13 @@ bool ServerSession::OnReceive(ENetHost* host, ENetPeer* peer,
     if (type == PKT_SET_GAME_MODE && len >= sizeof(PktSetGameMode)) {
         PktSetGameMode mpkt{};
         std::memcpy(&mpkt, data, sizeof(PktSetGameMode));
-        HandleSetGameMode(peer, mpkt);
+        HandleSetGameMode(host, peer, mpkt);
+        return false;
+    }
+    if (type == PKT_SET_MAX_LEVELS && len >= sizeof(PktSetMaxLevels)) {
+        PktSetMaxLevels lpkt{};
+        std::memcpy(&lpkt, data, sizeof(PktSetMaxLevels));
+        HandleSetMaxLevels(host, peer, lpkt);
         return false;
     }
     if (type == PKT_START_GAME && len >= sizeof(PktStartGame)) {
@@ -441,7 +452,7 @@ bool ServerSession::HandleReady(ENetHost* host, ENetPeer* peer) {
 // ---------------------------------------------------------------------------
 // HandleSetGameMode — leader changes the game mode (lobby only)
 // ---------------------------------------------------------------------------
-void ServerSession::HandleSetGameMode(ENetPeer* peer, const PktSetGameMode& pkt) {
+void ServerSession::HandleSetGameMode(ENetHost* host, ENetPeer* peer, const PktSetGameMode& pkt) {
     if (!in_lobby_) return;  // mode can only be changed in the lobby
 
     auto it = players_.find(peer);
@@ -458,6 +469,35 @@ void ServerSession::HandleSetGameMode(ENetPeer* peer, const PktSetGameMode& pkt)
     game_mode_ = static_cast<GameMode>(mode);
     printf("[server] GAME MODE changed to %s by leader %u\n",
            game_mode_ == GameMode::RACE ? "RACE" : "COOP", leader_id_);
+    BroadcastGameState(host);
+}
+
+// ---------------------------------------------------------------------------
+// HandleSetMaxLevels — leader changes generated level count (lobby only)
+// ---------------------------------------------------------------------------
+void ServerSession::HandleSetMaxLevels(ENetHost* host, ENetPeer* peer, const PktSetMaxLevels& pkt) {
+    if (!in_lobby_) return;
+
+    auto it = players_.find(peer);
+    if (it == players_.end()) return;
+    const uint32_t pid = it->second.GetState().player_id;
+    if (pid != leader_id_) {
+        printf("[server] SET_MAX_LEVELS rejected: player_id=%u is not leader (%u)\n",
+               pid, leader_id_);
+        return;
+    }
+
+    uint8_t clamped = pkt.max_levels;
+    if (clamped < static_cast<uint8_t>(MIN_GENERATED_LEVELS))
+        clamped = static_cast<uint8_t>(MIN_GENERATED_LEVELS);
+    if (clamped > static_cast<uint8_t>(MAX_GENERATED_LEVELS_LIMIT))
+        clamped = static_cast<uint8_t>(MAX_GENERATED_LEVELS_LIMIT);
+    if (clamped == session_max_levels_) return;
+
+    session_max_levels_ = clamped;
+    printf("[server] MAX LEVELS changed to %u by leader %u\n",
+           static_cast<unsigned>(session_max_levels_), leader_id_);
+    BroadcastGameState(host);
 }
 
 // ---------------------------------------------------------------------------
@@ -530,7 +570,7 @@ void ServerSession::DoLevelChange(ENetHost* host) {
     }
 
     // Check if session is over (max generated levels reached).
-    if (current_level_ > MAX_GENERATED_LEVELS) {
+    if (current_level_ > static_cast<int>(session_max_levels_)) {
         printf("[server] all levels complete --> global results\n");
         zone_start_ms_ = 0;
         SendGlobalResults(host);
@@ -598,6 +638,7 @@ void ServerSession::ResetToInitial(ENetHost* host) {
     session_token_ = 0u;
     leader_id_     = 0;
     game_mode_     = GameMode::COOP;
+    session_max_levels_ = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
     current_level_ = in_lobby_ ? 0 : initial_level_;
     level_mgr_.Load(initial_map_path_.c_str());
     level_start_ms_ = enet_time_get();
@@ -633,15 +674,19 @@ void ServerSession::SendResults(ENetHost* host, const char* reason) {
             return a.level_ticks < b.level_ticks;
         });
 
-    // Check whether ALL players finished; track team clears.
-    const bool all_done = !entries.empty() &&
-        std::all_of(entries.begin(), entries.end(),
-                    [](const ResultEntry& e){ return e.finished != 0; });
-    if (all_done) {
+    const bool any_done = std::any_of(entries.begin(), entries.end(),
+                                      [](const ResultEntry& e){ return e.finished != 0; });
+    // Co-op rule: one player at the exit clears the level for everyone.
+    const bool coop_cleared = (game_mode_ == GameMode::COOP) ? any_done : false;
+    if (coop_cleared) {
+        for (auto& e : entries) e.finished = 1u;
+    }
+
+    if (coop_cleared) {
         coop_cleared_levels_++;
         printf("[server] COOP CLEARED (total=%u)\n", coop_cleared_levels_);
     }
-    res_pkt.coop_all_finished = all_done ? 1u : 0u;
+    res_pkt.coop_all_finished = coop_cleared ? 1u : 0u;
 
     res_pkt.count = static_cast<uint8_t>(entries.size());
     for (size_t i = 0; i < entries.size() && i < static_cast<size_t>(MAX_PLAYERS); i++)
@@ -672,6 +717,7 @@ void ServerSession::BroadcastGameState(ENetHost* host) {
     gs_pkt.state.next_level_countdown_ticks = CountdownTicks();
     gs_pkt.state.is_lobby    = in_lobby_ ? 1u : 0u;
     gs_pkt.state.game_mode   = static_cast<uint8_t>(game_mode_);
+    gs_pkt.state.max_generated_levels = session_max_levels_;
     gs_pkt.state.leader_id   = leader_id_;
     if (!in_lobby_ && !in_results_) {
         const uint32_t el = enet_time_get() - level_start_ms_;
@@ -780,7 +826,13 @@ void ServerSession::UpdateZone() {
 // ---------------------------------------------------------------------------
 bool ServerSession::AllInZone() const {
     if (players_.empty()) return false;
-    // Level is complete when ALL players have reached the exit tile.
+    // Co-op: one player reaching the exit is enough to clear the level.
+    if (game_mode_ == GameMode::COOP && !in_lobby_) {
+        for (const auto& [peer, pl] : players_)
+            if (pl.GetState().finished) return true;
+        return false;
+    }
+    // Race/lobby fallback: completion requires all players in the zone.
     for (const auto& [peer, pl] : players_)
         if (!pl.GetState().finished) return false;
     return true;

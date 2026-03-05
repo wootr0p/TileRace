@@ -133,12 +133,6 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
         if (screen == Screen::MAIN) UIWidgets::PollFieldInput(res.username,  (int)sizeof(res.username));
         else                        UIWidgets::PollFieldInput(res.server_ip, (int)sizeof(res.server_ip));
 
-        // ---- SFX toggle: tasto M (entrambe le schermate) ----
-        if (!skip_input && IsKeyPressed(KEY_M)) {
-            save.sfx_muted = !save.sfx_muted;
-            SaveSaveData(save);
-        }
-
         // ---- Azioni ----
         MenuChoice pending_choice = MenuChoice::QUIT;
         bool       has_action     = false;
@@ -225,19 +219,6 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
             const char* ver = TextFormat("v%s", GAME_VERSION);
             const Vector2 vs = MeasureTextEx(font, ver, SZ * 0.6f, 1);
             DrawTextEx(font, ver, {W - vs.x - 10, H - vs.y - 8}, SZ * 0.6f, 1, CLRS_TEXT_DIM);
-        }
-
-        // SFX toggle (angolo in basso a sinistra, cliccabile)
-        {
-            const char*   lbl = save.sfx_muted ? "SFX: OFF  [M]" : "SFX: ON   [M]";
-            const Color   col = save.sfx_muted ? CLRS_TEXT_DIM : CLRS_ACCENT_SOFT;
-            const Vector2 ls  = MeasureTextEx(font, lbl, SZ * 0.65f, 1);
-            Rectangle     lr  = {10.f, H - ls.y - 8.f, ls.x + 4.f, ls.y + 4.f};
-            DrawTextEx(font, lbl, {lr.x, lr.y}, SZ * 0.65f, 1, col);
-            if (!skip_input && UIWidgets::Clicked(lr)) {
-                save.sfx_muted = !save.sfx_muted;
-                SaveSaveData(save);
-            }
         }
 
         EndDrawing();

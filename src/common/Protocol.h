@@ -7,8 +7,8 @@
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.6b";
-static constexpr uint16_t     PROTOCOL_VERSION = 10;
+static constexpr const char*  GAME_VERSION     = "0.2.6";
+static constexpr uint16_t     PROTOCOL_VERSION = 11;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -47,6 +47,7 @@ enum PktType : uint8_t {
     PKT_GENERATING        = 17,  // S → C  server is generating the next level; client shows loading overlay
     PKT_SET_GAME_MODE     = 18,  // C → S  leader sets the game mode (coop / race)
     PKT_START_GAME        = 19,  // C → S  leader starts the game from the lobby
+    PKT_SET_MAX_LEVELS    = 20,  // C → S  leader sets generated levels per session
 };
 
 struct PktInput {
@@ -151,7 +152,9 @@ struct PktLevelDataHeader {
 };
 
 // Number of generated levels per session before returning to lobby.
-static constexpr int MAX_GENERATED_LEVELS   = 10;   // levels per session
+static constexpr int MAX_GENERATED_LEVELS       = 5;   // default levels per session
+static constexpr int MIN_GENERATED_LEVELS       = 1;
+static constexpr int MAX_GENERATED_LEVELS_LIMIT = 20;
 static constexpr int DIFFICULTY_CURVE_LEVELS = 8;   // difficulty ramp reference
 
 // Emote system — 8 directional emotes (mapped clockwise from Up).
@@ -184,6 +187,12 @@ struct PktGenerating {
 struct PktSetGameMode {
     uint8_t type      = PKT_SET_GAME_MODE;
     uint8_t game_mode = 0;  // 0 = COOP, 1 = RACE
+};
+
+// Leader sets how many generated levels are played in this session.
+struct PktSetMaxLevels {
+    uint8_t type       = PKT_SET_MAX_LEVELS;
+    uint8_t max_levels = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
 };
 
 // Leader starts the game from the lobby. Only accepted from the current session leader.

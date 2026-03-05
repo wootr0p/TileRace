@@ -57,8 +57,8 @@ bool LevelManager::Generate(int level_num, const ChunkStore& store, uint32_t see
                level_num, attempt + 1, MAX_RETRIES);
     }
 
-    // Fallback: accept the last generated level even if not validated.
-    if (any_generated) {
+    // If validation is disabled, keep the previous permissive fallback.
+    if (!validate && any_generated) {
         printf("[LevelManager] WARNING: all %d attempts failed validation for level %d — using last\n",
                MAX_RETRIES, level_num);
         world_ = last_good;
@@ -66,6 +66,11 @@ bool LevelManager::Generate(int level_num, const ChunkStore& store, uint32_t see
         spawn_x_ = sp.x;
         spawn_y_ = sp.y;
         return true;
+    }
+
+    if (validate && any_generated) {
+        printf("[LevelManager] level %d discarded: no solvable variant found in %d attempts\n",
+               level_num, MAX_RETRIES);
     }
     return false;
 }

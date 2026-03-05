@@ -34,16 +34,12 @@ void InputSampler::Poll() {
     const bool  stick_down = (prev_stick_y_ <  0.5f && gp_sy >=  0.5f);
     prev_stick_y_ = gp_sy;
 
-    nav_up_ = IsKeyPressed(KEY_UP)    || IsKeyPressed(KEY_W) ||
-              IsKeyPressed(KEY_LEFT)  || IsKeyPressed(KEY_A) ||
-              (gp && (IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_UP) ||
-                      IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_LEFT))) ||
+        nav_up_ = IsKeyPressed(KEY_UP)    || IsKeyPressed(KEY_W) ||
+                  (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_UP)) ||
               stick_up;
 
-    nav_down_ = IsKeyPressed(KEY_DOWN)  || IsKeyPressed(KEY_S) ||
-                IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D) ||
-                (gp && (IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_DOWN) ||
-                        IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_RIGHT))) ||
+        nav_down_ = IsKeyPressed(KEY_DOWN)  || IsKeyPressed(KEY_S) ||
+                (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) ||
                 stick_down;
 
     nav_ok_ = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) ||
@@ -105,7 +101,7 @@ bool InputSampler::IsJumpHeld() const {
 bool InputSampler::IsDrawHeld() const {
     if (IsKeyDown(KEY_P)) return true;
     if (IsGamepadAvailable(GP) &&
-        IsGamepadButtonDown(GP, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))  // Circle
+        IsGamepadButtonDown(GP, GAMEPAD_BUTTON_RIGHT_TRIGGER_1))  // R1
         return true;
     return false;
 }

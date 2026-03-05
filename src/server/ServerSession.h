@@ -42,7 +42,8 @@ private:
     void HandleRestart   (ENetPeer* peer);       // respawn at last checkpoint (or spawn)
     void HandleRestartSpawn(ENetPeer* peer);     // respawn always at level spawn
     bool HandleReady     (ENetHost* host, ENetPeer* peer);  // returns true on level change
-    void HandleSetGameMode(ENetPeer* peer, const PktSetGameMode& pkt);
+    void HandleSetGameMode(ENetHost* host, ENetPeer* peer, const PktSetGameMode& pkt);
+    void HandleSetMaxLevels(ENetHost* host, ENetPeer* peer, const PktSetMaxLevels& pkt);
     bool HandleStartGame (ENetHost* host, ENetPeer* peer);  // returns true on level change
 
     // Load next map, reset all players, broadcast new state.
@@ -77,6 +78,7 @@ private:
     int          current_level_;
     bool         skip_lobby_          = false;
     uint32_t     coop_cleared_levels_ = 0;   // number of levels fully cleared by the team
+    uint8_t      session_max_levels_  = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
 
     bool         is_ready_           = false;
     bool         in_lobby_            = false;
