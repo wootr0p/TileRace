@@ -4,19 +4,40 @@
 #include <cmath>
 
 void InputSampler::Poll() {
-    const bool gp = IsGamepadAvailable(GP);
+    // Fallback auto-claim: normalmente il gamepad viene assegnato già allo splash
+    // screen (via SetGamepadIndex). Questo blocco è una rete di sicurezza per il
+    // caso in cui l'istanza venga creata senza un indice pre-assegnato (es. se
+    // WindowShouldClose() scatta prima che l'utente premi un tasto).
+    // IMPORTANTE: gp_index_ viene impostato una sola volta e non viene MAI
+    // resettato. Se il gamepad si disconnette e si riconnette allo stesso indice
+    // il gioco riprende automaticamente; se viene premuto un altro gamepad durante
+    // la disconnessione, viene ignorato — solo l'indice originale è valido.
+    if (gp_index_ < 0) {
+        for (int i = 0; i < GP_MAX; ++i) {
+            if (!IsGamepadAvailable(i)) continue;
+            for (int b = 0; b <= GAMEPAD_BUTTON_RIGHT_THUMB; ++b) {
+                if (IsGamepadButtonPressed(i, (GamepadButton)b)) {
+                    gp_index_ = i;
+                    break;
+                }
+            }
+            if (gp_index_ >= 0) break;
+        }
+    }
+
+    const bool gp = (gp_index_ >= 0) && IsGamepadAvailable(gp_index_);
 
     // --- Flag sticky di gioco ---
     if (IsKeyPressed(KEY_SPACE) ||
-        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)))
+        (gp && IsGamepadButtonPressed(gp_index_, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)))
         jump_pressed_ = true;
 
     if (IsKeyPressed(KEY_LEFT_SHIFT) || IsKeyPressed(KEY_RIGHT_SHIFT) ||
-        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_LEFT)))
+        (gp && IsGamepadButtonPressed(gp_index_, GAMEPAD_BUTTON_RIGHT_FACE_LEFT)))
         dash_pending_ = true;
 
     if (IsKeyPressed(KEY_BACKSPACE) ||
-        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_UP)))     // Triangle
+        (gp && IsGamepadButtonPressed(gp_index_, GAMEPAD_BUTTON_RIGHT_FACE_UP)))     // Triangle
         restart_checkpoint_ = true;
 
     if (IsKeyPressed(KEY_DELETE))
@@ -24,26 +45,26 @@ void InputSampler::Poll() {
 
     // --- Toggle pausa ---
     if (IsKeyPressed(KEY_ESCAPE) ||
-        (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_MIDDLE_RIGHT)))
+        (gp && IsGamepadButtonPressed(gp_index_, GAMEPAD_BUTTON_MIDDLE_RIGHT)))
         pause_toggle_ = true;
 
     // --- Navigazione pause menu ---
     // Edge detection dello stick verticale
-    const float gp_sy    = gp ? GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_Y) : 0.f;
+    const float gp_sy    = gp ? GetGamepadAxisMovement(gp_index_, GAMEPAD_AXIS_LEFT_Y) : 0.f;
     const bool  stick_up   = (prev_stick_y_ > -0.5f && gp_sy <= -0.5f);
     const bool  stick_down = (prev_stick_y_ <  0.5f && gp_sy >=  0.5f);
     prev_stick_y_ = gp_sy;
 
         nav_up_ = IsKeyPressed(KEY_UP)    || IsKeyPressed(KEY_W) ||
-                  (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_UP)) ||
+                  (gp && IsGamepadButtonPressed(gp_index_, GAMEPAD_BUTTON_LEFT_FACE_UP)) ||
               stick_up;
 
         nav_down_ = IsKeyPressed(KEY_DOWN)  || IsKeyPressed(KEY_S) ||
-                (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) ||
+                (gp && IsGamepadButtonPressed(gp_index_, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) ||
                 stick_down;
 
     nav_ok_ = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) ||
-              (gp && IsGamepadButtonPressed(GP, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
+              (gp && IsGamepadButtonPressed(gp_index_, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
 
     // Emote wheel
     PollEmote();
@@ -54,17 +75,17 @@ void InputSampler::Poll() {
 // ---------------------------------------------------------------------------
 
 float InputSampler::GetMoveX() const {
-    const bool gp = IsGamepadAvailable(GP);
+    const bool gp = (gp_index_ >= 0) && IsGamepadAvailable(gp_index_);
     float move_x = 0.f;
     if (IsKeyDown(KEY_A)) move_x -= 1.f;
     if (IsKeyDown(KEY_D)) move_x += 1.f;
     if (gp) {
-        const float ax = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_X);
+        const float ax = GetGamepadAxisMovement(gp_index_, GAMEPAD_AXIS_LEFT_X);
         if (fabsf(ax) > GP_DEADZONE) {
             move_x = ax;
         } else if (fabsf(move_x) < 0.01f) {
-            if (IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) move_x += 1.f;
-            if (IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_FACE_LEFT))  move_x -= 1.f;
+            if (IsGamepadButtonDown(gp_index_, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) move_x += 1.f;
+            if (IsGamepadButtonDown(gp_index_, GAMEPAD_BUTTON_LEFT_FACE_LEFT))  move_x -= 1.f;
         }
     }
     const float clamped = move_x < -1.f ? -1.f : (move_x > 1.f ? 1.f : move_x);
@@ -72,44 +93,44 @@ float InputSampler::GetMoveX() const {
 }
 
 void InputSampler::GetDashDir(float& dx, float& dy) const {
-    const bool gp = IsGamepadAvailable(GP);
+    const bool gp = (gp_index_ >= 0) && IsGamepadAvailable(gp_index_);
     dx = 0.f; dy = 0.f;
     if (IsKeyDown(KEY_D)) dx += 1.f;
     if (IsKeyDown(KEY_A)) dx -= 1.f;
     if (IsKeyDown(KEY_S)) dy += 1.f;
     if (IsKeyDown(KEY_W)) dy -= 1.f;
     if (gp) {
-        const float ax = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_X);
-        const float ay = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_Y);
+        const float ax = GetGamepadAxisMovement(gp_index_, GAMEPAD_AXIS_LEFT_X);
+        const float ay = GetGamepadAxisMovement(gp_index_, GAMEPAD_AXIS_LEFT_Y);
         if (ax * ax + ay * ay > GP_DEADZONE * GP_DEADZONE) {
             dx = ax; dy = ay;
         } else {
-            if (IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) dx += 1.f;
-            if (IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_FACE_LEFT))  dx -= 1.f;
-            if (IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_FACE_DOWN))  dy += 1.f;
-            if (IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_FACE_UP))    dy -= 1.f;
+            if (IsGamepadButtonDown(gp_index_, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) dx += 1.f;
+            if (IsGamepadButtonDown(gp_index_, GAMEPAD_BUTTON_LEFT_FACE_LEFT))  dx -= 1.f;
+            if (IsGamepadButtonDown(gp_index_, GAMEPAD_BUTTON_LEFT_FACE_DOWN))  dy += 1.f;
+            if (IsGamepadButtonDown(gp_index_, GAMEPAD_BUTTON_LEFT_FACE_UP))    dy -= 1.f;
         }
     }
 }
 
 bool InputSampler::IsJumpHeld() const {
     return IsKeyDown(KEY_SPACE) ||
-           (IsGamepadAvailable(GP) &&
-            IsGamepadButtonDown(GP, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
+           ((gp_index_ >= 0) && IsGamepadAvailable(gp_index_) &&
+            IsGamepadButtonDown(gp_index_, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
 }
 
 bool InputSampler::IsDrawHeld() const {
     if (IsKeyDown(KEY_P)) return true;
-    if (IsGamepadAvailable(GP) &&
-        IsGamepadButtonDown(GP, GAMEPAD_BUTTON_RIGHT_TRIGGER_1))  // R1
+    if ((gp_index_ >= 0) && IsGamepadAvailable(gp_index_) &&
+        IsGamepadButtonDown(gp_index_, GAMEPAD_BUTTON_RIGHT_TRIGGER_1))  // R1
         return true;
     return false;
 }
 
 bool InputSampler::IsSprintHeld() const {
     if (IsKeyDown(KEY_RIGHT_CONTROL)) return true;
-    if (IsGamepadAvailable(GP)) {
-        const float rt = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_RIGHT_TRIGGER);
+    if ((gp_index_ >= 0) && IsGamepadAvailable(gp_index_)) {
+        const float rt = GetGamepadAxisMovement(gp_index_, GAMEPAD_AXIS_RIGHT_TRIGGER);
         if (rt > 0.3f) return true;
     }
     return false;
@@ -117,8 +138,8 @@ bool InputSampler::IsSprintHeld() const {
 
 bool InputSampler::IsMagnetHeld() const {
     if (IsKeyDown(KEY_LEFT_ALT)) return true;
-    if (IsGamepadAvailable(GP)) {
-        const float lt = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_LEFT_TRIGGER);
+    if ((gp_index_ >= 0) && IsGamepadAvailable(gp_index_)) {
+        const float lt = GetGamepadAxisMovement(gp_index_, GAMEPAD_AXIS_LEFT_TRIGGER);
         if (lt > 0.3f) return true;
     }
     return false;
@@ -141,7 +162,7 @@ static int DirToIndex(float dx, float dy, float deadzone) {
 }
 
 void InputSampler::PollEmote() {
-    const bool gp = IsGamepadAvailable(GP);
+    const bool gp = (gp_index_ >= 0) && IsGamepadAvailable(gp_index_);
 
     // --- Keyboard: hold E, arrow keys select, release E to fire ---
     const bool kb_open = IsKeyDown(KEY_E);
@@ -168,11 +189,11 @@ void InputSampler::PollEmote() {
 
     // --- Gamepad: hold L1, right stick selects, release L1 to fire ---
     if (gp) {
-        const bool gp_open = IsGamepadButtonDown(GP, GAMEPAD_BUTTON_LEFT_TRIGGER_1);
+        const bool gp_open = IsGamepadButtonDown(gp_index_, GAMEPAD_BUTTON_LEFT_TRIGGER_1);
         if (gp_open) {
             emote_wheel_open_ = true;
-            const float rx = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_RIGHT_X);
-            const float ry = GetGamepadAxisMovement(GP, GAMEPAD_AXIS_RIGHT_Y);
+            const float rx = GetGamepadAxisMovement(gp_index_, GAMEPAD_AXIS_RIGHT_X);
+            const float ry = GetGamepadAxisMovement(gp_index_, GAMEPAD_AXIS_RIGHT_Y);
             // Highlight follows stick in real-time; resets to -1 in deadzone
             emote_highlight_ = DirToIndex(rx, ry, 0.4f);
         }

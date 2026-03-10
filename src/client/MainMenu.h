@@ -14,10 +14,13 @@ struct MenuResult {
 
 // Blocking splash screen — shows title + "Press any button to start".
 // Returns when any key, mouse button, or gamepad button is pressed.
+// Returns the index of the gamepad that was pressed (0-based), or -1 if a
+// keyboard/mouse input triggered the dismiss (no gamepad claimed).
 // The window must already be open (InitWindow already called).
-void ShowSplashScreen(Font& font);
+int ShowSplashScreen(Font& font);
 
 // Blocking menu loop — returns only when the user confirms a choice.
 // The window must already be open (InitWindow already called).
 // Reads initial field values from `save` and writes them back before returning.
-MenuResult ShowMainMenu(Font& font, SaveData& save);
+// gamepad_index: the gamepad claimed at splash screen time (-1 = keyboard only).
+MenuResult ShowMainMenu(Font& font, SaveData& save, int gamepad_index);
