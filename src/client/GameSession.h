@@ -24,10 +24,11 @@ class Renderer;
 class GameSession {
 public:
     struct Config {
-        const char* map_path   = nullptr;
-        const char* username   = "";
-        bool        is_offline = false;  // true → connects to a LocalServer instance
-        SaveData*   save       = nullptr; // for persisting settings (e.g. mute) changed in-session
+        const char* map_path      = nullptr;
+        const char* username      = "";
+        bool        is_offline    = false;  // true → connects to a LocalServer instance
+        SaveData*   save          = nullptr; // for persisting settings (e.g. mute) changed in-session
+        int         gamepad_index = 0;      // which gamepad to use (0 = first, 1 = second, …)
     };
 
     explicit GameSession(const Config& cfg);

@@ -4,6 +4,8 @@
 // Tutta la logica di rete vive in NetworkClient.
 
 #include <cstdio>
+#include <cstring>
+#include <cstdlib>
 #include <raylib.h>
 #include <enet/enet.h>
 #include "Protocol.h"
@@ -19,7 +21,19 @@
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
-int main() {
+int main(int argc, char* argv[]) {
+    // Parse optional --gamepad <N> argument (default: 0).
+    // Allows two client instances on the same machine to use different gamepads.
+    int gamepad_index = 0;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--gamepad") == 0) {
+            if (i + 1 < argc) {
+                gamepad_index = std::atoi(argv[i + 1]);
+                if (gamepad_index < 0) gamepad_index = 0;
+            }
+            break;
+        }
+    }
     if (enet_initialize() != 0) {
         fprintf(stderr, "[client] ERRORE: enet_initialize fallita\n");
         return 1;
@@ -47,7 +61,7 @@ int main() {
     // -----------------------------------------------------------------------
     // Schermata iniziale (splash)
     // -----------------------------------------------------------------------
-    ShowSplashScreen(renderer.HudFont());
+    ShowSplashScreen(renderer.HudFont(), gamepad_index);
 
     // -----------------------------------------------------------------------
     // Loop principale: menu --> partita --> menu (riparte se la connessione fallisce)
@@ -55,7 +69,7 @@ int main() {
     while (!WindowShouldClose()) {
 
     // Menu iniziale (passo 19)
-    const MenuResult menu = ShowMainMenu(renderer.HudFont(), save);
+    const MenuResult menu = ShowMainMenu(renderer.HudFont(), save, gamepad_index);
     if (menu.choice == MenuChoice::QUIT) break;
 
     // In modalità offline il server genera direttamente il primo livello,
@@ -79,7 +93,7 @@ int main() {
         continue;
     }
 
-    const GameSession::Config cfg{ is_offline ? nullptr : initial_map, menu.username, is_offline, &save };
+    const GameSession::Config cfg{ is_offline ? nullptr : initial_map, menu.username, is_offline, &save, gamepad_index };
     GameSession session(cfg);
     while (!WindowShouldClose() && !session.IsOver())
         session.Tick(GetFrameTime(), net, renderer);

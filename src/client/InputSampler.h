@@ -11,6 +11,8 @@
 
 class InputSampler {
 public:
+    explicit InputSampler(int gamepad_index = 0) : gp_index_(gamepad_index) {}
+
     // Capture all IsKeyPressed / IsGamepadButtonPressed for this render frame.
     void Poll();
 
@@ -42,7 +44,7 @@ public:
     int  ConsumeEmotePending()           { int v = emote_pending_; emote_pending_ = -1; return v; }
 
 private:
-    static constexpr int   GP          = 0;
+    int            gp_index_   = 0;
     static constexpr float GP_DEADZONE = 0.25f;
 
     bool  jump_pressed_       = false;

@@ -34,6 +34,7 @@ GameSession::GameSession(const Config& cfg)
     : username_(cfg.username ? cfg.username : "")
     , is_offline_(cfg.is_offline)
     , save_(cfg.save)
+    , input_sampler_(cfg.gamepad_index)
 {
     // Applica il mute iniziale dai dati salvati.
     if (save_)

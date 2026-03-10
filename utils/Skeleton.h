@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-05 20:52
+ * Generated : 2026-03-10 17:15
  * ============================================================================
  *
  * PURPOSE
@@ -125,42 +125,42 @@
  *   └── app_icon.rc.in
  *
  * HEADERS INCLUDED BELOW  (36 files)
- *   [01]  src\common\GameMode.h
- *   [02]  src\common\GameState.h
- *   [03]  src\common\InputFrame.h
- *   [04]  src\common\Physics.h
- *   [05]  src\common\Player.h
- *   [06]  src\common\PlayerState.h
- *   [07]  src\common\Protocol.h
- *   [08]  src\common\SpawnFinder.h
- *   [09]  src\common\World.h
- *   [10]  src\server\ChunkStore.h
- *   [11]  src\server\LevelGenerator.h
- *   [12]  src\server\LevelManager.h
- *   [13]  src\server\LevelValidator.h
- *   [14]  src\server\PlayerReset.h
- *   [15]  src\server\ServerLogic.h
- *   [16]  src\server\ServerSession.h
- *   [17]  src\client\Colors.h
- *   [18]  src\client\GameSession.h
- *   [19]  src\client\HudCoop.h
- *   [20]  src\client\HudRace.h
- *   [21]  src\client\InputSampler.h
- *   [22]  src\client\LevelPalette.h
- *   [23]  src\client\LevelResultsCoop.h
- *   [24]  src\client\LevelResultsRace.h
- *   [25]  src\client\LocalServer.h
- *   [26]  src\client\MainMenu.h
- *   [27]  src\client\NetworkClient.h
- *   [28]  src\client\Renderer.h
- *   [29]  src\client\SaveData.h
- *   [30]  src\client\SessionResultsCoop.h
- *   [31]  src\client\SessionResultsRace.h
- *   [32]  src\client\SfxManager.h
- *   [33]  src\client\SoundPool.h
- *   [34]  src\client\UIWidgets.h
- *   [35]  src\client\VisualEffects.h
- *   [36]  src\client\WinIcon.h
+ *   [01]  src/common/GameMode.h
+ *   [02]  src/common/GameState.h
+ *   [03]  src/common/InputFrame.h
+ *   [04]  src/common/Physics.h
+ *   [05]  src/common/Player.h
+ *   [06]  src/common/PlayerState.h
+ *   [07]  src/common/Protocol.h
+ *   [08]  src/common/SpawnFinder.h
+ *   [09]  src/common/World.h
+ *   [10]  src/server/ChunkStore.h
+ *   [11]  src/server/LevelGenerator.h
+ *   [12]  src/server/LevelManager.h
+ *   [13]  src/server/LevelValidator.h
+ *   [14]  src/server/PlayerReset.h
+ *   [15]  src/server/ServerLogic.h
+ *   [16]  src/server/ServerSession.h
+ *   [17]  src/client/Colors.h
+ *   [18]  src/client/GameSession.h
+ *   [19]  src/client/HudCoop.h
+ *   [20]  src/client/HudRace.h
+ *   [21]  src/client/InputSampler.h
+ *   [22]  src/client/LevelPalette.h
+ *   [23]  src/client/LevelResultsCoop.h
+ *   [24]  src/client/LevelResultsRace.h
+ *   [25]  src/client/LocalServer.h
+ *   [26]  src/client/MainMenu.h
+ *   [27]  src/client/NetworkClient.h
+ *   [28]  src/client/Renderer.h
+ *   [29]  src/client/SaveData.h
+ *   [30]  src/client/SessionResultsCoop.h
+ *   [31]  src/client/SessionResultsRace.h
+ *   [32]  src/client/SfxManager.h
+ *   [33]  src/client/SoundPool.h
+ *   [34]  src/client/UIWidgets.h
+ *   [35]  src/client/VisualEffects.h
+ *   [36]  src/client/WinIcon.h
  * ============================================================================
  */
 
@@ -432,7 +432,7 @@ struct PlayerState {
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.6b";
+static constexpr const char*  GAME_VERSION     = "0.2.6";
 static constexpr uint16_t     PROTOCOL_VERSION = 11;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
@@ -1203,10 +1203,11 @@ class Renderer;
 class GameSession {
 public:
     struct Config {
-        const char* map_path   = nullptr;
-        const char* username   = "";
-        bool        is_offline = false;  // true → connects to a LocalServer instance
-        SaveData*   save       = nullptr; // for persisting settings (e.g. mute) changed in-session
+        const char* map_path      = nullptr;
+        const char* username      = "";
+        bool        is_offline    = false;  // true → connects to a LocalServer instance
+        SaveData*   save          = nullptr; // for persisting settings (e.g. mute) changed in-session
+        int         gamepad_index = 0;      // which gamepad to use (0 = first, 1 = second, …)
     };
 
     explicit GameSession(const Config& cfg);
@@ -1388,6 +1389,8 @@ void DrawHudModeRace(Font& font_hud, const PlayerState& s,
 
 class InputSampler {
 public:
+    explicit InputSampler(int gamepad_index = 0) : gp_index_(gamepad_index) {}
+
     // Capture all IsKeyPressed / IsGamepadButtonPressed for this render frame.
     void Poll();
 
@@ -1419,7 +1422,7 @@ public:
     int  ConsumeEmotePending()           { int v = emote_pending_; emote_pending_ = -1; return v; }
 
 private:
-    static constexpr int   GP          = 0;
+    int            gp_index_   = 0;
     static constexpr float GP_DEADZONE = 0.25f;
 
     bool  jump_pressed_       = false;
@@ -1627,12 +1630,12 @@ struct MenuResult {
 // Blocking splash screen — shows title + "Press any button to start".
 // Returns when any key, mouse button, or gamepad button is pressed.
 // The window must already be open (InitWindow already called).
-void ShowSplashScreen(Font& font);
+void ShowSplashScreen(Font& font, int gamepad_index = 0);
 
 // Blocking menu loop — returns only when the user confirms a choice.
 // The window must already be open (InitWindow already called).
 // Reads initial field values from `save` and writes them back before returning.
-MenuResult ShowMainMenu(Font& font, SaveData& save);
+MenuResult ShowMainMenu(Font& font, SaveData& save, int gamepad_index = 0);
 
 
 // ==========================================================================

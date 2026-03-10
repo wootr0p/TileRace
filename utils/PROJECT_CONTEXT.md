@@ -90,7 +90,7 @@ The codebase was refactored to follow SOLID and DRY principles:
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `GameSession`                               | One play session: physics tick, reconciliation, render coordination                                                 |
 | `NetworkClient`                             | ENet abstraction; `<enet/enet.h>` never appears outside NetworkClient.cpp                                           |
-| `InputSampler`                              | All keyboard + gamepad sampling; sticky flags for rising-edge events                                                |
+| `InputSampler`                              | All keyboard + gamepad sampling; sticky flags for rising-edge events. Constructor accepts `gamepad_index` (default 0) to support multiple clients on the same machine using different gamepads |
 | `Renderer`                                  | All Raylib draw calls; no other file calls DrawXxx / BeginDrawing. Dispatches mode-specific rendering by `GameMode` |
 | `HudCoop` / `HudRace`                       | Mode-specific HUD overlay (co-op: standard; race: adds "Race Mode" label top-right)                                 |
 | `LevelResultsCoop` / `LevelResultsRace`     | Mode-specific end-of-level results screen                                                                           |
@@ -452,6 +452,22 @@ Old save files without `"m"` key default to unmuted (backward-compatible).
 **Offline defaults to Race mode:** `LocalServer::Start` is called with `skip_lobby=true` and `GameMode::RACE`. The server generates level 1 immediately with checkpoints stripped.
 
 Online mode starts at the lobby (`_Lobby.tmj`), defaulting to Co-op mode. The leader can switch to Race mode from the pause menu's "Lobby Settings" option.
+
+---
+
+## 9b. Local Two-Client Testing with Different Gamepads
+
+To test the game locally with two clients on the same machine, each client can be assigned a different physical gamepad via the `--gamepad <N>` command-line argument (0-based index, default 0):
+
+```bash
+./TileRace --gamepad 0   # first client uses gamepad 0 (or keyboard)
+./TileRace --gamepad 1   # second client uses gamepad 1
+```
+
+The `gamepad_index` is forwarded to:
+- `ShowSplashScreen` / `ShowMainMenu` — menu navigation uses the correct gamepad.
+- `GameSession::Config::gamepad_index` — in-session input uses the correct gamepad.
+- `InputSampler` — constructor accepts the index; internally replaces the old `static constexpr int GP = 0`.
 
 ---
 
