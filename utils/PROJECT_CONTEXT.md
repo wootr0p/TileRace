@@ -90,7 +90,7 @@ The codebase was refactored to follow SOLID and DRY principles:
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `GameSession`                               | One play session: physics tick, reconciliation, render coordination                                                 |
 | `NetworkClient`                             | ENet abstraction; `<enet/enet.h>` never appears outside NetworkClient.cpp                                           |
-| `InputSampler`                              | All keyboard + gamepad sampling; sticky flags for rising-edge events                                                |
+| `InputSampler`                              | All keyboard + gamepad sampling; sticky flags for rising-edge events. Manages gamepad claim: the first gamepad button pressed at splash screen is permanently bound to this instance (`gp_index_` is write-once). |
 | `Renderer`                                  | All Raylib draw calls; no other file calls DrawXxx / BeginDrawing. Dispatches mode-specific rendering by `GameMode` |
 | `HudCoop` / `HudRace`                       | Mode-specific HUD overlay (co-op: standard; race: adds "Race Mode" label top-right)                                 |
 | `LevelResultsCoop` / `LevelResultsRace`     | Mode-specific end-of-level results screen                                                                           |
@@ -300,12 +300,18 @@ In race mode, each cleared level awards exactly one win to the fastest finisher 
 
 ```
 main()
-  └─ ShowSplashScreen()            → blocks until any key/button pressed
-  └─ ShowMainMenu()               → MenuResult { OFFLINE | ONLINE | QUIT, username, ip }
+  └─ ShowSplashScreen()            → blocks until a gamepad button is pressed;
+  │                                   returns the gamepad index (0-based) that pressed it.
+  │                                   Keyboard/mouse are intentionally ignored so each window
+  │                                   is always bound to exactly one physical gamepad.
+  │                                   Shows "Connect a gamepad and press any button" if none is
+  │                                   connected, or "Press any button on your gamepad to start"
+  │                                   when at least one gamepad is available.
+  └─ ShowMainMenu(gamepad_index)   → MenuResult { OFFLINE | ONLINE | QUIT, username, ip }
        └─ [OFFLINE] LocalServer::Start(skip_lobby=true, GameMode::RACE)
        └─ NetworkClient::Connect()
-       └─ GameSession::Tick() loop
-            ├─ InputSampler::Poll()
+       └─ GameSession(Config{…, gamepad_index}) — pre-assigns gp_index_ in InputSampler
+            ├─ InputSampler::Poll()  — uses claimed gp_index_ only; fallback auto-claim if -1
             ├─ HandlePauseInput()  (includes lobby settings for leader)
             ├─ TickFixed() × N    (60 Hz physics + network send)
             ├─ PollNetwork()      (ENet events → HandlePacket)
@@ -456,7 +462,41 @@ Online mode starts at the lobby (`_Lobby.tmj`), defaulting to Co-op mode. The le
 
 ---
 
-## 10. Network Constants
+## 10. Gamepad Claim (per-instance binding)
+
+Each client instance is bound at startup to exactly **one** physical gamepad.
+
+### Flow
+
+1. `ShowSplashScreen` scans all connected gamepads (indices 0-3) every frame.
+2. The **first gamepad on which any button is pressed** is "claimed": its index is stored and the splash screen exits, returning that index to `main`.
+3. Keyboard and mouse presses are intentionally **ignored** at this stage — a gamepad press is mandatory to proceed.
+4. The claimed index is forwarded to `ShowMainMenu` (for D-pad / stick navigation) and to `GameSession::Config::gamepad_index`.
+5. Inside `GameSession`, `InputSampler::SetGamepadIndex(cfg.gamepad_index)` pre-assigns `gp_index_`. The `InputSampler` then uses **only** that index for the entire session.
+
+### Write-once guarantee
+
+`gp_index_` in `InputSampler` is **written exactly once** and never reset:
+
+- `SetGamepadIndex(idx)` does nothing if `gp_index_ >= 0` (already claimed).
+- The fallback auto-claim in `Poll()` (for the edge case where `WindowShouldClose` fired before a gamepad press) also only runs when `gp_index_ < 0`.
+
+### Disconnect / reconnect behaviour
+
+If the claimed gamepad is physically disconnected during play, `IsGamepadAvailable(gp_index_)` returns `false` and all gamepad input is silently skipped (keyboard still works). When the **same** gamepad reconnects at the same OS-assigned index, it is automatically reactivated — no user action required. A different gamepad pressing buttons during the disconnection period is **never** claimed; only the original index is ever used.
+
+### Two-client local testing
+
+To run two client instances on the same machine with separate gamepads:
+
+1. Start the first instance — press a button on **Gamepad 1** at the splash screen.
+2. Start the second instance — press a button on **Gamepad 2** at its splash screen.
+
+Each window is now independently controlled by its respective gamepad.
+
+---
+
+## 11. Network Constants
 
 ```cpp
 SERVER_PORT        = 58291   // online / dedicated server
@@ -476,7 +516,7 @@ Disconnect reason codes are sent as the `data` field of `enet_peer_disconnect()`
 
 ---
 
-## 11. Key Physics Constants (all in `Physics.h`)
+## 12. Key Physics Constants (all in `Physics.h`)
 
 ```cpp
 TILE_SIZE            = 32       // px per tile
@@ -505,7 +545,7 @@ WALL_PROBE_REACH     = 8        // px beyond edge to detect adjacent walls
 
 ---
 
-## 12. Asset Layout
+## 13. Asset Layout
 
 ```
 assets/

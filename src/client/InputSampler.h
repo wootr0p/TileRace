@@ -6,6 +6,13 @@
 //   2. Call ConsumeXxx() to read sticky flags; each returns true exactly once.
 //   3. Call GetMoveX() / GetDashDir() / IsJumpHeld() inside each fixed tick
 //      (they read live hardware state on every call).
+//
+// Gamepad claim:
+//   gp_index_ starts at -1 (unclaimed). The first gamepad button pressed during
+//   Poll() automatically claims that gamepad for the lifetime of this instance.
+//   SetGamepadIndex() allows the caller to pre-assign the index (e.g. from the
+//   splash screen, where the user's first button press is detected before
+//   GameSession is constructed).
 #include <raylib.h>
 #include "InputFrame.h"
 
@@ -13,6 +20,13 @@ class InputSampler {
 public:
     // Capture all IsKeyPressed / IsGamepadButtonPressed for this render frame.
     void Poll();
+
+    // Gamepad claim management.
+    // Returns -1 if no gamepad has been claimed yet.
+    int  GetGamepadIndex() const { return gp_index_; }
+    // Pre-assign the gamepad index (e.g. from splash screen claim).
+    // Has no effect if idx < 0 or if a gamepad has already been claimed.
+    void SetGamepadIndex(int idx) { if (idx >= 0 && gp_index_ < 0) gp_index_ = idx; }
 
     // Sticky flags — return true once then reset to false.
     bool ConsumeJumpPressed()        { bool v = jump_pressed_;           jump_pressed_           = false; return v; }
@@ -42,8 +56,10 @@ public:
     int  ConsumeEmotePending()           { int v = emote_pending_; emote_pending_ = -1; return v; }
 
 private:
-    static constexpr int   GP          = 0;
     static constexpr float GP_DEADZONE = 0.25f;
+    static constexpr int   GP_MAX      = 4;  // max gamepads to scan for auto-claim
+
+    int   gp_index_           = -1;   // -1 = unclaimed; set on first gamepad button press
 
     bool  jump_pressed_       = false;
     bool  dash_pending_       = false;
