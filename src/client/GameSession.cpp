@@ -35,6 +35,11 @@ GameSession::GameSession(const Config& cfg)
     , is_offline_(cfg.is_offline)
     , save_(cfg.save)
 {
+    // Pre-assegna il gamepad reclamato allo splash screen (se presente).
+    // Una volta impostato, gp_index_ non cambia mai: se il gamepad si disconnette
+    // e si riconnette allo stesso indice, il gioco riprende a rispondergli
+    // automaticamente; nessun altro gamepad può "rubare" il controllo.
+    input_sampler_.SetGamepadIndex(cfg.gamepad_index);
     // Applica il mute iniziale dai dati salvati.
     if (save_)
         sfx_.SetMuted(save_->sfx_muted);

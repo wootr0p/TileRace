@@ -45,9 +45,12 @@ int main() {
     LoadSaveData(save);
 
     // -----------------------------------------------------------------------
-    // Schermata iniziale (splash)
+    // Schermata iniziale (splash) — ritorna l'indice del gamepad che ha premuto
+    // il primo tasto (-1 se tastiera/mouse). Questo indice viene propagato al
+    // menu e alla sessione di gioco, così ogni istanza del client risponde solo
+    // al proprio gamepad per tutta la sua durata.
     // -----------------------------------------------------------------------
-    ShowSplashScreen(renderer.HudFont());
+    const int claimed_gp = ShowSplashScreen(renderer.HudFont());
 
     // -----------------------------------------------------------------------
     // Loop principale: menu --> partita --> menu (riparte se la connessione fallisce)
@@ -55,7 +58,7 @@ int main() {
     while (!WindowShouldClose()) {
 
     // Menu iniziale (passo 19)
-    const MenuResult menu = ShowMainMenu(renderer.HudFont(), save);
+    const MenuResult menu = ShowMainMenu(renderer.HudFont(), save, claimed_gp);
     if (menu.choice == MenuChoice::QUIT) break;
 
     // In modalità offline il server genera direttamente il primo livello,
@@ -79,7 +82,7 @@ int main() {
         continue;
     }
 
-    const GameSession::Config cfg{ is_offline ? nullptr : initial_map, menu.username, is_offline, &save };
+    const GameSession::Config cfg{ is_offline ? nullptr : initial_map, menu.username, is_offline, &save, claimed_gp };
     GameSession session(cfg);
     while (!WindowShouldClose() && !session.IsOver())
         session.Tick(GetFrameTime(), net, renderer);

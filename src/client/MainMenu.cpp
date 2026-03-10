@@ -16,46 +16,64 @@ static constexpr float SZ = 24.f;   // dimensione unica del font
 // ---------------------------------------------------------------------------
 // ShowSplashScreen
 // ---------------------------------------------------------------------------
-void ShowSplashScreen(Font& font) {
+int ShowSplashScreen(Font& font) {
     Font font_title = LoadFontEx("assets/fonts/SpaceMono-Regular.ttf", 96, nullptr, 0);
 
     // Salta gli input nel primo frame per evitare falsi positivi
     bool skip_input = true;
     double blink_timer = 0.0;
+    int claimed_gp = -1;  // gamepad index claimed by first button press
 
     while (!WindowShouldClose()) {
         const float W  = (float)GetScreenWidth();
         const float H  = (float)GetScreenHeight();
         const float cx = W * 0.5f;
 
-        // Qualsiasi tasto/mouse/gamepad conferma
-        const bool gp = IsGamepadAvailable(0);
-        bool any_input = false;
+        // Solo la pressione di un tasto su un gamepad è accettata.
+        // Tastiera e mouse vengono deliberatamente ignorati: ogni istanza del
+        // client deve essere associata a un gamepad fisico specifico.
         if (!skip_input) {
-            if (GetKeyPressed() != 0)          any_input = true;
-            if (IsMouseButtonPressed(0) ||
-                IsMouseButtonPressed(1) ||
-                IsMouseButtonPressed(2))       any_input = true;
-            if (gp) {
-                for (int b = 0; b <= GAMEPAD_BUTTON_RIGHT_THUMB; b++)
-                    if (IsGamepadButtonPressed(0, (GamepadButton)b)) { any_input = true; break; }
+            for (int i = 0; i < 4; ++i) {
+                if (!IsGamepadAvailable(i)) continue;
+                for (int b = 0; b <= GAMEPAD_BUTTON_RIGHT_THUMB; ++b) {
+                    if (IsGamepadButtonPressed(i, (GamepadButton)b)) {
+                        claimed_gp = i;
+                        break;
+                    }
+                }
+                if (claimed_gp >= 0) break;
             }
         }
 
         blink_timer += GetFrameTime();
+
+        // Controlla se almeno un gamepad è collegato (per il messaggio)
+        bool any_gp = false;
+        for (int i = 0; i < 4; ++i) if (IsGamepadAvailable(i)) { any_gp = true; break; }
+
         const bool blink_visible = fmod(blink_timer, 1.0) < 0.65;  // 650ms on, 350ms off
 
         BeginDrawing();
         skip_input = false;
         ClearBackground(CLRS_BG_MENU);
 
-        // Titolo grande centrato a circa 1/3 dallalto
+        // Titolo grande centrato a circa 1/3 dall'alto
         UIWidgets::DrawCentered(font_title, "Tile Race", cx, H * 0.32f, 96.f, CLRS_ACCENT);
 
-        // "Press any button to start" con blink
-        if (blink_visible)
-            UIWidgets::DrawCentered(font, "Press any button to start",
-                                    cx, H * 0.62f, SZ, CLRS_TEXT_MAIN);
+        // Messaggio principale con blink
+        if (blink_visible) {
+            if (any_gp)
+                UIWidgets::DrawCentered(font, "Press any button on your gamepad to start",
+                                        cx, H * 0.60f, SZ, CLRS_TEXT_MAIN);
+            else
+                UIWidgets::DrawCentered(font, "Connect a gamepad and press any button",
+                                        cx, H * 0.60f, SZ, CLRS_TEXT_MAIN);
+        }
+
+        // Sottotitolo fisso: spiega la semantica del claim
+        UIWidgets::DrawCentered(font,
+            "The gamepad you press will be assigned to this window",
+            cx, H * 0.60f + SZ + 10.f, SZ * 0.75f, CLRS_TEXT_DIM);
 
         // Versione angolo in basso a destra
         {
@@ -66,16 +84,17 @@ void ShowSplashScreen(Font& font) {
 
         EndDrawing();
 
-        if (any_input) break;
+        if (claimed_gp >= 0) break;
     }
 
     UnloadFont(font_title);
+    return claimed_gp;
 }
 
 // ---------------------------------------------------------------------------
 // ShowMainMenu
 // ---------------------------------------------------------------------------
-MenuResult ShowMainMenu(Font& font, SaveData& save) {
+MenuResult ShowMainMenu(Font& font, SaveData& save, int gamepad_index) {
     // Font grande per i titoli: caricato qui perché LoadFontEx
     // richiede InitWindow già chiamato, e la dimensione deve coincidere
     // con quella di render per evitare il pixelato da upscale.
@@ -103,9 +122,9 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
         const float cx = W * 0.5f;
 
         // ---- Gamepad + stick edge ----
-        const bool gp = IsGamepadAvailable(0);
-        const float sx = gp ? GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X) : 0.f;
-        const float sy = gp ? GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y) : 0.f;
+        const bool gp = (gamepad_index >= 0) && IsGamepadAvailable(gamepad_index);
+        const float sx = gp ? GetGamepadAxisMovement(gamepad_index, GAMEPAD_AXIS_LEFT_X) : 0.f;
+        const float sy = gp ? GetGamepadAxisMovement(gamepad_index, GAMEPAD_AXIS_LEFT_Y) : 0.f;
         const bool stick_right = (prev_sx <  0.5f && sx >=  0.5f);
         const bool stick_left  = (prev_sx > -0.5f && sx <= -0.5f);
         const bool stick_down  = (prev_sy <  0.5f && sy >=  0.5f);
@@ -115,16 +134,16 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
         // ---- Navigazione bottoni (frecce / D-pad / stick)
         // WASD esclusi: D/S andrebbero in conflitto con la digitazione nel campo testo.
         const bool nav_next = !skip_input && (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_DOWN) ||
-                              (gp && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) ||
-                                      IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN))) ||
+                              (gp && (IsGamepadButtonPressed(gamepad_index, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) ||
+                                      IsGamepadButtonPressed(gamepad_index, GAMEPAD_BUTTON_LEFT_FACE_DOWN))) ||
                               stick_right || stick_down);
         const bool nav_prev = !skip_input && (IsKeyPressed(KEY_LEFT)  || IsKeyPressed(KEY_UP) ||
-                              (gp && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT) ||
-                                      IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP))) ||
+                              (gp && (IsGamepadButtonPressed(gamepad_index, GAMEPAD_BUTTON_LEFT_FACE_LEFT) ||
+                                      IsGamepadButtonPressed(gamepad_index, GAMEPAD_BUTTON_LEFT_FACE_UP))) ||
                               stick_left || stick_up);
         // Conferma: Enter o Cross (no Space: aggiungerebbe un carattere al campo testo)
         const bool nav_ok = !skip_input && (IsKeyPressed(KEY_ENTER) ||
-                            (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)));
+                            (gp && IsGamepadButtonPressed(gamepad_index, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)));
 
         if (nav_next) btn_focus = 1;
         if (nav_prev) btn_focus = 0;
@@ -150,7 +169,7 @@ MenuResult ShowMainMenu(Font& font, SaveData& save) {
             // ESC o Start gamepad --> esci dal gioco
             if (!skip_input &&
                 (IsKeyPressed(KEY_ESCAPE) ||
-                (gp && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT)))) {
+                (gp && IsGamepadButtonPressed(gamepad_index, GAMEPAD_BUTTON_MIDDLE_RIGHT)))) {
                 pending_choice = MenuChoice::QUIT;
                 has_action     = true;
             }
