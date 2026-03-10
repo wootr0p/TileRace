@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-10 17:28
+ * Generated : 2026-03-10 23:47
  * ============================================================================
  *
  * PURPOSE
@@ -432,8 +432,8 @@ struct PlayerState {
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.6";
-static constexpr uint16_t     PROTOCOL_VERSION = 11;
+static constexpr const char*  GAME_VERSION     = "0.2.7";
+static constexpr uint16_t     PROTOCOL_VERSION = 12;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -891,7 +891,10 @@ public:
 
     // Generate a level from chunks. Returns false on failure.
     // When validate=false, the physics-based level validator is skipped (online mode).
-    bool Generate(int level_num, const ChunkStore& store, uint32_t seed = 0, bool validate = true);
+    // total_levels drives the difficulty ramp horizon used by LevelGenerator.
+    bool Generate(int level_num, const ChunkStore& store, uint32_t seed = 0,
+                  bool validate = true,
+                  int total_levels = DIFFICULTY_CURVE_LEVELS);
 
     // Build the canonical path for a level number (e.g. 2 → "assets/levels/tilemaps/Level02.tmj").
     static std::string BuildPath(int num);
@@ -1089,6 +1092,8 @@ private:
 
     // Magnet-grab relationships: grabber peer → grabbed peer.
     std::unordered_map<ENetPeer*, ENetPeer*> grab_targets_;
+    // Grabbers in this set must release magnet before they can grab again.
+    std::unordered_set<ENetPeer*> regrab_requires_release_;
 
     static constexpr uint32_t LEVEL_TIME_LIMIT_MS        = 120'000u;
     static constexpr uint32_t NEXT_LEVEL_MS              =   3'000u;
@@ -1194,6 +1199,7 @@ static constexpr Color CLRS_DEBUG_TEXT     = {200, 200, 200, 200};
 #include "LevelPalette.h"
 #include <raylib.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -1252,6 +1258,7 @@ private:
     std::unordered_map<uint32_t, int8_t>         remote_prev_wall_jump_dir_;
     std::unordered_map<uint32_t, Vector2>        remote_prev_checkpoint_;
     std::unordered_map<uint32_t, bool>           remote_prev_finished_;
+    std::unordered_map<uint32_t, bool>           prev_grabbed_state_;
 
     SfxManager sfx_;
     LevelPalette palette_;  // current level colour theme; default = lobby colours
@@ -1316,10 +1323,12 @@ private:
     static constexpr float DRAW_MIN_DIST    = 8.f;   // min px between consecutive points
     static constexpr int   DRAW_MAX_POINTS  = 4000;  // max points per player per level
     static constexpr int   TESS_DIVISIONS   = 6;     // Catmull-Rom subdivisions per segment
+    static constexpr float DRAW_LIFETIME_S  = 15.f;  // strokes fade out and expire after this time
     struct DrawStroke {
         std::vector<Vector2> pts;           // raw control points
         std::vector<Vector2> tessellated;   // cached spline polyline
         int tess_source_count = 0;          // # of pts already tessellated
+        double created_time_s = 0.0;        // creation timestamp (GetTime)
     };
     std::unordered_map<uint32_t, std::vector<DrawStroke>> draw_trails_;
     std::unordered_map<uint32_t, bool> draw_prev_drawing_;  // previous tick's drawing flag
@@ -1761,6 +1770,7 @@ public:
     void DrawDeathParticles(const DeathParticles& dp);
     void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true,
                     bool is_leader = false);
+    void DrawGrabLinkMarker(float ax, float ay, float bx, float by, Color color, float radius);
 
     // Drawing trails — persistent spline marks left on the map by the draw button.
     // Each stroke is a vector of points; drawn as Catmull-Rom splines.
@@ -1963,6 +1973,10 @@ public:
     // --- UI / level events (local only, no spatialization) ---
     void PlayReady();
     void PlayGo();
+    void PlayGrabOn();
+    void PlayGrabOff();
+    void PlayGrabOnAt(float sx, float sy, float lx, float ly);
+    void PlayGrabOffAt(float sx, float sy, float lx, float ly);
 
 private:
     SoundPool jump_pool_;      // 3 variants
@@ -1973,6 +1987,8 @@ private:
     Sound     ready_sound_    = {};
     Sound     go_sound_       = {};
     Sound     level_end_sound_= {};
+    Sound     grab_on_sound_  = {};
+    Sound     grab_off_sound_ = {};
     bool      muted_ = false;
 };
 
