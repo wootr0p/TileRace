@@ -15,7 +15,10 @@ public:
 
     // Generate a level from chunks. Returns false on failure.
     // When validate=false, the physics-based level validator is skipped (online mode).
-    bool Generate(int level_num, const ChunkStore& store, uint32_t seed = 0, bool validate = true);
+    // total_levels drives the difficulty ramp horizon used by LevelGenerator.
+    bool Generate(int level_num, const ChunkStore& store, uint32_t seed = 0,
+                  bool validate = true,
+                  int total_levels = DIFFICULTY_CURVE_LEVELS);
 
     // Build the canonical path for a level number (e.g. 2 → "assets/levels/tilemaps/Level02.tmj").
     static std::string BuildPath(int num);

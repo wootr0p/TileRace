@@ -114,7 +114,7 @@ if(WIN32)
     # Lancia server + 2 client in finestre separate (non bloccanti tramite PowerShell Start-Process)
     add_custom_target(run_ccs
         COMMAND powershell -NoProfile -Command
-            "Start-Process '$<TARGET_FILE:TileRace_Server>' -WorkingDirectory '${CMAKE_BINARY_DIR}/bin'; Start-Sleep 1; Start-Process '$<TARGET_FILE:TileRace>' -WorkingDirectory '${CMAKE_BINARY_DIR}/bin'; Start-Process '$<TARGET_FILE:TileRace>' -WorkingDirectory '${CMAKE_BINARY_DIR}/bin'"
+            "Start-Process '$<TARGET_FILE:TileRace_Server>' -WorkingDirectory '${CMAKE_BINARY_DIR}/bin'; Start-Sleep 1; Start-Process '$<TARGET_FILE:TileRace>' -WorkingDirectory '${CMAKE_BINARY_DIR}/bin'; Start-Sleep 3; Start-Process '$<TARGET_FILE:TileRace>' -WorkingDirectory '${CMAKE_BINARY_DIR}/bin'"
         DEPENDS TileRace TileRace_Server copy_assets
         COMMENT "Avvio Server + 2 Client..."
     )

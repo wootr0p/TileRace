@@ -480,6 +480,7 @@ void GameSession::TickFixed(NetworkClient& net) {
                 if (!prev_dr || strokes.empty()) {
                     // Start a new stroke.
                     strokes.push_back({});
+                    strokes.back().created_time_s = GetTime();
                     strokes.back().pts.push_back({ls.x + TILE_SIZE * 0.5f,
                                                   ls.y + TILE_SIZE * 0.5f});
                 } else {
@@ -559,6 +560,41 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
     if (pkt_type == PKT_GAME_STATE && size >= sizeof(PktGameState)) {
         PktGameState resp{};
         std::memcpy(&resp, data, sizeof(PktGameState));
+
+        // Grab SFX: detect authoritative grabbed-state transitions per player.
+        // This guarantees all clients hear the same grab_on / grab_off events.
+        std::unordered_set<uint32_t> seen_players;
+        seen_players.reserve(resp.state.count);
+        float listener_x = player_.GetState().x + TILE_SIZE * 0.5f;
+        float listener_y = player_.GetState().y + TILE_SIZE * 0.5f;
+        for (uint32_t i = 0; i < resp.state.count; ++i) {
+            const PlayerState& ps = resp.state.players[i];
+            if (ps.player_id == local_player_id_) {
+                listener_x = ps.x + TILE_SIZE * 0.5f;
+                listener_y = ps.y + TILE_SIZE * 0.5f;
+                break;
+            }
+        }
+        for (uint32_t i = 0; i < resp.state.count; i++) {
+            const PlayerState& ps = resp.state.players[i];
+            if (ps.player_id == 0) continue;
+            seen_players.insert(ps.player_id);
+            auto it = prev_grabbed_state_.find(ps.player_id);
+            if (it == prev_grabbed_state_.end()) {
+                prev_grabbed_state_[ps.player_id] = ps.grabbed;
+                continue;  // first sighting: initialize without playing SFX
+            }
+            const float src_x = ps.x + TILE_SIZE * 0.5f;
+            const float src_y = ps.y + TILE_SIZE * 0.5f;
+            if (!it->second && ps.grabbed) sfx_.PlayGrabOnAt(src_x, src_y, listener_x, listener_y);
+            else if (it->second && !ps.grabbed) sfx_.PlayGrabOffAt(src_x, src_y, listener_x, listener_y);
+            it->second = ps.grabbed;
+        }
+        for (auto it = prev_grabbed_state_.begin(); it != prev_grabbed_state_.end(); ) {
+            if (!seen_players.count(it->first)) it = prev_grabbed_state_.erase(it);
+            else ++it;
+        }
+
         last_game_state_ = resp.state;
 
         // Aggiorna trail remoti e rileva eventi SFX — SOLO su nuovo tick autoritativo.
@@ -641,6 +677,7 @@ void GameSession::HandlePacket(const uint8_t* data, size_t size, NetworkClient& 
                     if (total < DRAW_MAX_POINTS) {
                         if (!prev_dr || strokes.empty()) {
                             strokes.push_back({});
+                            strokes.back().created_time_s = GetTime();
                             strokes.back().pts.push_back({rp.x + TILE_SIZE * 0.5f,
                                                           rp.y + TILE_SIZE * 0.5f});
                         } else {
@@ -855,6 +892,7 @@ void GameSession::LoadLevel(const char* path) {
     remote_prev_wall_jump_dir_.clear();
     remote_prev_checkpoint_.clear();
     remote_prev_finished_.clear();
+    prev_grabbed_state_.clear();
     prev_kill_ticks_local_ = 0;
     prev_grace_local_      = 0;
     prev_checkpoint_x_     = 0.f;
@@ -913,6 +951,7 @@ void GameSession::LoadLevelFromGrid(int w, int h, const std::vector<std::string>
     remote_prev_wall_jump_dir_.clear();
     remote_prev_checkpoint_.clear();
     remote_prev_finished_.clear();
+    prev_grabbed_state_.clear();
     prev_kill_ticks_local_ = 0;
     prev_grace_local_      = 0;
     prev_checkpoint_x_     = 0.f;
@@ -1042,26 +1081,43 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
 
         // --- Drawing trails (persistent map marks) ---
         {
-            // Tessellate incrementally, then pass cached polylines to renderer.
-            std::vector<Renderer::DrawStroke> stroke_buf;
-            for (auto& [pid, strokes] : draw_trails_) {
-                const bool is_local_pid = (pid == local_player_id_);
-                const Color col = is_local_pid
-                    ? Color{CLRS_PLAYER_LOCAL.r, CLRS_PLAYER_LOCAL.g, CLRS_PLAYER_LOCAL.b, 200}
-                    : Color{CLRS_PLAYER_REMOTE.r, CLRS_PLAYER_REMOTE.g, CLRS_PLAYER_REMOTE.b, 200};
-                stroke_buf.clear();
-                for (auto& st : strokes) {
-                    UpdateStrokeTessellation(st);
-                    if (st.pts.size() == 1) {
-                        // Single point → pass raw point for dot rendering.
-                        stroke_buf.push_back({st.pts.data(), 1});
-                    } else if (!st.tessellated.empty()) {
-                        stroke_buf.push_back({st.tessellated.data(),
-                                              static_cast<int>(st.tessellated.size())});
-                    }
+            // Trails fade linearly and are dropped after DRAW_LIFETIME_S.
+            const double now_s = GetTime();
+            for (auto it = draw_trails_.begin(); it != draw_trails_.end(); ) {
+                auto& strokes = it->second;
+                strokes.erase(std::remove_if(strokes.begin(), strokes.end(), [&](const DrawStroke& st) {
+                    return (now_s - st.created_time_s) >= static_cast<double>(DRAW_LIFETIME_S);
+                }), strokes.end());
+
+                if (strokes.empty()) {
+                    draw_prev_drawing_.erase(it->first);
+                    it = draw_trails_.erase(it);
+                    continue;
                 }
-                if (!stroke_buf.empty())
-                    renderer.DrawMapTrails(stroke_buf.data(), static_cast<int>(stroke_buf.size()), col);
+
+                const bool is_local_pid = (it->first == local_player_id_);
+                const Color base_col = is_local_pid ? CLRS_PLAYER_LOCAL : CLRS_PLAYER_REMOTE;
+                for (auto& st : strokes) {
+                    const float age_s = static_cast<float>(now_s - st.created_time_s);
+                    float fade = 1.f - (age_s / DRAW_LIFETIME_S);
+                    if (fade <= 0.f) continue;
+                    if (fade > 1.f) fade = 1.f;
+
+                    const uint8_t alpha = static_cast<uint8_t>(200.f * fade);
+                    if (alpha == 0) continue;
+                    const Color col = {base_col.r, base_col.g, base_col.b, alpha};
+
+                    UpdateStrokeTessellation(st);
+                    Renderer::DrawStroke draw_stroke{};
+                    if (st.pts.size() == 1) {
+                        draw_stroke = {st.pts.data(), 1};
+                    } else if (!st.tessellated.empty()) {
+                        draw_stroke = {st.tessellated.data(), static_cast<int>(st.tessellated.size())};
+                    }
+                    if (draw_stroke.count > 0)
+                        renderer.DrawMapTrails(&draw_stroke, 1, col);
+                }
+                ++it;
             }
         }
 
@@ -1093,6 +1149,48 @@ void GameSession::DoRender(float draw_x, float draw_y, float dt,
         if (local.kill_respawn_ticks == 0)
             renderer.DrawPlayer(draw_x, draw_y, local, true,
                                 local.player_id == last_game_state_.leader_id);
+
+        // Grab marker: colored midpoint circle between grabber and grabbed player.
+        {
+            const auto marker_color_for = [](const PlayerState& s, bool is_local) {
+                const bool bright = (s.dash_active_ticks > 0 || s.dash_ready);
+                if (is_local) return bright ? CLRS_PLAYER_LOCAL : CLRS_PLAYER_LOCAL_DIM;
+                return bright ? CLRS_PLAYER_REMOTE : CLRS_PLAYER_REMOTE_DIM;
+            };
+            const float max_dist2 = (TILE_SIZE * 1.5f) * (TILE_SIZE * 1.5f);
+            for (uint32_t gi = 0; gi < last_game_state_.count; ++gi) {
+                const PlayerState& grabbed = last_game_state_.players[gi];
+                if (grabbed.player_id == 0 || !grabbed.grabbed) continue;
+                if (grabbed.kill_respawn_ticks > 0 || grabbed.respawn_grace_ticks > 0) continue;
+
+                int best_idx = -1;
+                float best_d2 = max_dist2;
+                for (uint32_t ci = 0; ci < last_game_state_.count; ++ci) {
+                    const PlayerState& cand = last_game_state_.players[ci];
+                    if (cand.player_id == 0 || cand.player_id == grabbed.player_id) continue;
+                    if (!cand.magneting || cand.grabbed) continue;
+                    if (cand.kill_respawn_ticks > 0 || cand.respawn_grace_ticks > 0) continue;
+
+                    const float dx = grabbed.x - cand.x;
+                    const float dy = grabbed.y - (cand.y - static_cast<float>(TILE_SIZE));
+                    const float d2 = dx * dx + dy * dy;
+                    if (d2 < best_d2) {
+                        best_d2 = d2;
+                        best_idx = static_cast<int>(ci);
+                    }
+                }
+
+                if (best_idx < 0) continue;
+                const PlayerState& grabber = last_game_state_.players[best_idx];
+                const bool is_local_grabber = (grabber.player_id == local_player_id_);
+                const Color marker_col = marker_color_for(grabber, is_local_grabber);
+                const float ax = grabber.x + TILE_SIZE * 0.5f;
+                const float ay = grabber.y + TILE_SIZE * 0.5f;
+                const float bx = grabbed.x + TILE_SIZE * 0.5f;
+                const float by = grabbed.y + TILE_SIZE * 0.5f;
+                renderer.DrawGrabLinkMarker(ax, ay, bx, by, marker_col, TILE_SIZE * 0.25f);
+            }
+        }
 
         // --- Emote bubbles (world-space, above each player) ---
         for (auto& [pid, eb] : emote_bubbles_) {

@@ -7,8 +7,8 @@
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.6";
-static constexpr uint16_t     PROTOCOL_VERSION = 11;
+static constexpr const char*  GAME_VERSION     = "0.2.7";
+static constexpr uint16_t     PROTOCOL_VERSION = 12;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode

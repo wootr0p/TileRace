@@ -109,6 +109,8 @@ private:
 
     // Magnet-grab relationships: grabber peer → grabbed peer.
     std::unordered_map<ENetPeer*, ENetPeer*> grab_targets_;
+    // Grabbers in this set must release magnet before they can grab again.
+    std::unordered_set<ENetPeer*> regrab_requires_release_;
 
     static constexpr uint32_t LEVEL_TIME_LIMIT_MS        = 120'000u;
     static constexpr uint32_t NEXT_LEVEL_MS              =   3'000u;

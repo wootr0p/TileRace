@@ -42,6 +42,8 @@ SfxManager::SfxManager() {
     ready_sound_     = LoadSound("assets/sfx/ready.wav");
     go_sound_        = LoadSound("assets/sfx/go.wav");
     level_end_sound_ = LoadSound("assets/sfx/level_end.wav");
+    grab_on_sound_   = LoadSound("assets/sfx/grab_on.wav");
+    grab_off_sound_  = LoadSound("assets/sfx/grab_off.wav");
 }
 
 SfxManager::~SfxManager() {
@@ -53,6 +55,8 @@ SfxManager::~SfxManager() {
     UnloadSound(ready_sound_);
     UnloadSound(go_sound_);
     UnloadSound(level_end_sound_);
+    UnloadSound(grab_on_sound_);
+    UnloadSound(grab_off_sound_);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,4 +142,44 @@ void SfxManager::PlayReady() {
 }
 void SfxManager::PlayGo() {
     if (!muted_) PlaySound(go_sound_);
+}
+
+void SfxManager::PlayGrabOn() {
+    if (!muted_) PlaySound(grab_on_sound_);
+}
+
+void SfxManager::PlayGrabOff() {
+    if (!muted_) PlaySound(grab_off_sound_);
+}
+
+void SfxManager::PlayGrabOnAt(float sx, float sy, float lx, float ly) {
+    if (muted_) return;
+    const float dx   = sx - lx;
+    const float dy   = sy - ly;
+    const float dist = sqrtf(dx * dx + dy * dy);
+    constexpr float MAX_D = 1400.f;
+    if (dist >= MAX_D) return;
+    const float vol = 1.f - dist / MAX_D;
+    const float pan = std::max(0.f, std::min(1.f, 0.5f + dx / (MAX_D * 0.5f)));
+    SetSoundVolume(grab_on_sound_, vol);
+    SetSoundPan(grab_on_sound_, pan);
+    PlaySound(grab_on_sound_);
+    SetSoundVolume(grab_on_sound_, 1.f);
+    SetSoundPan(grab_on_sound_, 0.5f);
+}
+
+void SfxManager::PlayGrabOffAt(float sx, float sy, float lx, float ly) {
+    if (muted_) return;
+    const float dx   = sx - lx;
+    const float dy   = sy - ly;
+    const float dist = sqrtf(dx * dx + dy * dy);
+    constexpr float MAX_D = 1400.f;
+    if (dist >= MAX_D) return;
+    const float vol = 1.f - dist / MAX_D;
+    const float pan = std::max(0.f, std::min(1.f, 0.5f + dx / (MAX_D * 0.5f)));
+    SetSoundVolume(grab_off_sound_, vol);
+    SetSoundPan(grab_off_sound_, pan);
+    PlaySound(grab_off_sound_);
+    SetSoundVolume(grab_off_sound_, 1.f);
+    SetSoundPan(grab_off_sound_, 0.5f);
 }

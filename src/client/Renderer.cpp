@@ -273,6 +273,11 @@ void Renderer::DrawPlayer(float rx, float ry, const PlayerState& s, bool is_loca
     }
 }
 
+void Renderer::DrawGrabLinkMarker(float ax, float ay, float bx, float by, Color color, float radius) {
+    const Vector2 mid = {(ax + bx) * 0.5f, (ay + by) * 0.5f};
+    DrawCircleV(mid, radius, color);
+}
+
 // ---------------------------------------------------------------------------
 // DrawMapTrails — render pre-tessellated polylines for persistent player marks.
 // Spline tessellation is cached in GameSession; here we just draw line segments.

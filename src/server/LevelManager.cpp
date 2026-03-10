@@ -18,13 +18,13 @@ bool LevelManager::Load(const char* path) {
     return true;
 }
 
-bool LevelManager::Generate(int level_num, const ChunkStore& store, uint32_t seed, bool validate) {
+bool LevelManager::Generate(int level_num, const ChunkStore& store, uint32_t seed,
+                            bool validate, int total_levels) {
     static constexpr int MAX_RETRIES = 10;
 
     GeneratorParams params;
     params.level_num    = level_num;
-    // total_levels kept at default (8) to preserve the full difficulty curve
-    // even though only MAX_GENERATED_LEVELS (5) levels are played per session
+    params.total_levels = std::max(1, total_levels);
     params.seed         = seed;
 
     World last_good;   // keep last generated in case all validations fail

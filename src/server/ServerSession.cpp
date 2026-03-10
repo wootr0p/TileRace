@@ -247,9 +247,33 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     if (it == players_.end()) return false;
 
     const World& world = level_mgr_.GetWorld();
-    // Finished players are frozen in place; skip simulation so they hold position at exit.
-    if (!it->second.GetState().finished)
-        it->second.Simulate(pkt.frame, world);
+    ENetPeer* break_free_peer = nullptr;
+
+    // Co-op: if a grabbed player presses jump/dash, release before simulation so
+    // the same input frame can immediately trigger jump or dash.
+    if (game_mode_ == GameMode::COOP) {
+        const PlayerState& pre = it->second.GetState();
+        if (pre.grabbed && (pkt.frame.Has(BTN_JUMP_PRESS) || pkt.frame.Has(BTN_DASH))) {
+            for (auto& [grabber, grabbed_peer] : grab_targets_) {
+                if (grabbed_peer == peer) {
+                    ReleaseGrab(grabber);
+                    break_free_peer = peer;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Finished players still run physics, but their gameplay input is ignored.
+    // This keeps movement/collisions authoritative while preventing any new actions.
+    InputFrame sim_frame = pkt.frame;
+    if (it->second.GetState().finished) {
+        sim_frame.buttons = 0;
+        sim_frame.move_x  = 0.f;
+        sim_frame.dash_dx = 0.f;
+        sim_frame.dash_dy = 0.f;
+    }
+    it->second.Simulate(sim_frame, world);
 
     PlayerState s = it->second.GetState();
 
@@ -328,18 +352,6 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     UpdateZone();
     // Apply magnet grab/carry and player collisions — coop mode only.
     if (game_mode_ == GameMode::COOP) {
-        // If this player is currently grabbed and presses jump or dash, break free.
-        // Pass the freed peer to ApplyMagnetGrab so it isn't immediately re-grabbed.
-        ENetPeer* break_free_peer = nullptr;
-        if (s.grabbed && (pkt.frame.Has(BTN_JUMP_PRESS) || pkt.frame.Has(BTN_DASH))) {
-            for (auto& [grabber, grabbed_peer] : grab_targets_) {
-                if (grabbed_peer == peer) {
-                    ReleaseGrab(grabber);
-                    break_free_peer = peer;
-                    break;
-                }
-            }
-        }
         ApplyMagnetGrab(break_free_peer);
         ResolvePlayerCollisions(world);
     }
@@ -558,6 +570,7 @@ void ServerSession::DoLevelChange(ENetHost* host) {
     best_ticks_.clear();
     activated_checkpoints_.clear();
     grab_targets_.clear();
+    regrab_requires_release_.clear();
 
     // Lobby → primo livello reale: blocca nuove connessioni per questa sessione.
     if (in_lobby_) {
@@ -583,7 +596,11 @@ void ServerSession::DoLevelChange(ENetHost* host) {
         // Notify clients that generation is starting so they show a loading overlay
         // and don't time out while the ENet loop is stalled.
         BroadcastGenerating(host);
-        loaded = level_mgr_.Generate(current_level_, chunk_store_, 0, skip_lobby_);
+        // Co-op gets a steeper ramp: reach high difficulty earlier within the session.
+        const int curve_levels = (game_mode_ == GameMode::COOP)
+            ? static_cast<int>(session_max_levels_)
+            : DIFFICULTY_CURVE_LEVELS;
+        loaded = level_mgr_.Generate(current_level_, chunk_store_, 0, skip_lobby_, curve_levels);
     }
     if (!loaded) {
         // Fallback: try file-based loading (legacy path).
@@ -629,6 +646,7 @@ void ServerSession::ResetToInitial(ENetHost* host) {
 
     session_wins_.clear();
     session_names_.clear();
+    regrab_requires_release_.clear();
     in_global_results_ = false;
 
     in_lobby_      = (initial_map_path_.find("_Lobby") != std::string::npos ||
@@ -923,6 +941,8 @@ void ServerSession::ReleaseGrab(ENetPeer* grabber) {
         tgt->second.SetState(s);
     }
     grab_targets_.erase(it);
+    // Require a fresh grab press before this grabber can grab again.
+    regrab_requires_release_.insert(grabber);
 }
 
 // ---------------------------------------------------------------------------
@@ -930,6 +950,20 @@ void ServerSession::ReleaseGrab(ENetPeer* grabber) {
 // ---------------------------------------------------------------------------
 void ServerSession::ApplyMagnetGrab(ENetPeer* break_free) {
     if (players_.size() < 2) return;
+
+    // Latch release: after any release, a grabber must let go of magnet first.
+    for (auto it = regrab_requires_release_.begin(); it != regrab_requires_release_.end(); ) {
+        auto pit = players_.find(*it);
+        if (pit == players_.end()) {
+            it = regrab_requires_release_.erase(it);
+            continue;
+        }
+        const PlayerState& ps = pit->second.GetState();
+        if (!ps.magneting || ps.kill_respawn_ticks > 0 || ps.respawn_grace_ticks > 0 || ps.finished)
+            it = regrab_requires_release_.erase(it);
+        else
+            ++it;
+    }
 
     // 1. Release grabs for players that stopped magneting, died, or whose target is gone/dead.
     std::vector<ENetPeer*> to_release;
@@ -957,6 +991,7 @@ void ServerSession::ApplyMagnetGrab(ENetPeer* break_free) {
         if (!ps.magneting) continue;
         if (ps.kill_respawn_ticks > 0 || ps.respawn_grace_ticks > 0 || ps.finished) continue;
         if (grab_targets_.count(peer)) continue;  // already holding someone
+        if (regrab_requires_release_.count(peer)) continue;  // still holding old press
 
         const float mx = ps.x + TILE_SIZE * 0.5f;
         const float my = ps.y + TILE_SIZE * 0.5f;
@@ -1086,11 +1121,15 @@ void ServerSession::ResolvePlayerCollisions(const World& world) {
                     a.y = by0 - static_cast<float>(TILE_SIZE);
                     if (a.vel_y > 0.f) a.vel_y = 0.f;
                     a.on_ground = true;
+                    a.dash_cooldown_ticks = 0;
+                    a.dash_ready = true;
                     a.x += (b.move_vel_x + b.vel_x) * FIXED_DT;
                 } else {
                     b.y = ay0 - static_cast<float>(TILE_SIZE);
                     if (b.vel_y > 0.f) b.vel_y = 0.f;
                     b.on_ground = true;
+                    b.dash_cooldown_ticks = 0;
+                    b.dash_ready = true;
                     b.x += (a.move_vel_x + a.vel_x) * FIXED_DT;
                 }
             } else {

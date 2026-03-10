@@ -6,8 +6,4 @@ Improvment delle tilemap:
 - Bottoni
 - Porte attivate a bottone
 
-Improvement del gioco:
-
-- Replay e/o ghost della giocata
-
 

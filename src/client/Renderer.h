@@ -40,6 +40,7 @@ public:
     void DrawDeathParticles(const DeathParticles& dp);
     void DrawPlayer(float rx, float ry, const PlayerState& s, bool is_local = true,
                     bool is_leader = false);
+    void DrawGrabLinkMarker(float ax, float ay, float bx, float by, Color color, float radius);
 
     // Drawing trails — persistent spline marks left on the map by the draw button.
     // Each stroke is a vector of points; drawn as Catmull-Rom splines.

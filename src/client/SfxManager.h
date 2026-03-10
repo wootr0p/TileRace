@@ -43,6 +43,10 @@ public:
     // --- UI / level events (local only, no spatialization) ---
     void PlayReady();
     void PlayGo();
+    void PlayGrabOn();
+    void PlayGrabOff();
+    void PlayGrabOnAt(float sx, float sy, float lx, float ly);
+    void PlayGrabOffAt(float sx, float sy, float lx, float ly);
 
 private:
     SoundPool jump_pool_;      // 3 variants
@@ -53,5 +57,7 @@ private:
     Sound     ready_sound_    = {};
     Sound     go_sound_       = {};
     Sound     level_end_sound_= {};
+    Sound     grab_on_sound_  = {};
+    Sound     grab_off_sound_ = {};
     bool      muted_ = false;
 };
