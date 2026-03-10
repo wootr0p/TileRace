@@ -5,6 +5,7 @@
 #include "SpawnFinder.h"   // FindCenterCheckpoint
 #include "Physics.h"      // TILE_SIZE, FIXED_DT
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -260,6 +261,42 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
                     break_free_peer = peer;
                     break;
                 }
+            }
+        }
+    }
+
+    // Co-op: if the grabber starts a new dash while holding a player, throw the grabbed
+    // player in the direction of the dash, then release the grab.
+    if (game_mode_ == GameMode::COOP && pkt.frame.Has(BTN_DASH)) {
+        const PlayerState& pre = it->second.GetState();
+        if (pre.dash_ready && pre.dash_cooldown_ticks == 0 && pre.dash_active_ticks == 0) {
+            auto git = grab_targets_.find(peer);
+            if (git != grab_targets_.end()) {
+                ENetPeer* thrown_peer = git->second;
+                auto tit = players_.find(thrown_peer);
+                if (tit != players_.end()) {
+                    // Compute normalised dash direction (mirrors RequestDash logic).
+                    float ddx = pkt.frame.dash_dx;
+                    float ddy = pkt.frame.dash_dy;
+                    const float len2 = ddx * ddx + ddy * ddy;
+                    if (len2 > 0.000001f) {
+                        const float inv = 1.f / std::sqrt(len2);
+                        ddx *= inv;
+                        ddy *= inv;
+                    } else {
+                        ddx = 0.f;
+                        ddy = -1.f;  // default: throw upward
+                    }
+                    // Apply throw impulse to the grabbed player.
+                    PlayerState ts = tit->second.GetState();
+                    ts.vel_x = ddx * DASH_SPEED;
+                    ts.vel_y = ddy * DASH_SPEED;
+                    tit->second.SetState(ts);
+                }
+                ReleaseGrab(peer);
+                // Prevent the thrown player from being immediately re-grabbed this tick.
+                if (break_free_peer == nullptr)
+                    break_free_peer = thrown_peer;
             }
         }
     }

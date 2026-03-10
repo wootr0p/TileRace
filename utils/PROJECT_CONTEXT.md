@@ -213,7 +213,12 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
   Velocity is zeroed. The grabber moves normally and carries the target.
 - Grab is released when: the grabber releases the magnet button, either player dies/respawns/finishes,
   either player disconnects, the **grabbed player presses jump (`BTN_JUMP_PRESS`) or dash (`BTN_DASH`)** (break-free),
-  or the **grabbed player is pushed against a horizontal wall** (detected by a horizontal x-shift after `ClampToWorld`).
+  the **grabbed player is pushed against a horizontal wall** (detected by a horizontal x-shift after `ClampToWorld`),
+  or the **grabber starts a new dash** (dash-throw: grabbed player is released and thrown in the dash direction).
+- **Dash-throw:** when the grabber presses BTN_DASH and their dash is ready (`dash_ready && cooldown==0 && active==0`),
+  `HandleInput` normalises the input dash vector, applies `vel_x = ddx * DASH_SPEED` and `vel_y = ddy * DASH_SPEED`
+  to the grabbed player, then calls `ReleaseGrab`. The thrown player is passed as `break_free` to `ApplyMagnetGrab`
+  to prevent immediate re-grab in the same tick.
 - After a break-free via jump/dash, the freed player is excluded from re-grabbing for the rest of that tick
   (via the `break_free` parameter passed from `HandleInput` to `ApplyMagnetGrab`).
 - Grabbed players are excluded from `ResolvePlayerCollisions` (no push/separation applies to them).
