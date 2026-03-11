@@ -36,11 +36,12 @@ ServerSession::ServerSession(const char* initial_map_path, int initial_level,
         current_level_ = 1;
         is_ready_      = level_mgr_.Generate(current_level_, chunk_store_, 0, skip_lobby_);
         if (is_ready_) {
-            // Strip checkpoints for race mode.
-            if (game_mode_ == GameMode::RACE)
+            // Strip checkpoints for race and versus modes.
+            if (game_mode_ == GameMode::RACE || game_mode_ == GameMode::VERSUS)
                 level_mgr_.GetWorldMut().StripCheckpoints();
             printf("[server] skip_lobby: generated level 1 immediately (mode=%s)\n",
-                   game_mode_ == GameMode::RACE ? "RACE" : "COOP");
+                   game_mode_ == GameMode::VERSUS ? "VERSUS" :
+                   game_mode_ == GameMode::RACE   ? "RACE"   : "COOP");
         }
     } else {
         is_ready_ = level_mgr_.Load(initial_map_path);
@@ -144,7 +145,7 @@ bool ServerSession::OnDisconnect(ENetHost* host, ENetPeer* peer) {
         game_locked_   = false;
         session_token_ = 0u;
         leader_id_     = 0;
-        game_mode_     = GameMode::COOP;
+        game_mode_     = GameMode::VERSUS;
         session_max_levels_ = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
         current_level_ = in_lobby_ ? 0 : initial_level_;
         level_mgr_.Load(initial_map_path_.c_str());
@@ -250,9 +251,9 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     const World& world = level_mgr_.GetWorld();
     ENetPeer* break_free_peer = nullptr;
 
-    // Co-op: if a grabbed player presses jump/dash, release before simulation so
+    // Co-op/versus: if a grabbed player presses jump/dash, release before simulation so
     // the same input frame can immediately trigger jump or dash.
-    if (game_mode_ == GameMode::COOP) {
+    if (game_mode_ == GameMode::COOP || game_mode_ == GameMode::VERSUS) {
         const PlayerState& pre = it->second.GetState();
         if (pre.grabbed && (pkt.frame.Has(BTN_JUMP_PRESS) || pkt.frame.Has(BTN_DASH))) {
             for (auto& [grabber, grabbed_peer] : grab_targets_) {
@@ -265,9 +266,9 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
         }
     }
 
-    // Co-op: if the grabber starts a new dash while holding a player, throw the grabbed
+    // Co-op/versus: if the grabber starts a new dash while holding a player, throw the grabbed
     // player in the direction of the dash, then release the grab.
-    if (game_mode_ == GameMode::COOP && pkt.frame.Has(BTN_DASH)) {
+    if ((game_mode_ == GameMode::COOP || game_mode_ == GameMode::VERSUS) && pkt.frame.Has(BTN_DASH)) {
         const PlayerState& pre = it->second.GetState();
         if (pre.dash_ready && pre.dash_cooldown_ticks == 0 && pre.dash_active_ticks == 0) {
             auto git = grab_targets_.find(peer);
@@ -375,11 +376,14 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
         const int ty1k = static_cast<int>(s.y + TILE_SIZE - 1.f)  / TILE_SIZE;
         if (world.GetTile(tx0k, ty0k) == 'K' || world.GetTile(tx1k, ty0k) == 'K' ||
             world.GetTile(tx0k, ty1k) == 'K' || world.GetTile(tx1k, ty1k) == 'K') {
+            // In versus mode, preserve the player's elapsed time (timer doesn't reset on respawn).
+            const uint32_t saved_ticks = (game_mode_ == GameMode::VERSUS) ? s.level_ticks : 0u;
             // Respawn at last checkpoint if available, otherwise at spawn.
             if (s.checkpoint_x != 0.f || s.checkpoint_y != 0.f)
                 s = CheckpointReset(s, s.checkpoint_x, s.checkpoint_y, true);
             else
                 s = ApplySpawnReset(s, true);
+            if (game_mode_ == GameMode::VERSUS) s.level_ticks = saved_ticks;
             printf("[server] KILL player_id=%u --> respawn in 1s\n", s.player_id);
         }
     }
@@ -387,8 +391,8 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     it->second.SetState(s);
 
     UpdateZone();
-    // Apply magnet grab/carry and player collisions — coop mode only.
-    if (game_mode_ == GameMode::COOP) {
+    // Apply magnet grab/carry and player collisions — coop and versus modes.
+    if (game_mode_ == GameMode::COOP || game_mode_ == GameMode::VERSUS) {
         ApplyMagnetGrab(break_free_peer);
         ResolvePlayerCollisions(world);
     }
@@ -451,10 +455,15 @@ void ServerSession::HandleRestart(ENetPeer* peer) {
     if (it == players_.end()) return;
     PlayerState s = it->second.GetState();
     if (s.kill_respawn_ticks > 0) return;  // morto, ignora
+    // In versus mode, a finished player cannot restart.
+    if (game_mode_ == GameMode::VERSUS && s.finished) return;
+    // In versus mode, the player's elapsed time is preserved on restart.
+    const uint32_t saved_ticks = (game_mode_ == GameMode::VERSUS) ? s.level_ticks : 0u;
     if (s.checkpoint_x != 0.f || s.checkpoint_y != 0.f)
         s = CheckpointReset(s, s.checkpoint_x, s.checkpoint_y, false);
     else
         s = ApplySpawnReset(s, false);
+    if (game_mode_ == GameMode::VERSUS) s.level_ticks = saved_ticks;
     it->second.SetState(s);
     printf("[server] RESTART(checkpoint) player_id=%u  (%.0f, %.0f)\n",
            s.player_id, s.checkpoint_x, s.checkpoint_y);
@@ -468,7 +477,12 @@ void ServerSession::HandleRestartSpawn(ENetPeer* peer) {
     if (it == players_.end()) return;
     PlayerState s = it->second.GetState();
     if (s.kill_respawn_ticks > 0) return;  // morto, ignora
+    // In versus mode, a finished player cannot restart.
+    if (game_mode_ == GameMode::VERSUS && s.finished) return;
+    // In versus mode, the player's elapsed time is preserved on restart.
+    const uint32_t saved_ticks = (game_mode_ == GameMode::VERSUS) ? s.level_ticks : 0u;
     s = ApplySpawnReset(s, false);  // clears checkpoint too
+    if (game_mode_ == GameMode::VERSUS) s.level_ticks = saved_ticks;
     it->second.SetState(s);
     printf("[server] RESTART(spawn) player_id=%u\n", s.player_id);
 }
@@ -513,11 +527,12 @@ void ServerSession::HandleSetGameMode(ENetHost* host, ENetPeer* peer, const PktS
         return;
     }
     const uint8_t mode = pkt.game_mode;
-    if (mode > static_cast<uint8_t>(GameMode::RACE)) return;  // invalid mode
+    if (mode > static_cast<uint8_t>(GameMode::VERSUS)) return;  // invalid mode
 
     game_mode_ = static_cast<GameMode>(mode);
     printf("[server] GAME MODE changed to %s by leader %u\n",
-           game_mode_ == GameMode::RACE ? "RACE" : "COOP", leader_id_);
+           game_mode_ == GameMode::VERSUS ? "VERSUS" :
+           game_mode_ == GameMode::RACE   ? "RACE"   : "COOP", leader_id_);
     BroadcastGameState(host);
 }
 
@@ -646,8 +661,8 @@ void ServerSession::DoLevelChange(ENetHost* host) {
     }
 
     if (loaded) {
-        // Race mode: strip checkpoint tiles from the generated level.
-        if (game_mode_ == GameMode::RACE)
+        // Race and versus modes: strip checkpoint tiles from the generated level.
+        if (game_mode_ == GameMode::RACE || game_mode_ == GameMode::VERSUS)
             level_mgr_.GetWorldMut().StripCheckpoints();
 
         for (auto& [peer, pl] : players_) {
@@ -692,7 +707,7 @@ void ServerSession::ResetToInitial(ENetHost* host) {
     coop_cleared_levels_ = 0;
     session_token_ = 0u;
     leader_id_     = 0;
-    game_mode_     = GameMode::COOP;
+    game_mode_     = GameMode::VERSUS;
     session_max_levels_ = static_cast<uint8_t>(MAX_GENERATED_LEVELS);
     current_level_ = in_lobby_ ? 0 : initial_level_;
     level_mgr_.Load(initial_map_path_.c_str());
@@ -742,12 +757,13 @@ void ServerSession::SendResults(ENetHost* host, const char* reason) {
         printf("[server] COOP CLEARED (total=%u)\n", coop_cleared_levels_);
     }
 
-    // Race mode scoring: award one session win to the first finisher of this level.
-    if (game_mode_ == GameMode::RACE && any_done) {
+    // Race/versus mode scoring: award one session win to the first finisher of this level.
+    if ((game_mode_ == GameMode::RACE || game_mode_ == GameMode::VERSUS) && any_done) {
         for (const auto& e : entries) {
             if (!e.finished) continue;
             session_wins_[e.player_id]++;
-            printf("[server] RACE WIN level=%d player_id=%u total_wins=%u\n",
+            printf("[server] %s WIN level=%d player_id=%u total_wins=%u\n",
+                   game_mode_ == GameMode::VERSUS ? "VERSUS" : "RACE",
                    current_level_, e.player_id, session_wins_[e.player_id]);
             break;  // only first place gets the win
         }
@@ -899,7 +915,7 @@ bool ServerSession::AllInZone() const {
             if (pl.GetState().finished) return true;
         return false;
     }
-    // Race/lobby fallback: completion requires all players in the zone.
+    // Race/versus/lobby: all players must finish.
     for (const auto& [peer, pl] : players_)
         if (!pl.GetState().finished) return false;
     return true;

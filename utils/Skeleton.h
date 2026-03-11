@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-10 23:47
+ * Generated : 2026-03-11 00:17
  * ============================================================================
  *
  * PURPOSE
@@ -61,6 +61,8 @@
  *   │   ├── HudCoop.h
  *   │   ├── HudRace.cpp
  *   │   ├── HudRace.h
+ *   │   ├── HudVersus.cpp
+ *   │   ├── HudVersus.h
  *   │   ├── InputSampler.cpp
  *   │   ├── InputSampler.h
  *   │   ├── LevelPalette.h
@@ -124,7 +126,7 @@
  *   │   └── ServerSession.h
  *   └── app_icon.rc.in
  *
- * HEADERS INCLUDED BELOW  (36 files)
+ * HEADERS INCLUDED BELOW  (37 files)
  *   [01]  src/common/GameMode.h
  *   [02]  src/common/GameState.h
  *   [03]  src/common/InputFrame.h
@@ -145,22 +147,23 @@
  *   [18]  src/client/GameSession.h
  *   [19]  src/client/HudCoop.h
  *   [20]  src/client/HudRace.h
- *   [21]  src/client/InputSampler.h
- *   [22]  src/client/LevelPalette.h
- *   [23]  src/client/LevelResultsCoop.h
- *   [24]  src/client/LevelResultsRace.h
- *   [25]  src/client/LocalServer.h
- *   [26]  src/client/MainMenu.h
- *   [27]  src/client/NetworkClient.h
- *   [28]  src/client/Renderer.h
- *   [29]  src/client/SaveData.h
- *   [30]  src/client/SessionResultsCoop.h
- *   [31]  src/client/SessionResultsRace.h
- *   [32]  src/client/SfxManager.h
- *   [33]  src/client/SoundPool.h
- *   [34]  src/client/UIWidgets.h
- *   [35]  src/client/VisualEffects.h
- *   [36]  src/client/WinIcon.h
+ *   [21]  src/client/HudVersus.h
+ *   [22]  src/client/InputSampler.h
+ *   [23]  src/client/LevelPalette.h
+ *   [24]  src/client/LevelResultsCoop.h
+ *   [25]  src/client/LevelResultsRace.h
+ *   [26]  src/client/LocalServer.h
+ *   [27]  src/client/MainMenu.h
+ *   [28]  src/client/NetworkClient.h
+ *   [29]  src/client/Renderer.h
+ *   [30]  src/client/SaveData.h
+ *   [31]  src/client/SessionResultsCoop.h
+ *   [32]  src/client/SessionResultsRace.h
+ *   [33]  src/client/SfxManager.h
+ *   [34]  src/client/SoundPool.h
+ *   [35]  src/client/UIWidgets.h
+ *   [36]  src/client/VisualEffects.h
+ *   [37]  src/client/WinIcon.h
  * ============================================================================
  */
 
@@ -176,8 +179,9 @@
 // Game session mode — determines collision rules, checkpoint behavior, HUD, and results screens.
 // Stored in GameState and broadcast every tick so all clients stay in sync.
 enum class GameMode : uint8_t {
-    COOP = 0,   // default: shared checkpoints, player collisions, cooperative clear
-    RACE = 1,   // no collisions, no checkpoints, individual race
+    COOP    = 0,   // shared checkpoints, player collisions, cooperative clear
+    RACE    = 1,   // no collisions, no checkpoints, individual race
+    VERSUS  = 2,   // player collisions + magnet grab, no checkpoints, timer preserved on respawn; selected by default in lobby
 };
 
 
@@ -609,7 +613,7 @@ struct PktGenerating {
 // Leader sets the game mode. Only accepted from the current session leader.
 struct PktSetGameMode {
     uint8_t type      = PKT_SET_GAME_MODE;
-    uint8_t game_mode = 0;  // 0 = COOP, 1 = RACE
+    uint8_t game_mode = 0;  // 0 = COOP, 1 = RACE, 2 = VERSUS
 };
 
 // Leader sets how many generated levels are played in this session.
@@ -1002,7 +1006,7 @@ public:
     // When skip_lobby is true the lobby is skipped: level 1 is generated immediately.
     // initial_mode sets the starting game mode (used by offline → RACE).
     ServerSession(const char* initial_map_path, int initial_level,
-                  bool skip_lobby = false, GameMode initial_mode = GameMode::COOP);
+                  bool skip_lobby = false, GameMode initial_mode = GameMode::VERSUS);
 
     bool IsReady() const { return is_ready_; }
 
@@ -1381,6 +1385,22 @@ void DrawHudModeRace(Font& font_hud, const PlayerState& s,
 
 
 // ==========================================================================
+// FILE : HudVersus.h
+// PATH : src/client/HudVersus.h
+// ==========================================================================
+
+#pragma once
+// HUD rendering for versus game mode.
+#include <raylib.h>
+#include <cstdint>
+
+struct PlayerState;
+
+void DrawHudModeVersus(Font& font_hud, const PlayerState& s,
+                       uint32_t player_count, bool show_players);
+
+
+// ==========================================================================
 // FILE : InputSampler.h
 // PATH : src/client/InputSampler.h
 // ==========================================================================
@@ -1575,7 +1595,7 @@ void DrawLevelResultsModeCoop(Font& font_hud, Font& font_timer,
 // ==========================================================================
 
 #pragma once
-// End-of-level results screen for race mode.
+// End-of-level results screen for race / versus mode.
 #include <raylib.h>
 #include <cstdint>
 
@@ -1585,7 +1605,8 @@ void DrawLevelResultsModeRace(Font& font_hud, Font& font_timer,
                               bool in_results, bool local_ready,
                               const ResultEntry* entries, uint8_t count, uint8_t level,
                               double elapsed_since_start, double total_duration,
-                              bool coop_all_finished);
+                              bool coop_all_finished,
+                              const char* mode_label = "Race Mode");
 
 
 // ==========================================================================
@@ -1909,7 +1930,7 @@ void DrawSessionResultsModeCoop(Font& font_hud, Font& font_timer,
 // ==========================================================================
 
 #pragma once
-// Session-end global results screen for race mode.
+// Session-end global results screen for race / versus mode.
 #include <raylib.h>
 #include <cstdint>
 
@@ -1920,7 +1941,8 @@ void DrawSessionResultsModeRace(Font& font_hud, Font& font_timer,
                                 const GlobalResultEntry* entries, uint8_t count,
                                 uint8_t total_levels,
                                 double elapsed_since_start, double total_duration,
-                                uint8_t coop_wins);
+                                uint8_t coop_wins,
+                                const char* mode_label = "Race Mode");
 
 
 // ==========================================================================

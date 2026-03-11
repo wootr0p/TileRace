@@ -252,10 +252,11 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 
 `GameMode` (defined in `src/common/GameMode.h`) determines per-session rules:
 
-| Mode   | Enum value | Collisions | Checkpoints | Magnet grab | Default for |
-| ------ | ---------- | ---------- | ----------- | ----------- | ----------- |
-| `COOP` | 0          | ✅ Yes     | ✅ Yes      | ✅ Yes      | Online      |
-| `RACE` | 1          | ❌ No      | ❌ No       | ❌ No       | Offline     |
+| Mode      | Enum value | Collisions | Checkpoints | Magnet grab | Timer on respawn | Default for   |
+| --------- | ---------- | ---------- | ----------- | ----------- | ---------------- | ------------- |
+| `COOP`    | 0          | ✅ Yes     | ✅ Yes      | ✅ Yes      | Resets           | —             |
+| `RACE`    | 1          | ❌ No      | ❌ No       | ❌ No       | Resets           | Offline       |
+| `VERSUS`  | 2          | ✅ Yes     | ❌ No       | ✅ Yes      | Preserved        | Online (lobby)|
 
 `GameState` broadcasts `game_mode` and `leader_id` every tick so all clients stay in sync.
 
@@ -265,31 +266,43 @@ In **race mode**:
 - Checkpoint activation is skipped in `HandleInput`.
 - `World::StripCheckpoints()` replaces all 'C' tiles with air (' ') after level generation.
 
+In **versus mode**:
+
+- `ResolvePlayerCollisions` and `ApplyMagnetGrab` are active (same as co-op).
+- Checkpoints are stripped from generated levels (same as race).
+- `level_ticks` is **preserved** on player respawn (kill tile, restart, restart-spawn): the personal elapsed time does not reset.
+- A finished player **cannot restart** (`HandleRestart`/`HandleRestartSpawn` reject the request if `s.finished`).
+- The level ends when the 2-minute timer expires **or** all players finish.
+- First finisher of each level earns a session win (same scoring as race).
+- End-of-level and end-of-session screens reuse the Race mode variants.
+- **Selected by default** in the lobby (server `game_mode_` initialises to `VERSUS`).
+
 ### Mode-specific rendering
 
 Each of these rendering areas is split into a co-op file and a race file:
 
-| Feature         | Co-op file               | Race file                |
+| Feature         | Co-op file               | Race / Versus file       |
 | --------------- | ------------------------ | ------------------------ |
-| HUD overlay     | `HudCoop.cpp`            | `HudRace.cpp`            |
+| HUD overlay     | `HudCoop.cpp`            | `HudRace.cpp` / `HudVersus.cpp` |
 | Level results   | `LevelResultsCoop.cpp`   | `LevelResultsRace.cpp`   |
 | Session results | `SessionResultsCoop.cpp` | `SessionResultsRace.cpp` |
 
 `Renderer` dispatches to the mode-specific implementation via `GameMode` parameter.
-Race mode variants are currently identical to co-op but include a "Race Mode" header label.
-Both HUD variants show a top-right mode label ("Co-op Mode" / "Race Mode"). Race mode HUD timers differ from co-op: the **top centre (48 px)** shows the player's current level completion time (`level_ticks` → `MM:SS.cc`), while the **top right (24 px)** shows the level expiry countdown directly below the "Race Mode" label (at y=36 px). Co-op mode shows only the time limit countdown at top centre.
+VERSUS mode uses the Race results screens and has its own HUD (`HudVersus.cpp`) showing "Versus Mode" at top-right.
+Race mode variants are identical to co-op but include a "Race Mode" label.
+Both HUD variants show a top-right mode label ("Co-op Mode" / "Race Mode" / "Versus Mode"). Race mode HUD timers differ from co-op: the **top centre (48 px)** shows the player's current level completion time (`level_ticks` → `MM:SS.cc`), while the **top right (24 px)** shows the level expiry countdown directly below the mode label (at y=36 px). Co-op mode shows only the time limit countdown at top centre.
 Race mode session results show a **leaderboard sorted by wins descending**: each row displays rank (#1, #2, …), player name, and win count. First place uses the accent colour.
-In race mode, each cleared level awards exactly one win to the fastest finisher (1st place only).
+In race/versus mode, each cleared level awards exactly one win to the fastest finisher (1st place only).
 
 ### Leader election
 
 - **First connected:** when the server has no players and a new player connects, `leader_id_` is set to the new player's ID.
 - **Promotion:** if the leader disconnects, `ElectLeader()` promotes the remaining player with the lowest `player_id` (earliest connected).
-- **Reset:** when all players disconnect, `leader_id_` resets to 0 and `game_mode_` resets to `COOP`.
+- **Reset:** when all players disconnect, `leader_id_` resets to 0 and `game_mode_` resets to `VERSUS`.
 
 ### Leader powers (lobby only)
 
-- **Toggle mode:** leader opens the pause menu and selects "Lobby Settings" → "Mode" to toggle between Co-op and Race. The client sends `PKT_SET_GAME_MODE`; server validates sender is leader.
+- **Cycle mode:** leader opens the pause menu and selects "Lobby Settings" → "Mode" to cycle between Versus → Race → Co-op → Versus. The client sends `PKT_SET_GAME_MODE`; server validates sender is leader.
 - **Session length:** leader opens "Lobby Settings" → "Levels" and changes generated levels per session (`PKT_SET_MAX_LEVELS`).
   Supported range is `1..20`, default `5`. Controls: left/right, mouse wheel, D-pad left/right, right stick left/right.
 - **Start game:** the game starts automatically when all players reach the exit zone 'E'. The `PKT_START_GAME` packet is still supported server-side (for potential future UI use) but is no longer sent by the client (the G key binding was removed).

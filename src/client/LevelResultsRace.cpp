@@ -1,5 +1,5 @@
-// LevelResultsRace.cpp — race mode end-of-level results screen.
-// Same as co-op but with "Race Mode" header.
+// LevelResultsRace.cpp — race / versus mode end-of-level results screen.
+// Same as co-op but with a configurable mode header.
 
 #include "LevelResultsRace.h"
 #include "Protocol.h"
@@ -10,7 +10,8 @@ void DrawLevelResultsModeRace(Font& font_hud, Font& font_timer,
                               bool in_results, bool local_ready,
                               const ResultEntry* entries, uint8_t count, uint8_t level,
                               double elapsed_since_start, double total_duration,
-                              bool coop_all_finished) {
+                              bool coop_all_finished,
+                              const char* mode_label) {
     if (!in_results) return;
     (void)level;
     (void)coop_all_finished;
@@ -20,10 +21,9 @@ void DrawLevelResultsModeRace(Font& font_hud, Font& font_timer,
     const float rcx = rw * 0.5f;
     DrawRectangle(0, 0, (int)rw, (int)rh, CLRS_BG_RESULTS);
 
-    // "Race Mode" header
-    const char* mode_lbl = "Race Mode";
-    const Vector2 ml_sz = MeasureTextEx(font_timer, mode_lbl, 32, 1);
-    DrawTextEx(font_timer, mode_lbl, {rcx - ml_sz.x * 0.5f, 10.f}, 32, 1, CLRS_ACCENT);
+    // Mode header
+    const Vector2 ml_sz = MeasureTextEx(font_timer, mode_label, 32, 1);
+    DrawTextEx(font_timer, mode_label, {rcx - ml_sz.x * 0.5f, 10.f}, 32, 1, CLRS_ACCENT);
 
     // Title
     const char* r_title = "LEVEL RESULTS";

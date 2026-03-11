@@ -1,5 +1,5 @@
 #pragma once
-// End-of-level results screen for race mode.
+// End-of-level results screen for race / versus mode.
 #include <raylib.h>
 #include <cstdint>
 
@@ -9,4 +9,5 @@ void DrawLevelResultsModeRace(Font& font_hud, Font& font_timer,
                               bool in_results, bool local_ready,
                               const ResultEntry* entries, uint8_t count, uint8_t level,
                               double elapsed_since_start, double total_duration,
-                              bool coop_all_finished);
+                              bool coop_all_finished,
+                              const char* mode_label = "Race Mode");

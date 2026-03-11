@@ -105,7 +105,11 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
     if (pause_state_ == PauseState::PLAYING && !last_game_state_.is_lobby
         && input_sampler_.ConsumeRestartRequest()) {
         const PlayerState& cur = player_.GetState();
-        if (cur.kill_respawn_ticks == 0 && cur.respawn_grace_ticks == 0) {
+        const GameMode cur_mode = static_cast<GameMode>(last_game_state_.game_mode);
+        // In versus mode, a finished player cannot restart.
+        const bool can_restart = (cur.kill_respawn_ticks == 0 && cur.respawn_grace_ticks == 0)
+            && !(cur_mode == GameMode::VERSUS && cur.finished);
+        if (can_restart) {
             PktRestart rpkt{};
             net.SendReliable(&rpkt, sizeof(rpkt));
             show_record_ = false;
@@ -116,7 +120,11 @@ bool GameSession::Tick(float dt, NetworkClient& net, Renderer& renderer) {
     if (pause_state_ == PauseState::PLAYING && !last_game_state_.is_lobby
         && input_sampler_.ConsumeRestartSpawn()) {
         const PlayerState& cur = player_.GetState();
-        if (cur.kill_respawn_ticks == 0 && cur.respawn_grace_ticks == 0) {
+        const GameMode cur_mode = static_cast<GameMode>(last_game_state_.game_mode);
+        // In versus mode, a finished player cannot restart.
+        const bool can_restart = (cur.kill_respawn_ticks == 0 && cur.respawn_grace_ticks == 0)
+            && !(cur_mode == GameMode::VERSUS && cur.finished);
+        if (can_restart) {
             PktRestartSpawn rpkt{};
             net.SendReliable(&rpkt, sizeof(rpkt));
             show_record_ = false;
@@ -353,12 +361,14 @@ void GameSession::HandlePauseInput(Renderer& renderer, NetworkClient& net) {
         else if (pause_focused_ == 1 && (nav_right || wheel_right)) send_max_levels(+1);
         else if (ok || (clicked && CheckCollisionPointRec(mouse, ls_rect(pause_focused_)))) {
             if (pause_focused_ == 0) {
-                // Toggle mode
+                // Cycle mode: VERSUS → RACE → COOP → VERSUS
                 PktSetGameMode mpkt{};
                 const GameMode cur = static_cast<GameMode>(last_game_state_.game_mode);
-                mpkt.game_mode = (cur == GameMode::RACE)
-                    ? static_cast<uint8_t>(GameMode::COOP)
-                    : static_cast<uint8_t>(GameMode::RACE);
+                GameMode next;
+                if      (cur == GameMode::VERSUS) next = GameMode::RACE;
+                else if (cur == GameMode::RACE)   next = GameMode::COOP;
+                else                              next = GameMode::VERSUS;
+                mpkt.game_mode = static_cast<uint8_t>(next);
                 net.SendReliable(&mpkt, sizeof(mpkt));
             } else if (pause_focused_ == 1) {
                 // Quick increment when confirming the levels row.

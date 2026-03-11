@@ -9,6 +9,7 @@
 #include "PlayerState.h"
 #include "HudCoop.h"
 #include "HudRace.h"
+#include "HudVersus.h"
 #include "LevelResultsCoop.h"
 #include "LevelResultsRace.h"
 #include "SessionResultsCoop.h"
@@ -356,7 +357,9 @@ void Renderer::DrawEmoteBubble(float px, float py, uint8_t emote_id, float alpha
 // ---------------------------------------------------------------------------
 void Renderer::DrawHUD(const PlayerState& s, uint32_t player_count, bool show_players,
                        GameMode mode) {
-    if (mode == GameMode::RACE)
+    if (mode == GameMode::VERSUS)
+        DrawHudModeVersus(font_hud_, s, player_count, show_players);
+    else if (mode == GameMode::RACE)
         DrawHudModeRace(font_hud_, s, player_count, show_players);
     else
         DrawHudModeCoop(font_hud_, s, player_count, show_players);
@@ -399,8 +402,8 @@ void Renderer::DrawTimer(const PlayerState& s,
                          uint32_t best_ticks, uint32_t time_limit_secs,
                          uint32_t next_level_cd_ticks,
                          GameMode mode) {
-    if (mode == GameMode::RACE) {
-        // Race mode: current level timer at top center (large)
+    if (mode == GameMode::RACE || mode == GameMode::VERSUS) {
+        // Race/versus mode: current level timer at top center (large)
         const uint32_t t_cs = s.level_ticks * 100 / 60;  // centiseconds
         const char* lvl_str = TextFormat("%02u:%02u.%02u",
             t_cs / 6000, (t_cs % 6000) / 100, t_cs % 100);
@@ -408,7 +411,7 @@ void Renderer::DrawTimer(const PlayerState& s,
         DrawTextEx(font_timer_, lvl_str,
             {GetScreenWidth() * 0.5f - lvl_sz.x * 0.5f, 10}, 48, 1, WHITE);
 
-        // Race mode: level expiry timer at top right (large, under "Race Mode")
+        // Race/versus mode: level expiry timer at top right (large, under mode label)
         const uint32_t mins = time_limit_secs / 60;
         const uint32_t secs_r = time_limit_secs % 60;
         const char* exp_str = TextFormat("%02u:%02u", mins, secs_r);
@@ -416,7 +419,7 @@ void Renderer::DrawTimer(const PlayerState& s,
             ? CLRS_TIME_LIMIT_WARN : WHITE;
         const float sw = static_cast<float>(GetScreenWidth());
         const Vector2 exp_sz = MeasureTextEx(font_hud_, exp_str, 24, 1);
-        // Position under the mode label in HudRace
+        // Position under the mode label in HudRace / HudVersus
         DrawTextEx(font_hud_, exp_str,
             {sw - exp_sz.x - 12.f, 36.f}, 24, 1, exp_col);
     } else {
@@ -524,7 +527,8 @@ void Renderer::DrawLobbyOptions(GameMode mode, bool is_leader, uint32_t leader_i
     DrawTextEx(font_hud_, leader_lbl, {panel_x, panel_y + line_h}, 20, 1, CLRS_TEXT_MAIN);
 
     // Game mode
-    const char* mode_str = (mode == GameMode::RACE) ? "RACE" : "CO-OP";
+    const char* mode_str = (mode == GameMode::VERSUS) ? "VERSUS"
+                         : (mode == GameMode::RACE)   ? "RACE" : "CO-OP";
     const char* mode_lbl = TextFormat("Mode: %s", mode_str);
     DrawTextEx(font_hud_, mode_lbl, {panel_x, panel_y + line_h * 2}, 20, 1, CLRS_TEXT_MAIN);
 
@@ -701,7 +705,8 @@ void Renderer::DrawPauseMenu(PauseState state, int focused, int confirm_focused,
         const Vector2 ts = MeasureTextEx(font_timer_, title, 48, 1);
         DrawTextEx(font_timer_, title, {pcx - ts.x * 0.5f, pcy - 150.f}, 48, 1, CLRS_ACCENT);
 
-        const char* mode_str = (lobby_mode == GameMode::RACE) ? "RACE" : "CO-OP";
+        const char* mode_str = (lobby_mode == GameMode::VERSUS) ? "VERSUS"
+                             : (lobby_mode == GameMode::RACE)   ? "RACE" : "CO-OP";
         const char* items[3] = {
             TextFormat("Mode: %s", mode_str),
             TextFormat("Levels: %u", static_cast<unsigned>(lobby_max_levels)),
@@ -746,11 +751,12 @@ void Renderer::DrawResultsScreen(bool in_results, bool local_ready,
                                   const ResultEntry* entries, uint8_t count, uint8_t level,
                                   double elapsed_since_start, double total_duration,
                                   bool coop_all_finished, GameMode mode) {
-    if (mode == GameMode::RACE)
+    if (mode == GameMode::RACE || mode == GameMode::VERSUS) {
+        const char* lbl = (mode == GameMode::VERSUS) ? "Versus Mode" : "Race Mode";
         DrawLevelResultsModeRace(font_hud_, font_timer_, in_results, local_ready,
                                  entries, count, level, elapsed_since_start, total_duration,
-                                 coop_all_finished);
-    else
+                                 coop_all_finished, lbl);
+    } else
         DrawLevelResultsModeCoop(font_hud_, font_timer_, in_results, local_ready,
                                  entries, count, level, elapsed_since_start, total_duration,
                                  coop_all_finished);
@@ -764,11 +770,12 @@ void Renderer::DrawGlobalResultsScreen(bool in_global, bool local_ready,
                                         uint8_t total_levels,
                                         double elapsed_since_start, double total_duration,
                                         uint8_t coop_wins, GameMode mode) {
-    if (mode == GameMode::RACE)
+    if (mode == GameMode::RACE || mode == GameMode::VERSUS) {
+        const char* lbl = (mode == GameMode::VERSUS) ? "Versus Mode" : "Race Mode";
         DrawSessionResultsModeRace(font_hud_, font_timer_, in_global, local_ready,
                                    entries, count, total_levels, elapsed_since_start,
-                                   total_duration, coop_wins);
-    else
+                                   total_duration, coop_wins, lbl);
+    } else
         DrawSessionResultsModeCoop(font_hud_, font_timer_, in_global, local_ready,
                                    entries, count, total_levels, elapsed_since_start,
                                    total_duration, coop_wins);
