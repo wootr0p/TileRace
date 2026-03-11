@@ -250,6 +250,7 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
 
     const World& world = level_mgr_.GetWorld();
     ENetPeer* break_free_peer = nullptr;
+    bool consumed_dash_for_throw = false;
 
     // Co-op/versus: if a grabbed player presses jump/dash, release before simulation so
     // the same input frame can immediately trigger jump or dash.
@@ -274,27 +275,45 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
             auto git = grab_targets_.find(peer);
             if (git != grab_targets_.end()) {
                 ENetPeer* thrown_peer = git->second;
+
+                // Compute normalised dash direction (mirrors RequestDash logic).
+                float ddx = pkt.frame.dash_dx;
+                float ddy = pkt.frame.dash_dy;
+                const float len2 = ddx * ddx + ddy * ddy;
+                if (len2 > 0.000001f) {
+                    const float inv = 1.f / std::sqrt(len2);
+                    ddx *= inv;
+                    ddy *= inv;
+                } else {
+                    ddx = 0.f;
+                    ddy = -1.f;  // default: throw upward
+                }
+
+                ReleaseGrab(peer);
+
                 auto tit = players_.find(thrown_peer);
                 if (tit != players_.end()) {
-                    // Compute normalised dash direction (mirrors RequestDash logic).
-                    float ddx = pkt.frame.dash_dx;
-                    float ddy = pkt.frame.dash_dy;
-                    const float len2 = ddx * ddx + ddy * ddy;
-                    if (len2 > 0.000001f) {
-                        const float inv = 1.f / std::sqrt(len2);
-                        ddx *= inv;
-                        ddy *= inv;
-                    } else {
-                        ddx = 0.f;
-                        ddy = -1.f;  // default: throw upward
-                    }
-                    // Apply throw impulse to the grabbed player.
+                    // Apply throw impulse after release so it cannot be overwritten
+                    // by grab-state updates in the same tick.
                     PlayerState ts = tit->second.GetState();
-                    ts.vel_x = ddx * DASH_SPEED;
-                    ts.vel_y = ddy * DASH_SPEED;
+                    ts.grabbed    = false;
+                    ts.dash_active_ticks   = 0;
+                    ts.dash_cooldown_ticks = 0;
+                    ts.dash_dir_x = 0.f;
+                    ts.dash_dir_y = 0.f;
+                    const float launch_speed = DASH_SPEED * LAUNCH_PUSH_MULTIPLIER;
+                    ts.vel_x      = ddx * launch_speed;
+                    ts.vel_y      = ddy * launch_speed;
+                    ts.move_vel_x = 0.f;
+                    ts.launch_push_ticks = static_cast<uint8_t>(LAUNCH_PUSH_TICKS);
+                    ts.launch_dir_x = ddx;
+                    ts.launch_dir_y = ddy;
                     tit->second.SetState(ts);
                 }
-                ReleaseGrab(peer);
+                // Launch direction is sampled once at throw start and remains fixed
+                // for the whole launch_push_ticks window.
+                consumed_dash_for_throw = true;
+
                 // Prevent the thrown player from being immediately re-grabbed this tick.
                 if (break_free_peer == nullptr)
                     break_free_peer = thrown_peer;
@@ -305,6 +324,9 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     // Finished players still run physics, but their gameplay input is ignored.
     // This keeps movement/collisions authoritative while preventing any new actions.
     InputFrame sim_frame = pkt.frame;
+    // Grab-throw consumes dash input: only the grabbed player is launched.
+    if (consumed_dash_for_throw)
+        sim_frame.buttons = static_cast<uint16_t>(sim_frame.buttons & ~BTN_DASH);
     if (it->second.GetState().finished) {
         sim_frame.buttons = 0;
         sim_frame.move_x  = 0.f;
@@ -316,8 +338,20 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
     PlayerState s = it->second.GetState();
 
     // --- Timer di livello + rilevamento tile 'E' (finish) ---
-    if (!s.finished && s.kill_respawn_ticks == 0 && s.respawn_grace_ticks == 0) {
-        s.level_ticks++;
+    if (!s.finished) {
+        const bool can_play = (s.kill_respawn_ticks == 0 && s.respawn_grace_ticks == 0);
+
+        // Versus: after the first post-intro tick starts the timer, keep it running
+        // through deaths/respawns and Ready/Go overlays. It still freezes on finish.
+        bool advance_timer = can_play;
+        if (game_mode_ == GameMode::VERSUS && s.level_ticks > 0)
+            advance_timer = true;
+
+        if (advance_timer)
+            s.level_ticks++;
+
+        // Finish detection remains tied to active gameplay (not during kill/grace).
+        if (can_play) {
         const int tx0 = static_cast<int>(s.x)                    / TILE_SIZE;
         const int ty0 = static_cast<int>(s.y)                    / TILE_SIZE;
         const int tx1 = static_cast<int>(s.x + TILE_SIZE - 1.f)  / TILE_SIZE;
@@ -329,6 +363,7 @@ bool ServerSession::HandleInput(ENetHost* host, ENetPeer* peer,
                    s.player_id, s.level_ticks);
             uint32_t& best = best_ticks_[peer];
             if (best == 0 || s.level_ticks < best) best = s.level_ticks;
+        }
         }
     }
 

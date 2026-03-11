@@ -31,6 +31,39 @@ void Player::Simulate(const InputFrame& frame, const World& world) {
         return;
     }
 
+    // Forced launch push from magnet throw: ignore input and keep moving
+    // in the stored direction for a short, fixed duration.
+    if (state_.launch_push_ticks > 0) {
+        const float launch_speed = DASH_SPEED * LAUNCH_PUSH_MULTIPLIER;
+        state_.on_wall_left  = false;
+        state_.on_wall_right = false;
+
+        float launch_dx = state_.launch_dir_x * launch_speed * FIXED_DT;
+        constexpr float MAX_DX = static_cast<float>(TILE_SIZE) - 1.f;
+        if (launch_dx >  MAX_DX) launch_dx =  MAX_DX;
+        if (launch_dx < -MAX_DX) launch_dx = -MAX_DX;
+        state_.x += launch_dx;
+        ResolveCollisionsX(world, launch_dx);
+
+        if (state_.launch_dir_y != 0.f) {
+            const float launch_dy = state_.launch_dir_y * launch_speed * FIXED_DT;
+            state_.y += launch_dy;
+            // ResolveCollisionsY uses vel_y sign to determine collision side.
+            state_.vel_y = launch_dy;
+            ResolveCollisionsY(world);
+        }
+
+        state_.vel_y = 0.f;
+        state_.vel_x = 0.f;
+        state_.move_vel_x = 0.f;
+        state_.on_ground = false;
+        state_.drawing = true;     // leave the persistent drawing-line trail while launched
+        state_.sprinting = false;
+
+        state_.launch_push_ticks--;
+        return;
+    }
+
     // 1. Jump buffer (edge rising)
     if (frame.Has(BTN_JUMP_PRESS))
         RequestJump();

@@ -139,7 +139,7 @@ private:
     static constexpr float DRAW_MIN_DIST    = 8.f;   // min px between consecutive points
     static constexpr int   DRAW_MAX_POINTS  = 4000;  // max points per player per level
     static constexpr int   TESS_DIVISIONS   = 6;     // Catmull-Rom subdivisions per segment
-    static constexpr float DRAW_LIFETIME_S  = 15.f;  // strokes fade out and expire after this time
+    static constexpr float DRAW_LIFETIME_S  = 5.f;   // strokes fade out and expire after this time
     struct DrawStroke {
         std::vector<Vector2> pts;           // raw control points
         std::vector<Vector2> tessellated;   // cached spline polyline

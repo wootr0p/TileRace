@@ -41,6 +41,10 @@ inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 15% stronger than JUM
 // Dash push — force multiplier applied to DASH_SPEED when a dashing player hits another
 inline constexpr float DASH_PUSH_MULTIPLIER   = 0.8f;  // pushed player receives reduced dash velocity
 
+// Magnet throw push — force multiplier applied to DASH_SPEED for grabbed-player launch.
+inline constexpr float LAUNCH_PUSH_MULTIPLIER = 1.2f;  // stronger than normal dash
+inline constexpr int   LAUNCH_PUSH_TICKS      = 15;    // 0.25 s at 60 Hz
+
 // Sprint — held modifier that boosts horizontal movement speed
 inline constexpr float SPRINT_MULTIPLIER      = 2.0f;  // 2× faster while sprinting
 

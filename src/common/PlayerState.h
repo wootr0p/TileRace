@@ -31,6 +31,11 @@ struct PlayerState {
     float    dash_dir_y          = 0.f;
     uint8_t  dash_jump_ticks     = 0;   // > 0: post-dash window where jump force is boosted
 
+    // Magnet throw push (applied when a grabber dashes while carrying this player)
+    uint8_t  launch_push_ticks   = 0;   // > 0: forced movement in launch_dir_*
+    float    launch_dir_x        = 0.f; // normalised forced push direction
+    float    launch_dir_y        = 0.f;
+
     // Identity / network
     uint32_t player_id           = 0;
     uint32_t last_processed_tick = 0;   // last tick acknowledged by server; drives client reconciliation
