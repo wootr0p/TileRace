@@ -7,9 +7,10 @@
 
 ## 1. What the Game Is
 
-TileRace is a real-time 2D side-scrolling platformer (cross-platform) supporting two game modes:
+TileRace is a real-time 2D side-scrolling platformer (cross-platform) supporting three game modes:
 
-- **Co-op** (default online): 2–8 players work together to reach an exit tile. A level is cleared as soon as at least one player reaches the exit (team win). Shared checkpoints, player-to-player collisions, and magnet grab are active.
+- **Versus** (default online): players compete to reach the exit first. Full player collisions and magnet grab active. Personal timer is preserved on respawn (no reset), and the 2-minute level timer ends the level when it expires. First finisher wins the level.
+- **Co-op**: 2–8 players work together to reach an exit tile. A level is cleared as soon as at least one player reaches the exit (team win). Shared checkpoints, player-to-player collisions, and magnet grab are active.
 - **Race** (default offline): players race individually to the exit. No player collisions, no checkpoints in generated levels. Each player's finish time is tracked independently.
 
 The **session leader** (first connected player) can switch between modes via the pause menu's "Lobby Settings" option.
@@ -21,10 +22,11 @@ The **session leader** (first connected player) can switch between modes via the
 - Dash (360°) with suspended gravity, cooldown, and post-dash enhanced jump
 - Dash push: dashing into another player slams them with 0.8× dash velocity
 - Sprint: hold Right Ctrl / R2 for 2× horizontal speed (disabled during dash)
-- Magnet grab: hold Alt / Circle to grab and carry a nearby player (MAGNET_RANGE, GRAB_OFFSET_X)
-- Drawing trails: hold P / R1 to leave persistent coloured spline marks on the map
+- Magnet grab: hold Alt / Circle to grab and carry a nearby player (MAGNET_RANGE = 64 px)
+- Drawing trails: hold P / R1 to leave persistent coloured spline marks on the map (fade out after 5 s)
 - Kill tiles ('K') that trigger a death animation and respawn
 - Ready/Go! overlay displayed at the start of each level
+- Emote wheel: hold E / L1 and point a direction to send a quick expression bubble
 
 **Controls:**
 | Input | Gamepad (PS) | Action |
@@ -35,6 +37,7 @@ The **session leader** (first connected player) can switch between modes via the
 | P | R1 (right bumper) | Draw trail on map (hold) |
 | Right Ctrl | R2 (right trigger) | Sprint (hold) |
 | Alt | Circle (○) | Magnet grab — grab and carry a nearby player (hold) |
+| E | L1 (left bumper) | Emote wheel — hold to open, steer direction, release to fire |
 | Backspace | Triangle (△) | Restart from last checkpoint |
 | Delete | — | Restart from spawn (clears checkpoint) |
 | ESC | Start / Options | Pause menu |
@@ -77,7 +80,7 @@ CMake targets:
 common_logic     (static lib)  ← Player.cpp, World.cpp
 server_logic     (static lib)  ← ServerLogic.cpp, LevelManager.cpp, ServerSession.cpp, ChunkStore.cpp, LevelGenerator.cpp, LevelValidator.cpp
 TileRace_Server  (exe)         ← server/main.cpp
-TileRace         (exe)         ← client/main.cpp + all client .cpp files (including mode-specific HudCoop/HudRace, LevelResultsCoop/LevelResultsRace, SessionResultsCoop/SessionResultsRace)
+TileRace         (exe)         ← client/main.cpp + all client .cpp files (including mode-specific HudCoop/HudRace/HudVersus, LevelResultsCoop/LevelResultsRace, SessionResultsCoop/SessionResultsRace)
 ```
 
 `server_logic` is linked into the client because `LocalServer` (offline mode) runs the server in a background thread inside the same process.
@@ -92,11 +95,12 @@ The codebase was refactored to follow SOLID and DRY principles:
 | `NetworkClient`                             | ENet abstraction; `<enet/enet.h>` never appears outside NetworkClient.cpp                                           |
 | `InputSampler`                              | All keyboard + gamepad sampling; sticky flags for rising-edge events. Manages input device claim: keyboard-only mode (`keyboard_only_` flag) or specific gamepad mode (`gp_index_`), both set permanently from the splash screen result. |
 | `Renderer`                                  | All Raylib draw calls; no other file calls DrawXxx / BeginDrawing. Dispatches mode-specific rendering by `GameMode` |
-| `HudCoop` / `HudRace`                       | Mode-specific HUD overlay (co-op: standard; race: adds "Race Mode" label top-right)                                 |
+| `HudCoop` / `HudRace` / `HudVersus`         | Mode-specific HUD overlay (co-op: standard; race/versus: adds mode label top-right + race timer logic) |
 | `LevelResultsCoop` / `LevelResultsRace`     | Mode-specific end-of-level results screen                                                                           |
 | `SessionResultsCoop` / `SessionResultsRace` | Mode-specific session-end global results screen                                                                     |
 | `UIWidgets`                                 | Stateless Raylib UI helpers (buttons, text fields, CTRL+V paste support)                                            |
-| `VisualEffects`                             | Client-only effect structs (trail, death particles, PauseState enum incl. LOBBY_SETTINGS) — no Raylib draw calls    |
+| `VisualEffects`                             | Client-only effect structs (trail, death particles, `EmoteBubble`, `LiveLeaderEntry`, `PauseState` enum incl. `LOBBY_SETTINGS`) — no Raylib draw calls |
+| `LevelPalette`                              | Header-only; per-level colour palette using golden-angle hue distribution; `MakeLevelPalette(level_num)` |
 | `LocalServer`                               | Wraps server thread for offline mode                                                                                |
 | `ServerSession`                             | Full server session state machine; ENet-loop-agnostic. Manages leader election and game mode                        |
 | `LevelManager`                              | Load maps, compute spawn, generate levels from chunks                                                               |
@@ -106,8 +110,8 @@ The codebase was refactored to follow SOLID and DRY principles:
 | `SpawnFinder.h`                             | Header-only; shared between GameSession and LevelManager                                                            |
 | `PlayerReset.h`                             | Header-only; shared reset helper for kill/restart/level-change events                                               |
 | `SoundPool`                                 | Pool of N sound variants; random pitch ±7 %; 2-D spatial audio (volume + stereo pan)                                |
-| `SfxManager`                                | Owns jump + dash SoundPools; mute toggle; local vs. spatialized remote play                                         |
-| `GameMode.h`                                | Header-only enum `GameMode { COOP, RACE }` — shared between client and server                                       |
+| `SfxManager`                                | Owns all `SoundPool`s; mute toggle; local vs. spatialized remote play. Sounds: jump, wall-jump, dash, death, checkpoint, level-end, ready, go, grab-on, grab-off |
+| `GameMode.h`                                | Header-only enum `GameMode { COOP, RACE, VERSUS }` — shared between client and server                               |
 
 ---
 
@@ -232,6 +236,7 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 - Client-side recording: each player accumulates strokes as `vector<Vector2>` (one stroke per press cycle).
   Points are sampled every tick, but a new point is only added when the distance from the last is ≥ 8 px.
 - Max 4000 points per player per level; cleared on level change.
+- **Lifetime:** strokes fade out linearly and expire after `DRAW_LIFETIME_S = 5 s`. The fade factor is `1 − age / DRAW_LIFETIME_S` applied to the stroke's colour alpha.
 - **Optimised rendering:** Catmull-Rom splines are tessellated incrementally into cached polylines
   (`DrawStroke::tessellated`). Only new/tail segments are recomputed when points are added
   (6 subdivisions per segment). `Renderer::DrawMapTrails` draws the pre-computed polyline
@@ -241,8 +246,17 @@ Corner correction: when the player's head clips a corner by ≤ `CORNER_CORRECTI
 ### Kill tiles and respawn
 
 - Touching a 'K' tile → server sets `kill_respawn_ticks = 60` (death animation, ~1 s)
-- After that countdown: `respawn_grace_ticks = 60` is set → triggers Ready/Go! overlay on client
+- After that countdown: `respawn_grace_ticks = 25` is set → triggers Ready/Go! overlay on client
 - Input is blocked while either countdown is > 0
+
+### Emote wheel
+
+- Hold **E** (keyboard) or **L1** (gamepad left bumper) to open the emote wheel.
+- Steer with arrow keys / WASD (keyboard) or right stick (gamepad) to highlight one of 8 directions.
+- Release the key/button to fire the selected emote.
+- Emotes are **not** encoded in `InputFrame`; they are sent as an out-of-band `PKT_EMOTE` packet (`emote_id 0-7`), independent of the physics tick.
+- The server broadcasts `PKT_EMOTE_BROADCAST` to all clients; each client shows an `EmoteBubble` above the player for `EMOTE_DURATION = 2.0 s`.
+- 8 emote texts (mapped clockwise from Up): `"?"`, `"!"`, `"u.u"`, `":D"`, `"xD"`, `";)"`, `"T.T"`, `"=)"`.
 
 ---
 
@@ -412,7 +426,8 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the team's clear count to all cl
 | `PKT_EMOTE`            | C → S     | Emote selection (emote_id 0-7)                                         |
 | `PKT_EMOTE_BROADCAST`  | S → C     | Broadcast emote to all clients                                         |
 | `PKT_GENERATING`       | S → C     | Server is generating the next level; client shows loading overlay      |
-| `PKT_SET_GAME_MODE`    | C → S     | Leader sets the game mode (coop / race); lobby only                    |
+| `PKT_SET_GAME_MODE`    | C → S     | Leader sets the game mode (coop / race / versus); lobby only           |
+| `PKT_SET_MAX_LEVELS`   | C → S     | Leader sets generated levels per session (1..20)                       |
 | `PKT_START_GAME`       | C → S     | Leader starts the game from the lobby                                  |
 
 ---
@@ -444,7 +459,11 @@ At session end, `PKT_GLOBAL_RESULTS` broadcasts the team's clear count to all cl
 - Camera shake triggered on death (`TriggerShake`)
 - Sub-frame visual interpolation: render position = `lerp(prev_xy, curr_xy, alpha)`
 
-**Colour palette:** all colours defined in `Colors.h` as `CLRS_<AREA>_<ROLE>` constants.\n\n**Level indicator (`DrawLevelIndicator`):** shows \"Level N\" at bottom-centre using `font_hud_` 24 px. Visible only when `current_level_ > 0` (i.e. during generated levels, not in the lobby).
+**Colour palette:** all colours defined in `Colors.h` as `CLRS_<AREA>_<ROLE>` constants.
+
+**Per-level colour palette:** `LevelPalette` is computed by `MakeLevelPalette(level_num)` using a golden-angle hue rotation (137.508°), so each level has a distinct background/wall/exit colour scheme. Level 0 (lobby) uses the default fixed palette. `Renderer::SetPalette()` must be called after each level load.
+
+**Level indicator (`DrawLevelIndicator`):** shows "Level N" at bottom-centre using `font_hud_` 24 px. Visible only when `current_level_ > 0` (i.e. during generated levels, not in the lobby).
 
 **Off-screen player indicators (`DrawOffscreenArrows`):**
 
@@ -475,7 +494,7 @@ Old save files without `"m"` key default to unmuted (backward-compatible).
 
 **Offline defaults to Race mode:** `LocalServer::Start` is called with `skip_lobby=true` and `GameMode::RACE`. The server generates level 1 immediately with checkpoints stripped.
 
-Online mode starts at the lobby (`_Lobby.tmj`), defaulting to Co-op mode. The leader can switch to Race mode from the pause menu's "Lobby Settings" option.
+Online mode starts at the lobby (`_Lobby.tmj`), defaulting to **Versus mode** (`GameMode::VERSUS`). The leader can switch mode (Co-op / Race / Versus) from the pause menu's "Lobby Settings" option.
 
 ---
 
@@ -519,7 +538,7 @@ Each window is now independently controlled by its respective gamepad. Alternati
 ```cpp
 SERVER_PORT        = 58291   // online / dedicated server
 SERVER_PORT_LOCAL  = 58721   // in-process LocalServer (offline mode)
-PROTOCOL_VERSION   = 10      // increment on any breaking change
+PROTOCOL_VERSION   = 13      // increment on any breaking change
 MAX_PLAYERS        = 8
 CHANNEL_RELIABLE   = 0
 CHANNEL_COUNT      = 1
@@ -551,8 +570,9 @@ DASH_ACTIVE_TICKS    = 12       // ~200 ms
 DASH_COOLDOWN_TICKS  = 25       // ~417 ms
 DASH_PUSH_MULTIPLIER = 0.8      // pushed player gets 0.8× dash velocity
 SPRINT_MULTIPLIER    = 2.0      // sprint horizontal speed factor
-MAGNET_RANGE         = 256      // px — magnet grab radius
-GRAB_OFFSET_X        = 36       // px — horizontal offset for carried player (TILE_SIZE + 4)
+MAGNET_RANGE         = 64       // px — magnet grab radius
+LAUNCH_PUSH_MULTIPLIER = 1.2    // grabbed-player launch velocity multiplier
+LAUNCH_PUSH_TICKS    = 15       // 0.25 s forced push after dash-throw
 DASH_JUMP_WINDOW     = 10       // post-dash jump boost window
 JUMP_BUFFER_TICKS    = 10       // ~167 ms
 COYOTE_TICKS         = 6        // ~100 ms
@@ -628,13 +648,32 @@ Checkpoints are shared: one player reaching a 'C' tile group activates the spawn
 
 ### SfxManager
 
-Owns two `SoundPool`s: `jump_pool_` (3 variants) and `dash_pool_` (3 variants), loaded from `assets/sfx/jump_01-03.wav` and `assets/sfx/dash_01-03.wav`.
+Owns the following `SoundPool`s and one-shot `Sound`s, all loaded at construction:
+
+| Pool / Sound       | Variants | Asset path pattern                     |
+| ------------------ | -------- | -------------------------------------- |
+| `jump_pool_`       | 3        | `assets/sfx/jump_01-03.wav`            |
+| `wall_jump_pool_`  | 3        | `assets/sfx/wall_jump_01-03.wav`       |
+| `dash_pool_`       | 3        | `assets/sfx/dash_01-03.wav`            |
+| `death_pool_`      | 3        | `assets/sfx/death_01-03.wav`           |
+| `checkpoint_pool_` | 1        | `assets/sfx/checkpoint_01.wav`         |
+| `ready_sound_`     | 1        | `assets/sfx/ready.wav`                 |
+| `go_sound_`        | 1        | `assets/sfx/go.wav`                    |
+| `level_end_sound_` | 1        | `assets/sfx/level_end.wav`             |
+| `grab_on_sound_`   | 1        | `assets/sfx/grab_on.wav`               |
+| `grab_off_sound_`  | 1        | `assets/sfx/grab_off.wav`              |
 
 API:
 
-- `PlayJump()` / `PlayDash()` — local player, full volume, centre.
-- `PlayJumpAt(sx, sy, lx, ly)` / `PlayDashAt(sx, sy, lx, ly)` — remote player, spatialized (`max_dist = 1400 px`).
-- `SetMuted(bool)` / `IsMuted()` — all four play methods are no-ops when `muted_ == true`.
+- `PlayJump()` / `PlayWallJump()` / `PlayDash()` — local player, full volume, centre.
+- `PlayJumpAt` / `PlayWallJumpAt` / `PlayDashAt(sx, sy, lx, ly)` — remote player, spatialized.
+- `PlayDeath()` / `PlayDeathAt(sx, sy, lx, ly)` — on kill-tile death.
+- `PlayCheckpoint()` / `PlayCheckpointAt(sx, sy, lx, ly)` — on checkpoint activation.
+- `PlayLevelEnd()` / `PlayLevelEndAt(sx, sy, lx, ly)` — when a player reaches the exit.
+- `PlayReady()` / `PlayGo()` — local-only; driven by `respawn_grace_ticks` transitions.
+- `PlayGrabOn()` / `PlayGrabOff()` — local player grabbed/released by magnet.
+- `PlayGrabOnAt` / `PlayGrabOffAt(sx, sy, lx, ly)` — remote player grabbed/released.
+- `SetMuted(bool)` / `IsMuted()` — all play methods are no-ops when `muted_ == true`.
 
 Initial mute state is read from `SaveData::sfx_muted` in `GameSession`'s constructor.
 
@@ -643,14 +682,18 @@ Initial mute state is read from `SaveData::sfx_muted` in `GameSession`'s constru
 **Local player** (in `GameSession::TickFixed`, after `Player::Simulate`):
 
 - **Jump**: `pre_vy > −500 && post_vy ≤ −500` → `sfx_.PlayJump()`
+- **Wall-jump**: `last_wall_jump_dir` changes to ±1 (detected before regular jump threshold) → `sfx_.PlayWallJump()`
 - **Dash**: `pre_dash == 0 && post_dash > 0` → `sfx_.PlayDash()`
+- **Death**: `kill_respawn_ticks` transitions from 0 → > 0 → `sfx_.PlayDeath()`
+- **Ready / Go**: driven by `respawn_grace_ticks` transitions (0 → > 0 = Ready; > 0 → 0 = Go)
+- **Checkpoint**: `checkpoint_x/y` changes (after reconciliation) → `sfx_.PlayCheckpoint()`
 
 **Remote players** (in `GameSession::HandlePacket` → `PKT_GAME_STATE`, gated by `last_processed_tick != prev_tick`):
 
-- Same velocity / dash threshold checks as above.
+- Same velocity / dash / wall-jump / checkpoint / death / level-end threshold checks.
 - First appearance: prev-state is initialised to the current snapshot **without** firing sounds (prevents false triggers on join).
 - Player in death/grace period: prev-state is updated without firing (prevents false triggers on respawn).
-- Sounds play via `PlayJumpAt` / `PlayDashAt` using the local player's centre as the listener.
+- Sounds play via the `*At` variants using the local player's centre as the listener.
 
 ### Mute controls
 
@@ -692,7 +735,7 @@ After changing `CMakeLists.txt`, run `cmake --preset release` once to apply the 
 | Jump buffer, coyote time, variable height, wall jump              | ✅                        |
 | Dash (360°, air limit, cooldown, dash-jump)                       | ✅                        |
 | Dash push (slam other players with 2× dash force)                 | ✅                        |
-| Sprint (Right Ctrl / R2, 1.5× horizontal speed)                   | ✅                        |
+| Sprint (Right Ctrl / R2, 2× horizontal speed)                    | ✅                        |
 | Drawing trails (P / L2, cached Catmull-Rom splines)               | ✅                        |
 | Fixed timestep (60 Hz)                                            | ✅                        |
 | Camera follow + shake + sub-frame interpolation                   | ✅                        |
@@ -722,17 +765,21 @@ After changing `CMakeLists.txt`, run `cmake --preset release` once to apply the 
 | Server-busy rejection                                             | ✅                        |
 | Win32 taskbar icon                                                | ✅                        |
 | SOLID refactoring (client + server)                               | ✅                        |
-| Audio SFX (jump, dash) — local + 2-D spatialized remote           | ✅                        |
+| Audio SFX (jump, wall-jump, dash, death, checkpoint, level-end, ready/go, grab) — local + 2-D spatialized remote | ✅                        |
 | SFX mute toggle (main menu + pause menu, persisted)               | ✅                        |
 | Per-platform deploy folder (deploy/win\|mac\|linux)               | ✅                        |
-| Game modes: Co-op (default online) / Race (default offline)       | ✅                        |
+| Game modes: Versus (default online) / Race (default offline) / Co-op | ✅                     |
 | Session leader election + promotion on disconnect                 | ✅                        |
 | Leader lobby controls (toggle mode via pause menu)                | ✅                        |
 | Mode-specific rendering (HUD, results, session results)           | ✅                        |
 | Bold leader name display                                          | ✅                        |
 | Race mode: no collisions, no checkpoints, stripped 'C' tiles      | ✅                        |
+| Versus mode: collisions + magnet, no checkpoints, preserved timer | ✅                        |
 | CTRL+V paste in online menu text fields                           | ✅                        |
 | Race HUD: level timer (top centre) + expiry countdown (top right) | ✅                        |
 | Race session results: ranked leaderboard sorted by wins           | ✅                        |
+| Emote wheel (E / L1, 8 directions, bubble above player)           | ✅                        |
+| Per-level colour palette (LevelPalette, golden-angle hue rotation) | ✅                       |
+| Drawing trail lifetime (DRAW_LIFETIME_S = 5 s fade/expire)        | ✅                        |
 | Multiple spawn assignment by player_id                            | ❌ (all use center spawn) |
 | Linux / macOS build verification                                  | ❌                        |
