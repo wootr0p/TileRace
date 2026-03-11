@@ -36,10 +36,13 @@ GameSession::GameSession(const Config& cfg)
     , save_(cfg.save)
 {
     // Pre-assegna il gamepad reclamato allo splash screen (se presente).
-    // Una volta impostato, gp_index_ non cambia mai: se il gamepad si disconnette
-    // e si riconnette allo stesso indice, il gioco riprende a rispondergli
-    // automaticamente; nessun altro gamepad può "rubare" il controllo.
-    input_sampler_.SetGamepadIndex(cfg.gamepad_index);
+    // Se gamepad_index < 0 significa che l'utente ha premuto la tastiera allo splash:
+    // in quel caso blocchiamo il campionatore in modalità solo-tastiera così nessun
+    // gamepad può mai essere auto-reclamato per tutta la durata della sessione.
+    if (cfg.gamepad_index >= 0)
+        input_sampler_.SetGamepadIndex(cfg.gamepad_index);
+    else
+        input_sampler_.SetKeyboardOnly();
     // Applica il mute iniziale dai dati salvati.
     if (save_)
         sfx_.SetMuted(save_->sfx_muted);

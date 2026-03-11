@@ -12,10 +12,11 @@ struct MenuResult {
     uint16_t   port          = 7777;
 };
 
-// Blocking splash screen — shows title + "Press any button to start".
-// Returns when any key, mouse button, or gamepad button is pressed.
-// Returns the index of the gamepad that was pressed (0-based), or -1 if a
-// keyboard/mouse input triggered the dismiss (no gamepad claimed).
+// Blocking splash screen — shows title + "Press any key or gamepad button to start".
+// The first input device that triggers dismissal is "claimed" for the lifetime of the window:
+//   - Keyboard press  → returns -1  (keyboard-only mode; gamepads ignored thereafter)
+//   - Gamepad press   → returns the gamepad index 0-based (gamepad-only mode; keyboard
+//                        input is ignored in-game for movement/action bindings)
 // The window must already be open (InitWindow already called).
 int ShowSplashScreen(Font& font);
 

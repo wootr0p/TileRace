@@ -27,6 +27,9 @@ public:
     // Pre-assign the gamepad index (e.g. from splash screen claim).
     // Has no effect if idx < 0 or if a gamepad has already been claimed.
     void SetGamepadIndex(int idx) { if (idx >= 0 && gp_index_ < 0) gp_index_ = idx; }
+    // Lock to keyboard-only mode: no gamepad is ever polled or auto-claimed.
+    // Call when the splash screen detects a keyboard press before any gamepad press.
+    void SetKeyboardOnly() { keyboard_only_ = true; }
 
     // Sticky flags — return true once then reset to false.
     bool ConsumeJumpPressed()        { bool v = jump_pressed_;           jump_pressed_           = false; return v; }
@@ -60,6 +63,7 @@ private:
     static constexpr int   GP_MAX      = 4;  // max gamepads to scan for auto-claim
 
     int   gp_index_           = -1;   // -1 = unclaimed; set on first gamepad button press
+    bool  keyboard_only_      = false; // if true, gamepad is never polled (set when keyboard claimed at splash)
 
     bool  jump_pressed_       = false;
     bool  dash_pending_       = false;
