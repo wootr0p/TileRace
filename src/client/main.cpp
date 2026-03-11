@@ -45,10 +45,12 @@ int main() {
     LoadSaveData(save);
 
     // -----------------------------------------------------------------------
-    // Schermata iniziale (splash) — ritorna l'indice del gamepad che ha premuto
-    // il primo tasto (-1 se tastiera/mouse). Questo indice viene propagato al
-    // menu e alla sessione di gioco, così ogni istanza del client risponde solo
-    // al proprio gamepad per tutta la sua durata.
+    // Schermata iniziale (splash) — la prima pressione determina il dispositivo:
+    //   - Tasto tastiera → restituisce -1 (modalità tastiera, gamepad ignorati)
+    //   - Tasto gamepad  → restituisce l'indice del gamepad (0-based)
+    // Il valore viene propagato al menu e alla sessione di gioco in modo che
+    // ogni istanza del client risponda esclusivamente al dispositivo scelto
+    // per tutta la sua durata.
     // -----------------------------------------------------------------------
     const int claimed_gp = ShowSplashScreen(renderer.HudFont());
 

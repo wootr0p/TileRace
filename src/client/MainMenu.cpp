@@ -22,17 +22,18 @@ int ShowSplashScreen(Font& font) {
     // Salta gli input nel primo frame per evitare falsi positivi
     bool skip_input = true;
     double blink_timer = 0.0;
-    int claimed_gp = -1;  // gamepad index claimed by first button press
+    int claimed_gp = -2;  // -2 = niente premuto; -1 = tastiera reclamata; >=0 = indice gamepad
 
     while (!WindowShouldClose()) {
         const float W  = (float)GetScreenWidth();
         const float H  = (float)GetScreenHeight();
         const float cx = W * 0.5f;
 
-        // Solo la pressione di un tasto su un gamepad è accettata.
-        // Tastiera e mouse vengono deliberatamente ignorati: ogni istanza del
-        // client deve essere associata a un gamepad fisico specifico.
+        // La prima pressione determina il dispositivo per l'intera durata della finestra:
+        //   - Qualsiasi tasto sulla tastiera → modalità tastiera (gamepad ignorato)
+        //   - Qualsiasi tasto su un gamepad  → modalità gamepad (tastiera ignorata in gioco)
         if (!skip_input) {
+            // Controlla prima i gamepad
             for (int i = 0; i < 4; ++i) {
                 if (!IsGamepadAvailable(i)) continue;
                 for (int b = 0; b <= GAMEPAD_BUTTON_RIGHT_THUMB; ++b) {
@@ -42,6 +43,10 @@ int ShowSplashScreen(Font& font) {
                     }
                 }
                 if (claimed_gp >= 0) break;
+            }
+            // Poi la tastiera (solo se nessun gamepad ha già risposto)
+            if (claimed_gp < 0 && GetKeyPressed() != 0) {
+                claimed_gp = -1;  // modalità tastiera
             }
         }
 
@@ -63,16 +68,16 @@ int ShowSplashScreen(Font& font) {
         // Messaggio principale con blink
         if (blink_visible) {
             if (any_gp)
-                UIWidgets::DrawCentered(font, "Press any button on your gamepad to start",
+                UIWidgets::DrawCentered(font, "Press any key or gamepad button to start",
                                         cx, H * 0.60f, SZ, CLRS_TEXT_MAIN);
             else
-                UIWidgets::DrawCentered(font, "Connect a gamepad and press any button",
+                UIWidgets::DrawCentered(font, "Press any key to start",
                                         cx, H * 0.60f, SZ, CLRS_TEXT_MAIN);
         }
 
-        // Sottotitolo fisso: spiega la semantica del claim
+        // Sottotitolo fisso: spiega la semantica della scelta del dispositivo
         UIWidgets::DrawCentered(font,
-            "The gamepad you press will be assigned to this window",
+            "The first input device you use will be exclusively assigned to this window",
             cx, H * 0.60f + SZ + 10.f, SZ * 0.75f, CLRS_TEXT_DIM);
 
         // Versione angolo in basso a destra
@@ -84,11 +89,11 @@ int ShowSplashScreen(Font& font) {
 
         EndDrawing();
 
-        if (claimed_gp >= 0) break;
+        if (claimed_gp != -2) break;  // -1 = tastiera, >=0 = gamepad
     }
 
     UnloadFont(font_title);
-    return claimed_gp;
+    return claimed_gp;  // -1 = modalità tastiera, >=0 = indice gamepad
 }
 
 // ---------------------------------------------------------------------------

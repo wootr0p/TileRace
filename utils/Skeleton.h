@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-11 00:17
+ * Generated : 2026-03-11 07:14
  * ============================================================================
  *
  * PURPOSE
@@ -302,6 +302,10 @@ inline constexpr float DASH_JUMP_FORCE        = 1150.f; // 15% stronger than JUM
 // Dash push — force multiplier applied to DASH_SPEED when a dashing player hits another
 inline constexpr float DASH_PUSH_MULTIPLIER   = 0.8f;  // pushed player receives reduced dash velocity
 
+// Magnet throw push — force multiplier applied to DASH_SPEED for grabbed-player launch.
+inline constexpr float LAUNCH_PUSH_MULTIPLIER = 1.2f;  // stronger than normal dash
+inline constexpr int   LAUNCH_PUSH_TICKS      = 15;    // 0.25 s at 60 Hz
+
 // Sprint — held modifier that boosts horizontal movement speed
 inline constexpr float SPRINT_MULTIPLIER      = 2.0f;  // 2× faster while sprinting
 
@@ -389,6 +393,11 @@ struct PlayerState {
     float    dash_dir_y          = 0.f;
     uint8_t  dash_jump_ticks     = 0;   // > 0: post-dash window where jump force is boosted
 
+    // Magnet throw push (applied when a grabber dashes while carrying this player)
+    uint8_t  launch_push_ticks   = 0;   // > 0: forced movement in launch_dir_*
+    float    launch_dir_x        = 0.f; // normalised forced push direction
+    float    launch_dir_y        = 0.f;
+
     // Identity / network
     uint32_t player_id           = 0;
     uint32_t last_processed_tick = 0;   // last tick acknowledged by server; drives client reconciliation
@@ -436,8 +445,8 @@ struct PlayerState {
 
 // Increment PROTOCOL_VERSION on any breaking change to packet layout, PlayerState,
 // or simulation behaviour so client and server can detect incompatibility at connect time.
-static constexpr const char*  GAME_VERSION     = "0.2.7";
-static constexpr uint16_t     PROTOCOL_VERSION = 12;
+static constexpr const char*  GAME_VERSION     = "0.2.8";
+static constexpr uint16_t     PROTOCOL_VERSION = 13;
 
 static constexpr uint16_t SERVER_PORT       = 58291;  // dedicated (online) server
 static constexpr uint16_t SERVER_PORT_LOCAL = 58721;  // in-process server for offline mode
@@ -975,9 +984,9 @@ inline PlayerState CheckpointReset(PlayerState s, float cx, float cy, bool with_
 // Blocking ENet server loop. Caller must call enet_initialize() beforehand.
 // Returns only when stop_flag is set to true.
 // When skip_lobby is true the server generates level 1 immediately (no lobby).
-// initial_mode sets the starting game mode (RACE for offline, COOP for online).
+// initial_mode sets the starting game mode (RACE for offline, VERSUS for online).
 void RunServer(uint16_t port, const char* map_path, std::atomic<bool>& stop_flag,
-               bool skip_lobby = false, GameMode initial_mode = GameMode::COOP);
+               bool skip_lobby = false, GameMode initial_mode = GameMode::VERSUS);
 
 
 // ==========================================================================
@@ -1327,7 +1336,7 @@ private:
     static constexpr float DRAW_MIN_DIST    = 8.f;   // min px between consecutive points
     static constexpr int   DRAW_MAX_POINTS  = 4000;  // max points per player per level
     static constexpr int   TESS_DIVISIONS   = 6;     // Catmull-Rom subdivisions per segment
-    static constexpr float DRAW_LIFETIME_S  = 15.f;  // strokes fade out and expire after this time
+    static constexpr float DRAW_LIFETIME_S  = 5.f;   // strokes fade out and expire after this time
     struct DrawStroke {
         std::vector<Vector2> pts;           // raw control points
         std::vector<Vector2> tessellated;   // cached spline polyline
@@ -1434,6 +1443,9 @@ public:
     // Pre-assign the gamepad index (e.g. from splash screen claim).
     // Has no effect if idx < 0 or if a gamepad has already been claimed.
     void SetGamepadIndex(int idx) { if (idx >= 0 && gp_index_ < 0) gp_index_ = idx; }
+    // Lock to keyboard-only mode: no gamepad is ever polled or auto-claimed.
+    // Call when the splash screen detects a keyboard press before any gamepad press.
+    void SetKeyboardOnly() { keyboard_only_ = true; }
 
     // Sticky flags — return true once then reset to false.
     bool ConsumeJumpPressed()        { bool v = jump_pressed_;           jump_pressed_           = false; return v; }
@@ -1467,6 +1479,7 @@ private:
     static constexpr int   GP_MAX      = 4;  // max gamepads to scan for auto-claim
 
     int   gp_index_           = -1;   // -1 = unclaimed; set on first gamepad button press
+    bool  keyboard_only_      = false; // if true, gamepad is never polled (set when keyboard claimed at splash)
 
     bool  jump_pressed_       = false;
     bool  dash_pending_       = false;
@@ -1671,10 +1684,11 @@ struct MenuResult {
     uint16_t   port          = 7777;
 };
 
-// Blocking splash screen — shows title + "Press any button to start".
-// Returns when any key, mouse button, or gamepad button is pressed.
-// Returns the index of the gamepad that was pressed (0-based), or -1 if a
-// keyboard/mouse input triggered the dismiss (no gamepad claimed).
+// Blocking splash screen — shows title + "Press any key or gamepad button to start".
+// The first input device that triggers dismissal is "claimed" for the lifetime of the window:
+//   - Keyboard press  → returns -1  (keyboard-only mode; gamepads ignored thereafter)
+//   - Gamepad press   → returns the gamepad index 0-based (gamepad-only mode; keyboard
+//                        input is ignored in-game for movement/action bindings)
 // The window must already be open (InitWindow already called).
 int ShowSplashScreen(Font& font);
 

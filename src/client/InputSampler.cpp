@@ -12,7 +12,7 @@ void InputSampler::Poll() {
     // resettato. Se il gamepad si disconnette e si riconnette allo stesso indice
     // il gioco riprende automaticamente; se viene premuto un altro gamepad durante
     // la disconnessione, viene ignorato — solo l'indice originale è valido.
-    if (gp_index_ < 0) {
+    if (gp_index_ < 0 && !keyboard_only_) {
         for (int i = 0; i < GP_MAX; ++i) {
             if (!IsGamepadAvailable(i)) continue;
             for (int b = 0; b <= GAMEPAD_BUTTON_RIGHT_THUMB; ++b) {
