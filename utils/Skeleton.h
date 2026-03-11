@@ -1,7 +1,7 @@
 /*
  * ============================================================================
  * SKELETON.H  —  AI Context Snapshot for TileRace
- * Generated : 2026-03-11 00:09
+ * Generated : 2026-03-11 00:17
  * ============================================================================
  *
  * PURPOSE
@@ -1595,7 +1595,7 @@ void DrawLevelResultsModeCoop(Font& font_hud, Font& font_timer,
 // ==========================================================================
 
 #pragma once
-// End-of-level results screen for race mode.
+// End-of-level results screen for race / versus mode.
 #include <raylib.h>
 #include <cstdint>
 
@@ -1605,7 +1605,8 @@ void DrawLevelResultsModeRace(Font& font_hud, Font& font_timer,
                               bool in_results, bool local_ready,
                               const ResultEntry* entries, uint8_t count, uint8_t level,
                               double elapsed_since_start, double total_duration,
-                              bool coop_all_finished);
+                              bool coop_all_finished,
+                              const char* mode_label = "Race Mode");
 
 
 // ==========================================================================
@@ -1929,7 +1930,7 @@ void DrawSessionResultsModeCoop(Font& font_hud, Font& font_timer,
 // ==========================================================================
 
 #pragma once
-// Session-end global results screen for race mode.
+// Session-end global results screen for race / versus mode.
 #include <raylib.h>
 #include <cstdint>
 
@@ -1940,7 +1941,8 @@ void DrawSessionResultsModeRace(Font& font_hud, Font& font_timer,
                                 const GlobalResultEntry* entries, uint8_t count,
                                 uint8_t total_levels,
                                 double elapsed_since_start, double total_duration,
-                                uint8_t coop_wins);
+                                uint8_t coop_wins,
+                                const char* mode_label = "Race Mode");
 
 
 // ==========================================================================

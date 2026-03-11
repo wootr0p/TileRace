@@ -1,4 +1,4 @@
-// SessionResultsRace.cpp — race mode session-end global results screen.
+// SessionResultsRace.cpp — race / versus mode session-end global results screen.
 // Shows leaderboard sorted by wins (most wins first) with win counts.
 
 #include "SessionResultsRace.h"
@@ -12,7 +12,8 @@ void DrawSessionResultsModeRace(Font& font_hud, Font& font_timer,
                                 const GlobalResultEntry* entries, uint8_t count,
                                 uint8_t total_levels,
                                 double elapsed_since_start, double total_duration,
-                                uint8_t coop_wins) {
+                                uint8_t coop_wins,
+                                const char* mode_label) {
     if (!in_global) return;
 
     const float rw  = static_cast<float>(GetScreenWidth());
@@ -20,10 +21,9 @@ void DrawSessionResultsModeRace(Font& font_hud, Font& font_timer,
     const float rcx = rw * 0.5f;
     DrawRectangle(0, 0, (int)rw, (int)rh, CLRS_BG_RESULTS);
 
-    // "Race Mode" header
-    const char* mode_lbl = "Race Mode";
-    const Vector2 ml_sz = MeasureTextEx(font_timer, mode_lbl, 32, 1);
-    DrawTextEx(font_timer, mode_lbl, {rcx - ml_sz.x * 0.5f, 10.f}, 32, 1, CLRS_ACCENT);
+    // Mode header
+    const Vector2 ml_sz = MeasureTextEx(font_timer, mode_label, 32, 1);
+    DrawTextEx(font_timer, mode_label, {rcx - ml_sz.x * 0.5f, 10.f}, 32, 1, CLRS_ACCENT);
 
     // Title
     const char* title = "LEADERBOARD";

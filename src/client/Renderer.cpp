@@ -751,11 +751,12 @@ void Renderer::DrawResultsScreen(bool in_results, bool local_ready,
                                   const ResultEntry* entries, uint8_t count, uint8_t level,
                                   double elapsed_since_start, double total_duration,
                                   bool coop_all_finished, GameMode mode) {
-    if (mode == GameMode::RACE || mode == GameMode::VERSUS)
+    if (mode == GameMode::RACE || mode == GameMode::VERSUS) {
+        const char* lbl = (mode == GameMode::VERSUS) ? "Versus Mode" : "Race Mode";
         DrawLevelResultsModeRace(font_hud_, font_timer_, in_results, local_ready,
                                  entries, count, level, elapsed_since_start, total_duration,
-                                 coop_all_finished);
-    else
+                                 coop_all_finished, lbl);
+    } else
         DrawLevelResultsModeCoop(font_hud_, font_timer_, in_results, local_ready,
                                  entries, count, level, elapsed_since_start, total_duration,
                                  coop_all_finished);
@@ -769,11 +770,12 @@ void Renderer::DrawGlobalResultsScreen(bool in_global, bool local_ready,
                                         uint8_t total_levels,
                                         double elapsed_since_start, double total_duration,
                                         uint8_t coop_wins, GameMode mode) {
-    if (mode == GameMode::RACE || mode == GameMode::VERSUS)
+    if (mode == GameMode::RACE || mode == GameMode::VERSUS) {
+        const char* lbl = (mode == GameMode::VERSUS) ? "Versus Mode" : "Race Mode";
         DrawSessionResultsModeRace(font_hud_, font_timer_, in_global, local_ready,
                                    entries, count, total_levels, elapsed_since_start,
-                                   total_duration, coop_wins);
-    else
+                                   total_duration, coop_wins, lbl);
+    } else
         DrawSessionResultsModeCoop(font_hud_, font_timer_, in_global, local_ready,
                                    entries, count, total_levels, elapsed_since_start,
                                    total_duration, coop_wins);
