@@ -24,6 +24,7 @@ add_executable(TileRace
     SfxManager.cpp
     HudCoop.cpp
     HudRace.cpp
+    HudVersus.cpp
     LevelResultsCoop.cpp
     LevelResultsRace.cpp
     SessionResultsCoop.cpp

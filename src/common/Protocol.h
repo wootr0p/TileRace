@@ -186,7 +186,7 @@ struct PktGenerating {
 // Leader sets the game mode. Only accepted from the current session leader.
 struct PktSetGameMode {
     uint8_t type      = PKT_SET_GAME_MODE;
-    uint8_t game_mode = 0;  // 0 = COOP, 1 = RACE
+    uint8_t game_mode = 0;  // 0 = COOP, 1 = RACE, 2 = VERSUS
 };
 
 // Leader sets how many generated levels are played in this session.

@@ -19,7 +19,7 @@ public:
     // When skip_lobby is true the lobby is skipped: level 1 is generated immediately.
     // initial_mode sets the starting game mode (used by offline → RACE).
     ServerSession(const char* initial_map_path, int initial_level,
-                  bool skip_lobby = false, GameMode initial_mode = GameMode::COOP);
+                  bool skip_lobby = false, GameMode initial_mode = GameMode::VERSUS);
 
     bool IsReady() const { return is_ready_; }
 
